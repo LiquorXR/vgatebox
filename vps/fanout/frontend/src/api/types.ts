@@ -195,6 +195,14 @@ export interface AutomationView {
   error?: string;
 }
 
+export interface RegionStat {
+  code: string;
+  name: string;
+  available: number;
+  best_ping: number;
+  best_speed_mbps: number;
+}
+
 export interface ConsoleSummary {
   version: string;
   capacity: number;
@@ -217,6 +225,7 @@ export interface ConsoleSummary {
   check: CheckRunView | null;
   check_settings: { parallelism: number };
   results: Record<string, CheckResult>;
+  regions: RegionStat[];
   memory: Record<string, number>;
 }
 

@@ -102,7 +102,10 @@ func newConsole(m *Manager) (*Console, error) {
 	if err := c.loadCheckSettings(); err != nil {
 		return nil, err
 	}
-	if err:=c.loadAutomation();err!=nil {c.cancel();return nil,err}
+	if err := c.loadAutomation(); err != nil {
+		c.cancel()
+		return nil, err
+	}
 	if err := c.loadSstpManager(); err != nil {
 		c.cancel()
 		return nil, err
@@ -246,8 +249,12 @@ func (c *Console) deleteSlot(slot int) error {
 	// instance that the new default would initialize again on the next refresh.
 	if c.plan == nil && len(c.m.Tunnels()) == 1 && currentPanelMode() == "native" {
 		p := ExitPlan{Count: 0, RemoveSlot: slot, Policy: defaultSlotPolicyForMode("", false)}
-		if err := validateExitPlan(&p, c.m.maxSlots); err != nil { return err }
-		if err := c.savePlan(p); err != nil { return err }
+		if err := validateExitPlan(&p, c.m.maxSlots); err != nil {
+			return err
+		}
+		if err := c.savePlan(p); err != nil {
+			return err
+		}
 		return c.reconcile()
 	}
 	// Save the new target before deletion; a crash resumes the explicit decrease.
@@ -330,6 +337,7 @@ func (c *Console) routes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/console/check/settings", c.apiCheckSettings)
 	mux.HandleFunc("/api/console/check", c.apiCheck)
 	mux.HandleFunc("/api/console/check/cancel", c.apiCheckCancel)
+	mux.HandleFunc("/api/console/slot/delete", c.apiDeleteSlot)
 	mux.HandleFunc("/api/console/qr", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(405)
@@ -368,9 +376,12 @@ func (c *Console) routes(mux *http.ServeMux) {
 				link += "&" + key + "=" + v
 			}
 		}
-		if target:=r.URL.Query().Get("target");target!="" {
-			if target!="clash"&&target!="mihomo"&&target!="base64"&&target!="links" {http.Error(w,"订阅格式无效",400);return}
-			link+="&target="+target
+		if target := r.URL.Query().Get("target"); target != "" {
+			if target != "clash" && target != "mihomo" && target != "base64" && target != "links" {
+				http.Error(w, "订阅格式无效", 400)
+				return
+			}
+			link += "&target=" + target
 		}
 		png, err := qrcode.Encode(link, qrcode.Medium, 256)
 		if err != nil {
@@ -381,6 +392,27 @@ func (c *Console) routes(mux *http.ServeMux) {
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write(png)
 	})
+}
+
+// apiDeleteSlot removes one explicit automatic exit and reduces the target
+// count by one, so the background reconcile does not immediately recreate it.
+func (c *Console) apiDeleteSlot(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var in struct {
+		Slot int `json:"slot"`
+	}
+	if err := readConsoleJSON(w, r, &in); err != nil || in.Slot < 1 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "需要有效的出口编号"})
+		return
+	}
+	if err := c.deleteSlot(in.Slot); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": firstLine(err.Error())})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {
@@ -453,8 +485,8 @@ func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {
 	}
 	generated := ""
 	var pool struct {
-		GeneratedAt string `json:"generated_at"`
-		Source poolSourceMetadata `json:"source"`
+		GeneratedAt string             `json:"generated_at"`
+		Source      poolSourceMetadata `json:"source"`
 	}
 	if blob, err := os.ReadFile(envOr("FANOUT_VALIDATED_POOL_FILE", "/var/lib/vgatebox/pool/node_pool.json")); err == nil && json.Unmarshal(blob, &pool) == nil {
 		generated = pool.GeneratedAt
@@ -473,43 +505,76 @@ func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 200, map[string]any{"version": version, "capacity": c.m.maxSlots, "target": target, "target_configured": plan != nil, "suggested_target": suggestedTarget, "allocated": len(view.Exits), "ready": ready, "stopped": stopped, "waiting": max(0, target-ready-stopped), "candidates": len(nodes), "pool_read_at": fetched, "pool_generated_at": generated, "pool_source": publicPoolSource(pool.Source), "automation": c.automationView(time.Now().UTC()), "default_server_name": serverName, "plan": plan, "plan_error": planErr, "refresh": refresh, "check": checkView, "check_settings": map[string]int{"parallelism": parallelism}, "results": results, "memory": memory})
+	writeJSON(w, 200, map[string]any{"version": version, "capacity": c.m.maxSlots, "target": target, "target_configured": plan != nil, "suggested_target": suggestedTarget, "allocated": len(view.Exits), "ready": ready, "stopped": stopped, "waiting": max(0, target-ready-stopped), "candidates": len(nodes), "pool_read_at": fetched, "pool_generated_at": generated, "pool_source": publicPoolSource(pool.Source), "automation": c.automationView(time.Now().UTC()), "default_server_name": serverName, "plan": plan, "plan_error": planErr, "refresh": refresh, "check": checkView, "check_settings": map[string]int{"parallelism": parallelism}, "results": results, "regions": c.m.Regions(), "memory": memory})
 }
 
 func (c *Console) apiPoolRefresh(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost { w.WriteHeader(405); return }
-	if _,err:=c.startPoolRefresh(false);err!=nil { writeJSON(w,503,map[string]string{"error":"管理服务正在停止"});return }
-	writeJSON(w,202,map[string]string{"status":"running"})
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	if _, err := c.startPoolRefresh(false); err != nil {
+		writeJSON(w, 503, map[string]string{"error": "管理服务正在停止"})
+		return
+	}
+	writeJSON(w, 202, map[string]string{"status": "running"})
 }
 
 func (c *Console) startPoolRefresh(scheduled bool) (<-chan struct{}, error) {
 	c.refreshMu.Lock()
-	if c.ctx.Err()!=nil { c.refreshMu.Unlock();return nil,c.ctx.Err() }
-	if c.refreshState=="running" { done:=c.refreshDone;c.refreshMu.Unlock();return done,nil }
-	c.refreshState,c.refreshError="running",""
-	c.refreshCause,c.refreshAt="",""
-	c.refreshStarted=time.Now()
-	finished:=make(chan struct{});c.refreshDone=finished;c.refreshMu.Unlock()
+	if c.ctx.Err() != nil {
+		c.refreshMu.Unlock()
+		return nil, c.ctx.Err()
+	}
+	if c.refreshState == "running" {
+		done := c.refreshDone
+		c.refreshMu.Unlock()
+		return done, nil
+	}
+	c.refreshState, c.refreshError = "running", ""
+	c.refreshCause, c.refreshAt = "", ""
+	c.refreshStarted = time.Now()
+	finished := make(chan struct{})
+	c.refreshDone = finished
+	c.refreshMu.Unlock()
 	log.Print("[pool-refresh] started")
 	go func() {
 		defer close(finished)
-		ctx,cancel:=context.WithTimeout(c.ctx,90*time.Second);defer cancel()
-		pool:=envOr("FANOUT_VALIDATED_POOL_FILE","/var/lib/vgatebox/pool/node_pool.json")
-		args:=[]string{envOr("FANOUT_TOOLBOX_SCRIPT","/usr/local/lib/vgatebox/scripts/toolbox.py"),"--config",envOr("FANOUT_POOL_CONFIG","/etc/vgatebox/pool.json"),"pool","--output",filepath.Dir(pool),"--schedule-dir",c.m.workDir}
-		if scheduled { args=append(args,"--scheduled") }
-		cmd:=exec.CommandContext(ctx,"python3",args...)
-		var stderr,stdout poolRefreshErrorBuffer
-		cmd.Stderr,cmd.Stdout=&stderr,&stdout
-		err:=cmdRun(cmd);cause:=poolRefreshCause(ctx,err,string(stderr.data))
-		var result struct{Status string `json:"status"`}
-		_=json.Unmarshal(stdout.data,&result)
-		skipped:=scheduled && (result.Status=="source_refresh_skipped" || cause=="pool_refresh_busy")
-		if err==nil && !skipped { _,err=c.m.RefreshNodes();if err!=nil {cause="pool_refresh_invalid_pool"} }
-		nodes,_:=c.m.Nodes()
-		c.refreshMu.Lock();defer c.refreshMu.Unlock()
-		c.refreshAt=time.Now().UTC().Format(time.RFC3339);c.refreshState="passed"
-		if skipped {c.refreshState="skipped"} else if err!=nil {c.refreshState,c.refreshError="failed","pool_refresh_failed_previous_pool_retained";c.refreshCause=cause}
-		log.Printf("[pool-refresh] status=%s cause=%s candidates=%d",c.refreshState,c.refreshCause,len(nodes))
+		ctx, cancel := context.WithTimeout(c.ctx, 90*time.Second)
+		defer cancel()
+		pool := envOr("FANOUT_VALIDATED_POOL_FILE", "/var/lib/vgatebox/pool/node_pool.json")
+		args := []string{envOr("FANOUT_TOOLBOX_SCRIPT", "/usr/local/lib/vgatebox/scripts/toolbox.py"), "--config", envOr("FANOUT_POOL_CONFIG", "/etc/vgatebox/pool.json"), "pool", "--output", filepath.Dir(pool), "--schedule-dir", c.m.workDir}
+		if scheduled {
+			args = append(args, "--scheduled")
+		}
+		cmd := exec.CommandContext(ctx, "python3", args...)
+		var stderr, stdout poolRefreshErrorBuffer
+		cmd.Stderr, cmd.Stdout = &stderr, &stdout
+		err := cmdRun(cmd)
+		cause := poolRefreshCause(ctx, err, string(stderr.data))
+		var result struct {
+			Status string `json:"status"`
+		}
+		_ = json.Unmarshal(stdout.data, &result)
+		skipped := scheduled && (result.Status == "source_refresh_skipped" || cause == "pool_refresh_busy")
+		if err == nil && !skipped {
+			_, err = c.m.RefreshNodes()
+			if err != nil {
+				cause = "pool_refresh_invalid_pool"
+			}
+		}
+		nodes, _ := c.m.Nodes()
+		c.refreshMu.Lock()
+		defer c.refreshMu.Unlock()
+		c.refreshAt = time.Now().UTC().Format(time.RFC3339)
+		c.refreshState = "passed"
+		if skipped {
+			c.refreshState = "skipped"
+		} else if err != nil {
+			c.refreshState, c.refreshError = "failed", "pool_refresh_failed_previous_pool_retained"
+			c.refreshCause = cause
+		}
+		log.Printf("[pool-refresh] status=%s cause=%s candidates=%d", c.refreshState, c.refreshCause, len(nodes))
 	}()
-	return finished,nil
+	return finished, nil
 }

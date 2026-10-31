@@ -115,6 +115,10 @@ python3 scripts/toolbox.py --config config/settings.json --env-file /path/intell
 
 现有管理登录保护下提供 `GET/POST /api/slot/policy?slot=N`（POST 为上述 JSON）、`POST /api/slot/resume?slot=N` 和 `POST /api/slot/delete?slot=N`。新建的 `/api/provision` 可在原 count/region 参数之外提交同样的 JSON 策略。保存策略失败时保留旧策略并阻断当前 Slot；手动恢复上次策略及失败回退见下节。
 
+新控制台删除单个自动出口使用 `POST /api/console/slot/delete`，body 为 `{"slot": N}`。它删除指定 Slot 并把控制台目标数量减 1，不会重排其他编号；旧 `/api/slot/delete` 只删除运行中的 Slot、不同步目标数量，可能被后台对账重新创建，因此不应与 `console target` 混用。
+
+`/api/provision`、`/api/jobs` 和 `/api/jobs/dismiss` 仅保留为旧批量/外部自动化接口；它们不更新控制台目标数量，新控制台不调用。需要由控制台维护目标时使用 `/api/console/target`，不要两套流程同时操作同一批 Slot。
+
 旧状态没有 policy 字段时，从原国家代码及已加载的“只用家宽”配置生成默认策略，并重新验活；不会继承旧健康状态或住宅结论。国家画像缺失时会等待合格证据，不能将历史来源国家当作实际出口国家。无效策略、重复 Slot 或端口会拒绝恢复，不启动另一套默认 Slot 来替代。
 
 ## 验收与限制

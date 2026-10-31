@@ -65,6 +65,8 @@ const socksRows = computed(() => {
 
 const socksDetailOpen = ref(false);
 const socksDetailSlot = ref(0);
+const socksUser = ref("");
+const socksPass = ref("");
 const socksDetail = computed(() => socksRows.value.find((row) => row.exit.slot === socksDetailSlot.value) || null);
 
 function socksAddress(exit: Exit, external: boolean): string {
@@ -79,8 +81,33 @@ function socksAddress(exit: Exit, external: boolean): string {
 
 function openSocksDetail(row: { exit: Exit }) {
   socksDetailSlot.value = row.exit.slot;
+  socksUser.value = row.exit.socks_user || "";
+  socksPass.value = row.exit.socks_pass || "";
   socksDetailOpen.value = true;
 }
+
+const socksCredMutation = useMutation({
+  mutationFn: () => {
+    if (!socksDetail.value) throw new Error("出口不存在");
+    return post(
+      `api/cred${queryString({
+        slot: socksDetail.value.exit.slot,
+        user: socksUser.value.trim(),
+        pass: socksPass.value.trim(),
+      })}`,
+      {},
+    );
+  },
+  onSuccess: (value) => {
+    const result = value as { user: string; pass: string };
+    socksUser.value = result.user;
+    socksPass.value = result.pass;
+    toast(socksUser.value || socksPass.value ? "SOCKS5 凭据已保存" : "SOCKS5 凭据已随机重置", { tone: "success" });
+    void queryClient.invalidateQueries({ queryKey: keys.exits });
+    void queryClient.invalidateQueries({ queryKey: keys.socks });
+  },
+  onError: (error) => accessError(error, "保存 SOCKS5 凭据失败"),
+});
 
 function accessError(error: unknown, fallback: string) {
   void queryClient.invalidateQueries({ queryKey: keys.exits });
@@ -680,9 +707,25 @@ const deleteMutation = useMutation({
           <div><dt class="text-faint">服务器地址</dt><dd class="mt-0.5 font-mono">{{ exitsView?.public_ip || "本机地址" }}</dd></div>
           <div><dt class="text-faint">内部端口</dt><dd class="tnum mt-0.5">{{ socksDetail.exit.port || "—" }}</dd></div>
           <div><dt class="text-faint">外部端口</dt><dd class="tnum mt-0.5">{{ socksDetail.exit.public_socks?.port || "未开启" }}</dd></div>
-          <div><dt class="text-faint">账号</dt><dd class="mt-0.5 break-all font-mono">{{ socksDetail.exit.socks_user || "—" }}</dd></div>
-          <div><dt class="text-faint">口令</dt><dd class="mt-0.5 break-all font-mono">{{ socksDetail.exit.socks_pass || "—" }}</dd></div>
         </dl>
+
+        <section class="rounded-lg border border-line p-3">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <h3 class="text-xs font-semibold text-ink">SOCKS5 凭据</h3>
+            <span class="text-[10px] text-faint">两项留空保存会随机重置</span>
+          </div>
+          <div class="grid gap-2 sm:grid-cols-2">
+            <label class="block">
+              <span class="mb-1 block text-[11px] text-faint">账号</span>
+              <input v-model="socksUser" name="socks-user" autocomplete="off" class="h-8 w-full rounded-md border border-line-strong bg-surface px-2 font-mono text-xs outline-none focus:border-accent" />
+            </label>
+            <label class="block">
+              <span class="mb-1 block text-[11px] text-faint">口令</span>
+              <input v-model="socksPass" name="socks-pass" autocomplete="off" class="h-8 w-full rounded-md border border-line-strong bg-surface px-2 font-mono text-xs outline-none focus:border-accent" />
+            </label>
+          </div>
+          <UiButton size="sm" class="mt-2" :loading="socksCredMutation.isPending.value" @click="socksCredMutation.mutate()">保存凭据</UiButton>
+        </section>
 
         <div class="space-y-2">
           <div class="flex items-center justify-between gap-2">

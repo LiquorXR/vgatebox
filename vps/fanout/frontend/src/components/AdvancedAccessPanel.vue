@@ -73,6 +73,7 @@ function bindLabel(inbound: Inbound): string {
 function invalidate(): void {
   void queryClient.invalidateQueries({ queryKey: keys.inbounds });
   void queryClient.invalidateQueries({ queryKey: keys.exits });
+  void queryClient.invalidateQueries({ queryKey: keys.console });
 }
 
 const bindMutation = useMutation({
@@ -258,6 +259,31 @@ const clientAddMutation = useMutation({
   onError: (error) => toastError(error, "添加客户端失败"),
 });
 
+const cloneMutation = useMutation({
+  mutationFn: () => {
+    if (!detail.value) throw new Error("入口不存在");
+    return post(`api/xui/clone${queryString({ id: detail.value.id })}`, {});
+  },
+  onSuccess: (value) => {
+    const created = (value as { created?: number[] }).created?.length || 0;
+    toast(`已创建 ${created} 个接入入口`, { tone: "success" });
+    void refreshDetail();
+    invalidate();
+  },
+  onError: (error) => toastError(error, "复制入口失败"),
+});
+
+function cloneInbound(inbound: InboundDetail) {
+  ask(
+    "复制到所有就绪出口",
+    `以 ${rowName(inbound)} 为模板，为所有已就绪出口各创建一个接入入口。已有入口不会被删除。`,
+    async () => {
+      await cloneMutation.mutateAsync();
+    },
+    "复制",
+  );
+}
+
 // Destructive confirmation
 const confirmOpen = ref(false);
 const confirmBusy = ref(false);
@@ -294,6 +320,25 @@ function deleteInbound(inbound: Inbound) {
     toast("入口已删除", { tone: "success" });
     invalidate();
   }, "删除");
+}
+
+function deleteManagedExit(inbound: Inbound) {
+  const owner = ownerOf(inbound);
+  if (!owner) {
+    toast("找不到这个自动入口对应的出口", { tone: "error" });
+    return;
+  }
+  ask(
+    "删除自动出口",
+    `删除 ${exitName(owner)} 及其自动入口？目标数量会自动减少 1，其他出口编号和端口保持不变。`,
+    async () => {
+      await post("api/console/slot/delete", { slot: owner.slot });
+      if (detail.value?.id === inbound.id) detailOpen.value = false;
+      toast("自动出口已删除", { tone: "success" });
+      invalidate();
+    },
+    "删除出口",
+  );
 }
 
 function resetClient(email: string) {
@@ -448,10 +493,12 @@ const createSecurityOptions = computed(() =>
                   >
                     {{ inbound.enable ? "停用" : "启用" }}
                   </UiButton>
-                  <UiButton v-if="!inbound.managed_slot" size="sm" variant="ghost" @click="deleteInbound(inbound)">
+                  <UiButton v-if="inbound.managed_slot" size="sm" variant="ghost" @click="deleteManagedExit(inbound)">
+                    <Trash2 :size="13" />删除出口
+                  </UiButton>
+                  <UiButton v-else size="sm" variant="ghost" @click="deleteInbound(inbound)">
                     <Trash2 :size="13" />删除
                   </UiButton>
-                  <span v-else class="self-center text-[10px] text-faint">随出口维护</span>
                 </div>
               </td>
             </tr>
@@ -534,10 +581,14 @@ const createSecurityOptions = computed(() =>
           </div>
         </section>
 
-        <div v-if="!detail.managed_slot" class="border-t border-line pt-3">
-          <UiButton variant="danger" size="sm" @click="deleteInbound(detail)"><Trash2 :size="13" />删除这个入口</UiButton>
+        <div class="flex flex-wrap items-center gap-2 border-t border-line pt-3">
+          <UiButton size="sm" :loading="cloneMutation.isPending.value" @click="cloneInbound(detail)">复制到所有就绪出口</UiButton>
+          <UiButton v-if="!detail.managed_slot" variant="danger" size="sm" @click="deleteInbound(detail)"><Trash2 :size="13" />删除这个入口</UiButton>
         </div>
-        <p v-else class="border-t border-line pt-3 text-[11px] text-faint">自动入口由出口数量维护；请在出口页减少目标数量或删除对应出口。</p>
+        <div v-if="detail.managed_slot" class="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+          <p class="text-[11px] text-faint">删除自动出口会同时把控制台目标数量减少 1；其他出口编号不变。</p>
+          <UiButton variant="danger" size="sm" @click="deleteManagedExit(detail)"><Trash2 :size="13" />删除出口</UiButton>
+        </div>
       </div>
     </DialogShell>
 

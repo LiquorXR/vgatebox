@@ -157,25 +157,22 @@ func main() {
 	mux.HandleFunc("/", handleIndex)
 	console.routes(mux)
 	mux.HandleFunc("/api/nodes", apiNodes(mgr))
-	mux.HandleFunc("/api/tunnels", apiTunnels(mgr))
-	mux.HandleFunc("/api/start", apiStart(mgr))
 	mux.HandleFunc("/api/stop", apiStop(mgr))
 	mux.HandleFunc("/api/swap", apiSwap(mgr))
-	mux.HandleFunc("/api/replace", apiReplace(mgr))
 	mux.HandleFunc("/api/slot/policy", apiSlotPolicy(mgr))
 	mux.HandleFunc("/api/slot/policy/rollback", apiRollbackSlotPolicy(mgr))
 	mux.HandleFunc("/api/config/rollback", apiRollbackNative(mgr))
 	mux.HandleFunc("/api/slot/resume", apiSlotLifecycle(mgr, false))
+	// Old compatibility route: it deletes the Slot without updating the
+	// console target. The new console uses /api/console/slot/delete instead.
 	mux.HandleFunc("/api/slot/delete", apiSlotLifecycle(mgr, true))
 	mux.HandleFunc("/api/cred", apiCred(mgr))
-	mux.HandleFunc("/api/refresh", apiRefresh(mgr))
 	mux.HandleFunc("/api/regions", apiRegions(mgr))
 	mux.HandleFunc("/api/provision", apiProvision(mgr))
 	mux.HandleFunc("/api/jobs", apiJobs(mgr))
 	mux.HandleFunc("/api/jobs/dismiss", apiJobDismiss(mgr))
 	mux.HandleFunc("/api/exits", apiExits(mgr))
 	mux.HandleFunc("/api/export/xray", apiExportXray(mgr))
-	mux.HandleFunc("/api/xui", apiXUIStatus)
 	mux.HandleFunc("/api/xui/inbounds", apiXUIInbounds(mgr))
 	mux.HandleFunc("/api/xui/bind", apiXUIBind(mgr))
 	mux.HandleFunc("/api/xui/clone", apiXUIClone(mgr))
@@ -262,35 +259,6 @@ func apiNodes(m *Manager) http.HandlerFunc {
 	}
 }
 
-func apiTunnels(m *Manager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, m.Tunnels())
-	}
-}
-
-func apiStart(m *Manager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		host := r.URL.Query().Get("host")
-		if host == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "缺少 host 参数"})
-			return
-		}
-		nodes, _ := m.Nodes()
-		for _, n := range nodes {
-			if n.HostName == host {
-				t, err := m.Start(n)
-				if err != nil {
-					writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-					return
-				}
-				writeJSON(w, http.StatusOK, t)
-				return
-			}
-		}
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "节点不存在，可能列表已过期"})
-	}
-}
-
 func apiStop(m *Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		slot, err := strconv.Atoi(r.URL.Query().Get("slot"))
@@ -303,21 +271,6 @@ func apiStop(m *Manager) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"ok": "已停止"})
-	}
-}
-
-func apiRefresh(m *Manager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		n, err := m.RefreshNodes()
-		if err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]int{"count": n})
 	}
 }
 
@@ -337,27 +290,7 @@ func apiSwap(m *Manager) http.HandlerFunc {
 	}
 }
 
-func apiReplace(m *Manager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		slot, err := strconv.Atoi(r.URL.Query().Get("slot"))
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "slot 参数无效"})
-			return
-		}
-		host := strings.TrimSpace(r.URL.Query().Get("host"))
-		if host == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "缺少 host 参数"})
-			return
-		}
-		if err := m.SwapTo(slot, host); err != nil {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"ok": "正在切换到指定节点"})
-	}
-}
-
-// apiRegions 给新建向导用：各地区还剩多少空闲节点。
+// apiRegions 是旧新建向导的兼容接口；新控制台读取 /api/console 的 regions 字段。
 func apiRegions(m *Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, m.Regions())
@@ -482,34 +415,6 @@ func apiJobDismiss(m *Manager) http.HandlerFunc {
 		m.jobs.Dismiss(r.URL.Query().Get("id"))
 		writeJSON(w, http.StatusOK, map[string]string{"ok": "已关闭"})
 	}
-}
-
-// apiXUIStatus 报告当前的节点链接后端：接管的 3x-ui，或 fanout 自己跑的 Xray。
-func apiXUIStatus(w http.ResponseWriter, r *http.Request) {
-	p, err := openPanel()
-	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"available": false,
-			"reason":    err.Error(),
-		})
-		return
-	}
-	// xray-cf-lite 模式下节点由 xray-cf-lite 管，fanout 只改路由，不提供新建入口。
-	_, isXCL := p.(*XCL)
-	resp := map[string]any{
-		"available": true,
-		"kind":      p.Kind(),
-		"describe":  p.Describe(),
-		// 自建/3x-ui 能建入站；xray-cf-lite 只能改路由
-		"can_create": !isXCL,
-	}
-	if x, ok := p.(*XUI); ok {
-		resp["port"] = x.Port
-		resp["base_path"] = x.BasePath
-		resp["scheme"] = x.Scheme
-		resp["host"] = x.Host
-	}
-	writeJSON(w, http.StatusOK, resp)
 }
 
 // apiPanelMode 读取/切换节点链接后端。

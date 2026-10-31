@@ -94,6 +94,17 @@ Vite 默认把 `/api`、`/sub`、`/login` 代理到 `http://127.0.0.1:8899`。�
 - 接入：按 tab 启用对应接口。
 - 窗口失焦时 TanStack Query 停止后台轮询。
 
+旧面板使用过、新控制台补充或合并的接口：
+
+- `POST /api/cred?slot=N&user=&pass=`: 「接入 → VPS SOCKS5 → 详情」编辑凭据；两项都留空表示随机重置。
+- `POST /api/console/slot/delete`: body `{"slot": N}`，删除指定自动出口并把控制台目标数量减 1，其他 Slot 编号不变。出口详情和「高级接入」的自动入口都使用该接口；旧 `/api/slot/delete` 只保留兼容，新 UI 不再调用。
+- `GET /api/console` 的 `regions` 字段：合并旧 `/api/regions` 的候选库存统计。出口目标弹窗显示各国家空闲节点数、最佳延迟和最佳速度，并明确标注这是候选库存而不是已验证出口。旧路由保留给外部调用。
+- `POST /api/xui/clone?id=N`: 「高级接入 → 详情」以当前入口为模板，为所有已就绪出口创建入口。
+
+出口数量减少仍通过 `POST /api/console/target`。两个操作的区别：调整数量不指定删除哪个 Slot；删除自动出口会先固定要删除的编号，再减少目标数量。若仍有等待中的出口，删除后目标数仍可能由其他候选补位。
+
+已移除与新入口重叠的旧路由：`/api/tunnels`（改用 `/api/exits`）、`/api/start` 和 `/api/replace`（改用 `/api/console/target` 与 `/api/swap`）、`/api/refresh`（改用 `/api/console/refresh`）、`/api/xui` 状态（改用 `/api/panel/mode`）。底层 Manager 方法仍保留给控制台内部使用。
+
 后续可把 `console` 改为 ETag 或 SSE；当前先保持接口兼容。
 
 ## 测试
@@ -107,7 +118,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Vitest 覆盖纯逻辑、API 客户端、主题、状态/订阅/自动化格式化、共享组件和登录页；Playwright 覆盖根路径、出口目标弹窗、订阅格式/二维码、节点筛选、接入页签、主题持久化、移动端无横向溢出和登录错误。旧的 `tests/test_console_*.mjs` 已随旧控制台删除。
+Vitest 覆盖纯逻辑、API 客户端、主题、状态/订阅/自动化格式化、共享组件和登录页；Playwright 覆盖根路径、出口目标弹窗与地区库存、删除自动出口、SOCKS5 凭据编辑、入口复制、订阅格式/二维码、节点筛选、接入页签、主题持久化、移动端无横向溢出和登录错误。旧的 `tests/test_console_*.mjs` 已随旧控制台删除。
 
 ## 已完成切换
 

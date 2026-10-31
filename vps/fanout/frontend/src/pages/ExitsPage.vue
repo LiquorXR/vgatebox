@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeftRight, ChevronRight, Pause, Play, RefreshCw, RotateCcw, Search, ShieldCheck, SlidersHorizontal, X } from "@lucide/vue";
+import { ArrowLeftRight, ChevronRight, Pause, Play, RefreshCw, RotateCcw, Search, ShieldCheck, SlidersHorizontal, Trash2, X } from "@lucide/vue";
 import { useMutation, useQueryClient } from "@tanstack/vue-query";
 import { computed, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -216,6 +216,20 @@ const swapMutation = useMutation({
   onError: (error) => toastError(error, "更换节点失败"),
 });
 
+const deleteExitConfirmOpen = ref(false);
+const deleteExitMutation = useMutation({
+  mutationFn: (slot: number) => post("api/console/slot/delete", { slot }),
+  onSuccess: () => {
+    deleteExitConfirmOpen.value = false;
+    drawerOpen.value = false;
+    void router.replace({ path: "/exits" });
+    toast("出口已删除，目标数量已减少 1", { tone: "success" });
+    void queryClient.invalidateQueries({ queryKey: keys.exits });
+    void queryClient.invalidateQueries({ queryKey: keys.console });
+  },
+  onError: (error) => toastError(error, "删除出口失败"),
+});
+
 // Drawer
 const drawerOpen = ref(false);
 const activeSlot = ref(0);
@@ -235,6 +249,49 @@ const countryOptions = computed(() => {
   if (policyForm.country) map.set(policyForm.country, countryName(policyForm.country));
   return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "zh-CN"));
 });
+
+const targetRegionOptions = computed(() => {
+  const stats = summary.value?.regions || [];
+  const options = stats.length
+    ? stats.map((region) => ({
+        code: region.code,
+        name: region.name || countryName(region.code),
+        available: region.available,
+        best_ping: region.best_ping,
+        best_speed_mbps: region.best_speed_mbps,
+      }))
+    : countryOptions.value.map(([code, name]) => ({
+        code,
+        name,
+        available: 0,
+        best_ping: 0,
+        best_speed_mbps: 0,
+      }));
+  if (targetCountry.value && !options.some((region) => region.code === targetCountry.value)) {
+    options.push({
+      code: targetCountry.value,
+      name: countryName(targetCountry.value),
+      available: 0,
+      best_ping: 0,
+      best_speed_mbps: 0,
+    });
+  }
+  return options;
+});
+
+function regionOptionLabel(region: {
+  name: string;
+  code: string;
+  available: number;
+  best_ping: number;
+  best_speed_mbps: number;
+}): string {
+  let label = `${region.name}（${region.code}）`;
+  if (region.available > 0) label += ` · ${region.available} 个空闲`;
+  if (region.best_ping > 0) label += ` · ${region.best_ping}ms`;
+  if (region.best_speed_mbps > 0) label += ` · ${region.best_speed_mbps}Mbps`;
+  return label;
+}
 
 function populateDrawer(exit: Exit | null) {
   for (const key of Object.keys(nameEdits)) delete nameEdits[Number(key)];
@@ -524,9 +581,14 @@ const statusOptions = [
         </label>
         <div class="grid gap-3 sm:grid-cols-2">
           <label class="block">
-            <span class="mb-1 block text-xs font-medium text-ink">新增出口国家代码</span>
-            <input v-model="targetCountry" name="target-country" maxlength="2" placeholder="例如 JP、KR、US" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm uppercase outline-none focus:border-accent" />
-            <span class="mt-1 block text-[11px] text-faint">留空自动选择。</span>
+            <span class="mb-1 block text-xs font-medium text-ink">新增出口国家</span>
+            <select v-model="targetCountry" name="target-country" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent">
+              <option value="">自动选择</option>
+              <option v-for="region in targetRegionOptions" :key="region.code" :value="region.code">
+                {{ regionOptionLabel(region) }}
+              </option>
+            </select>
+            <span class="mt-1 block text-[11px] text-faint">空闲数量是当前候选库存，不代表已通过检测。</span>
           </label>
           <label class="block">
             <span class="mb-1 block text-xs font-medium text-ink">REALITY 目标域名</span>
@@ -552,6 +614,16 @@ const statusOptions = [
       :busy="targetMutation.isPending.value"
       @update:open="confirmTargetOpen = $event"
       @confirm="pendingSave?.()"
+    />
+
+    <ConfirmDialog
+      :open="deleteExitConfirmOpen"
+      title="删除出口"
+      description="删除后目标数量会减少 1，其他出口编号和端口保持不变。该出口的客户端连接和订阅入口会立即失效。"
+      confirm-label="删除出口"
+      :busy="deleteExitMutation.isPending.value"
+      @update:open="deleteExitConfirmOpen = $event"
+      @confirm="selectedExit && deleteExitMutation.mutate(selectedExit.slot)"
     />
 
     <ConfirmDialog
@@ -618,6 +690,9 @@ const statusOptions = [
             @click="rollbackMutation.mutate(selectedExit.slot)"
           >
             <RotateCcw :size="14" />回滚策略
+          </UiButton>
+          <UiButton size="sm" variant="danger" @click="deleteExitConfirmOpen = true">
+            <Trash2 :size="14" />删除出口
           </UiButton>
         </div>
 

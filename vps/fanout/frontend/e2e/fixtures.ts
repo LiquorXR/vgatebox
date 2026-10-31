@@ -259,6 +259,11 @@ const consoleData = {
   check: null,
   check_settings: { parallelism: 2 },
   results,
+  regions: [
+    { code: "JP", name: "日本", available: 12, best_ping: 35, best_speed_mbps: 48.5 },
+    { code: "KR", name: "韩国", available: 7, best_ping: 41, best_speed_mbps: 33.2 },
+    { code: "US", name: "美国", available: 3, best_ping: 0, best_speed_mbps: 19.7 },
+  ],
   memory: { MemTotal: 5368709120, MemAvailable: 3120000000 },
 };
 
@@ -413,6 +418,25 @@ export async function mockApi(page: Page): Promise<void> {
 
     if (path === "/api/console/qr") {
       return route.fulfill({ status: 200, contentType: "image/png", body: png });
+    }
+
+    if (path === "/api/cred") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          user: url.searchParams.get("user") || "generated-user",
+          pass: url.searchParams.get("pass") || "generated-pass",
+        }),
+      });
+    }
+
+    if (path === "/api/xui/clone") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ created: [31002, 31003] }),
+      });
     }
 
     const payload = payloads[path];

@@ -39,14 +39,32 @@ test("exit drawer keeps policy edits and offers a node swap", async ({ page }) =
   await expect(page.getByText("正在更换节点；出口编号和端口保持不变")).toBeVisible();
 });
 
-test("target dialog saves and closes", async ({ page }) => {
+test("target dialog shows region inventory and saves", async ({ page }) => {
   await page.goto("/#/exits");
   await page.getByRole("button", { name: "调整数量" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
+  const japan = page.locator('select[name="target-country"] option').filter({ hasText: "日本（JP）" });
+  await expect(japan).toContainText("12 个空闲");
+  await expect(japan).toContainText("35ms");
+  await expect(japan).toContainText("48.5Mbps");
   await page.locator('input[name="target-count"]').fill("5");
   await page.getByRole("button", { name: "保存并应用" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByText("目标数量已保存，正在按策略连接")).toBeVisible();
+});
+
+test("exit deletion reduces the target count", async ({ page }) => {
+  await page.goto("/#/exits?slot=1");
+  await expect(page.getByRole("dialog").getByText("日本 · 01", { exact: false })).toBeVisible();
+  const request = page.waitForRequest(
+    (req) => req.url().includes("/api/console/slot/delete") && req.method() === "POST",
+  );
+  await page.getByRole("dialog").getByRole("button", { name: "删除出口" }).click();
+  const confirm = page.getByRole("dialog").filter({ hasText: "删除后目标数量会减少 1" });
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole("button", { name: "删除出口" }).click();
+  expect((await request).postDataJSON()).toEqual({ slot: 1 });
+  await expect(page.getByText("出口已删除，目标数量已减少 1")).toBeVisible();
 });
 
 test("subscription format and QR update", async ({ page }) => {
@@ -88,13 +106,57 @@ test("access tabs render SSTP and third-party resources", async ({ page }) => {
   await expect(page.locator('select').filter({ hasText: "VLESS" }).first()).toBeVisible();
   await page.getByRole("button", { name: "取消" }).click();
 
-  await page.getByRole("button", { name: "删除" }).first().click();
+  await page
+    .getByRole("row")
+    .filter({ hasText: "host-direct" })
+    .getByRole("button", { name: "删除", exact: true })
+    .click();
   await expect(page.getByText("删除接入入口")).toBeVisible();
   await page.getByRole("button", { name: "取消" }).click();
 
   await page.getByRole("button", { name: "详情" }).first().click();
   await expect(page.getByText("客户端 · 1")).toBeVisible();
   await expect(page.getByText("client@example")).toBeVisible();
+
+  const cloneRequest = page.waitForRequest(
+    (req) => req.url().includes("/api/xui/clone") && req.url().includes("id=101"),
+  );
+  await page.getByRole("button", { name: "复制到所有就绪出口" }).click();
+  await expect(page.getByText("已有入口不会被删除", { exact: false })).toBeVisible();
+  await page.getByRole("dialog").filter({ hasText: "已有入口不会被删除" }).getByRole("button", { name: "复制" }).click();
+  await cloneRequest;
+  await expect(page.getByText("已创建 2 个接入入口")).toBeVisible();
+});
+
+test("managed exit deletion uses the console target API", async ({ page }) => {
+  await page.goto("/#/access");
+  await page.getByRole("tab", { name: /高级接入/ }).click();
+  const request = page.waitForRequest(
+    (req) => req.url().includes("/api/console/slot/delete") && req.method() === "POST",
+  );
+  await page.getByRole("row").filter({ hasText: "自动入口 · in-1" }).getByRole("button", { name: "删除出口" }).click();
+  const confirm = page.getByRole("dialog").filter({ hasText: "目标数量会自动减少 1" });
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole("button", { name: "删除出口" }).click();
+  expect((await request).postDataJSON()).toEqual({ slot: 1 });
+  await expect(page.getByText("自动出口已删除")).toBeVisible();
+});
+
+test("socks credentials can be edited from the access drawer", async ({ page }) => {
+  await page.goto("/#/access");
+  await page.getByRole("button", { name: "详情" }).first().click();
+  await expect(page.getByText("SOCKS5 凭据")).toBeVisible();
+  await page.locator('input[name="socks-user"]').fill("rotated-user");
+  await page.locator('input[name="socks-pass"]').fill("rotated-pass");
+  const request = page.waitForRequest(
+    (req) => req.url().includes("/api/cred") && req.method() === "POST",
+  );
+  await page.getByRole("button", { name: "保存凭据" }).click();
+  const url = new URL((await request).url());
+  expect(url.searchParams.get("slot")).toBe("1");
+  expect(url.searchParams.get("user")).toBe("rotated-user");
+  expect(url.searchParams.get("pass")).toBe("rotated-pass");
+  await expect(page.getByText("SOCKS5 凭据已保存")).toBeVisible();
 });
 
 test("theme choice persists across reloads", async ({ page }) => {
