@@ -38,8 +38,8 @@ if sys.argv[1] == 'bootstrap':
         c.request('GET', base+'/api/exits', headers={'Cookie':cookie})
         r=c.getresponse(); data=json.loads(r.read())
         exits=data.get('exits',[])
-        if summary['target']==16 and summary['allocated']==16 and len(exits)==16 and all(e['inbounds'] for e in exits): break
-        assert time.monotonic()<deadline, 'Pool refresh did not automatically create and bind 16 exits'
+        if summary['target']==6 and summary['allocated']==6 and len(exits)==6 and all(e['inbounds'] for e in exits): break
+        assert time.monotonic()<deadline, 'Pool refresh did not automatically create and bind 6 exits'
         time.sleep(.5)
     assert all(e['status']!='up' for e in exits), 'Synthetic candidates were published as usable'
     # Preserve and test stopped Slot identity while avoiding synthetic retries.
@@ -52,7 +52,7 @@ if sys.argv[1] == 'bootstrap':
     record.write_text(json.dumps(state))
     identities=[{k:e[k] for k in ['slot','port','socks_user','socks_pass','policy']} for e in exits]
     marker=Path('/tmp/vgatebox-ci-auto-exits.json');marker.write_text(json.dumps(identities));marker.chmod(0o600)
-    c.close();print('PASS: pool refresh automatically created 16 bound, unverified exits without target submission');sys.exit(0)
+    c.close();print('PASS: pool refresh automatically created 6 bound, unverified exits without target submission');sys.exit(0)
 if sys.argv[1] == 'compare':
     identities=[{k:e[k] for k in ['slot','port','socks_user','socks_pass','policy']} for e in data['exits']]
     assert identities==json.loads(Path('/tmp/vgatebox-ci-auto-exits.json').read_text()), 'Update changed auto Slot identities'
@@ -85,7 +85,7 @@ if sys.argv[1] == 'save':
     c.request('GET', base+'/api/console', headers={'Cookie': cookie})
     r = c.getresponse(); summary = json.loads(r.read())
     assert r.status == 200 and summary['candidates'] == 0 and not summary['pool_generated_at']
-    assert summary['suggested_target']==16 and not summary['target_configured']
+    assert summary['suggested_target']==6 and not summary['target_configured']
     c.request('GET',base+'/api/console/automation',headers={'Cookie':cookie})
     r=c.getresponse();autom=json.loads(r.read());assert r.status==200
     assert autom['settings']=={'refresh_enabled':True,'refresh_minutes':60,'check_enabled':True,'check_minutes':60}

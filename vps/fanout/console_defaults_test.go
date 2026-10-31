@@ -26,7 +26,7 @@ func TestConsoleDefaultTargetWaitsForPoolThenAllocatesOnce(t *testing.T) {
 		t.Fatal("missing pool must not create or publish exits", err)
 	}
 	c.m.nodes = []Node{{HostName: "fixture.example.invalid", CountryCode: "US", Config: "fixture"}}
-	if err := c.reconcile(); err != nil || c.plan == nil || c.plan.Count != 16 || len(c.m.Tunnels()) != 16 {
+	if err := c.reconcile(); err != nil || c.plan == nil || c.plan.Count != 6 || len(c.m.Tunnels()) != 6 {
 		t.Fatal("pool did not initialize default target", err)
 	}
 	if c.plan.Policy.Country != "" || !containsFold(c.plan.Policy.AllowedIPTypes, "unknown") {
@@ -35,7 +35,7 @@ func TestConsoleDefaultTargetWaitsForPoolThenAllocatesOnce(t *testing.T) {
 	before := c.m.Tunnels()
 	if err := c.reconcile(); err != nil || !reflect.DeepEqual(before, c.m.Tunnels()) { t.Fatal("duplicate initialization", err) }
 	reloaded, err := newConsole(NewManager(maximumSlots, c.m.workDir))
-	if err != nil || reloaded.plan == nil || reloaded.plan.Count != 16 { t.Fatal("default plan not persisted", err) }
+	if err != nil || reloaded.plan == nil || reloaded.plan.Count != 6 { t.Fatal("default plan not persisted", err) }
 	reloaded.cancel()
 }
 
@@ -61,7 +61,7 @@ func TestConsoleDefaultTargetPreservesZeroCustomAndLegacySlots(t *testing.T) {
 func TestConsoleDefaultTargetCapacityAndNonNativeDoNotMutate(t *testing.T) {
 	c := defaultTargetFixture(t)
 	c.m.nodes = []Node{{HostName: "candidate"}}
-	c.m.maxSlots = 8
+	c.m.maxSlots = 4
 	if c.reconcile() == nil || c.plan != nil || len(c.m.Tunnels()) != 0 { t.Fatal("capacity silently reduced or overrun") }
 	panelState.mu.Lock(); panelState.forced = "3x-ui"; panelState.mu.Unlock()
 	c.m.maxSlots = maximumSlots
@@ -83,7 +83,7 @@ func TestConsoleDefaultTargetPoolRefreshWakesWatch(t *testing.T) {
 	if _, err := c.m.RefreshNodes(); err != nil { t.Fatal(err) }
 	select {
 	case n := <-bound:
-		if n != 16 { t.Fatal("refresh did not bind default exits") }
+		if n != 6 { t.Fatal("refresh did not bind default exits") }
 	case <-time.After(2*time.Second):
 		t.Fatal("refresh waited for polling instead of waking reconciliation")
 	}

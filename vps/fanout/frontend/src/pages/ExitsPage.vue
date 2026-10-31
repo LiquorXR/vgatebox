@@ -127,7 +127,7 @@ function checkItemState(exit: Exit): { label: string; running: boolean } | null 
 
 // Target dialog
 const targetOpen = ref(false);
-const targetCount = ref(16);
+const targetCount = ref(6);
 const targetCountry = ref("");
 const targetServer = ref("www.tesla.com");
 const confirmTargetOpen = ref(false);

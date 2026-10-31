@@ -2,7 +2,7 @@ package main
 
 import "fmt"
 
-const defaultExitTarget = 16
+const defaultExitTarget = 6
 
 // Caller holds targetMu. Run after state restore, and only when a candidate
 // pool exists. Existing plans and legacy Slots represent user intent.
@@ -28,7 +28,7 @@ func (c *Console) initializeDefaultTarget() error {
 		}
 	}
 	if err := validateExitPlan(&p, c.m.maxSlots); err != nil {
-		return fmt.Errorf("默认 16 个出口无法初始化: %w", err)
+		return fmt.Errorf("默认 %d 个出口无法初始化: %w", defaultExitTarget, err)
 	}
 	return c.savePlan(p)
 }

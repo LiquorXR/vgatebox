@@ -448,9 +448,10 @@ const createSecurityOptions = computed(() =>
                   >
                     {{ inbound.enable ? "停用" : "启用" }}
                   </UiButton>
-                  <UiButton v-if="!inbound.managed_slot && !inbound.host_direct" size="sm" variant="ghost" @click="deleteInbound(inbound)">
-                    <Trash2 :size="13" />
+                  <UiButton v-if="!inbound.managed_slot" size="sm" variant="ghost" @click="deleteInbound(inbound)">
+                    <Trash2 :size="13" />删除
                   </UiButton>
+                  <span v-else class="self-center text-[10px] text-faint">随出口维护</span>
                 </div>
               </td>
             </tr>
@@ -533,9 +534,10 @@ const createSecurityOptions = computed(() =>
           </div>
         </section>
 
-        <div v-if="!detail.managed_slot && !detail.host_direct" class="border-t border-line pt-3">
+        <div v-if="!detail.managed_slot" class="border-t border-line pt-3">
           <UiButton variant="danger" size="sm" @click="deleteInbound(detail)"><Trash2 :size="13" />删除这个入口</UiButton>
         </div>
+        <p v-else class="border-t border-line pt-3 text-[11px] text-faint">自动入口由出口数量维护；请在出口页减少目标数量或删除对应出口。</p>
       </div>
     </DialogShell>
 

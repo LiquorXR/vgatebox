@@ -212,7 +212,7 @@ const consoleData = {
   capacity: 40,
   target: 4,
   target_configured: true,
-  suggested_target: 16,
+  suggested_target: 6,
   allocated: 4,
   ready: 2,
   stopped: 0,

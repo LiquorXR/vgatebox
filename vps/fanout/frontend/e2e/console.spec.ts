@@ -88,6 +88,10 @@ test("access tabs render SSTP and third-party resources", async ({ page }) => {
   await expect(page.locator('select').filter({ hasText: "VLESS" }).first()).toBeVisible();
   await page.getByRole("button", { name: "取消" }).click();
 
+  await page.getByRole("button", { name: "删除" }).first().click();
+  await expect(page.getByText("删除接入入口")).toBeVisible();
+  await page.getByRole("button", { name: "取消" }).click();
+
   await page.getByRole("button", { name: "详情" }).first().click();
   await expect(page.getByText("客户端 · 1")).toBeVisible();
   await expect(page.getByText("client@example")).toBeVisible();
