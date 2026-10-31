@@ -1,0 +1,22 @@
+name = "vpngate-control"
+main = "worker.mjs"
+compatibility_date = "2026-10-09"
+workers_dev = true
+
+[observability]
+enabled = false
+
+[[kv_namespaces]]
+binding = "MANIFEST"
+id = "replace-with-kv-namespace-id"
+
+# Plain runtime variables. Keep real values local when generating the deploy
+# file; this example intentionally contains placeholders only.
+[vars]
+DATA_PLANE_BASE_PATH = "/"
+VLESS_UUID = "replace-with-uuid-v4"
+ADMIN_TOKEN = "replace-with-admin-token"
+SUB_TOKEN = "replace-with-subscription-token"
+VPN_USERNAME = "vpn"
+VPN_PASSWORD = "vpn"
+CHECKER_TOKEN = "replace-with-checker-token"

@@ -1,0 +1,17 @@
+[Unit]
+Description=vgatebox exit manager and subscription
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/vgatebox-fanout
+ExecStart=/usr/local/bin/vgatebox-fanout -dir /var/lib/vgatebox/fanout -panel native
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=mixed
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

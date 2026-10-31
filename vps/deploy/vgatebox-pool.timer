@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh vgatebox candidate pool on configured schedule
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=30min
+RandomizedDelaySec=30
+Persistent=true
+
+[Install]
+WantedBy=timers.target

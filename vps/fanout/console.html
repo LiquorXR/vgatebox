@@ -1,0 +1,3815 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>vgatebox · 控制台</title>
+    <style>
+      :root {
+        --bg: #f4f6f8;
+        --card: #fff;
+        --text: #182c34;
+        --muted: #72828c;
+        --line: #e4ebee;
+        --accent: #117b68;
+        --soft: #e7f4ef;
+        --amber: #a77317;
+        --red: #b34d4d;
+        --shadow: 0 5px 24px #1b354506;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.6 -apple-system,
+          BlinkMacSystemFont,
+          "PingFang SC",
+          "Microsoft YaHei",
+          sans-serif;
+      }
+      body.dark {
+        --bg: #101b22;
+        --card: #192830;
+        --text: #e6edf0;
+        --muted: #98aab5;
+        --line: #2c3d45;
+        --accent: #75d5b9;
+        --soft: #203f39;
+        --amber: #eac17b;
+        --red: #ef9898;
+        --shadow: none;
+      }
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+      button,
+      a,
+      input,
+      select,
+      textarea {
+        outline-offset: 4px;
+      }
+      button {
+        cursor: pointer;
+        border: 1px solid var(--line);
+        background: var(--card);
+        color: var(--text);
+        border-radius: 9px;
+        padding: 9px 15px;
+        transition: 0.15s;
+      }
+      button:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--card);
+      }
+      body.dark .primary {
+        color: #102b24;
+      }
+      .primary:hover {
+        opacity: 0.85;
+        color: var(--card);
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      input,
+      select,
+      textarea {
+        color: var(--text);
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 12px;
+        max-width: 100%;
+      }
+      input[type="checkbox"] {
+        accent-color: var(--accent);
+        width: 16px;
+        height: 16px;
+        vertical-align: middle;
+      }
+      textarea {
+        width: 100%;
+        resize: vertical;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+      h1 {
+        font-size: 28px;
+        letter-spacing: -0.7px;
+      }
+      h2 {
+        font-size: 17px;
+      }
+      h3 {
+        font-size: 15px;
+      }
+      .muted,
+      small {
+        color: var(--muted);
+      }
+      small {
+        font-size: 12px;
+      }
+      .sidebar {
+        position: fixed;
+        inset: 0 auto 0 0;
+        width: 224px;
+        background: var(--card);
+        border-right: 1px solid var(--line);
+        padding: 30px 20px;
+        display: flex;
+        flex-direction: column;
+        z-index: 4;
+      }
+      .brand {
+        display: flex;
+        gap: 11px;
+        align-items: center;
+        font-size: 19px;
+        font-weight: 750;
+        letter-spacing: -0.5px;
+      }
+      .mark {
+        display: grid;
+        place-items: center;
+        background: var(--accent);
+        color: var(--card);
+        width: 33px;
+        height: 33px;
+        border-radius: 11px;
+        font-size: 26px;
+        font-weight: 500;
+      }
+      .mark::before, .mark::after {
+        content: "";
+        grid-area: 1 / 1;
+        width: 17px;
+        height: 3px;
+        border-radius: 1px;
+        background: currentColor;
+        transform: rotate(45deg);
+      }
+      .mark::after { transform: rotate(-45deg); }
+      .sidebar nav {
+        margin-top: 50px;
+        display: grid;
+        gap: 8px;
+      }
+      .nav {
+        display: flex;
+        gap: 14px;
+        align-items: center;
+        text-align: left;
+        border: 0;
+        background: none;
+        padding: 12px 15px;
+        color: var(--muted);
+      }
+      .nav.active {
+        background: var(--soft);
+        color: var(--accent);
+        font-weight: 650;
+      }
+      .nav span:first-child {
+        font-size: 19px;
+        width: 22px;
+        text-align: center;
+      }
+      .sidefoot {
+        margin-top: auto;
+        font-size: 11px;
+        color: var(--muted);
+        padding: 18px 12px 0;
+        border-top: 1px solid var(--line);
+      }
+      .workspace {
+        margin-left: 224px;
+      }
+      .topbar {
+        height: 80px;
+        border-bottom: 1px solid var(--line);
+        padding: 0 40px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: var(--card);
+      }
+      .topbar .right,
+      .actions,
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .topbar .right {
+        gap: 18px;
+      }
+      .dot {
+        display: inline-block;
+        background: var(--accent);
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        margin-right: 7px;
+      }
+      .avatar {
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--soft);
+        color: var(--accent);
+        font-weight: 700;
+      }
+      main {
+        padding: 35px 40px 50px;
+        max-width: 1600px;
+        margin: auto;
+      }
+      .page {
+        display: none;
+      }
+      .page.active {
+        display: block;
+      }
+      .pagehead {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        margin-bottom: 27px;
+      }
+      .pagehead .actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .pagehead .actions button {
+        white-space: nowrap;
+      }
+      .pagehead p {
+        margin-top: 5px;
+        color: var(--muted);
+      }
+      .eyebrow {
+        font-size: 11px;
+        color: var(--accent);
+        font-weight: 700;
+        letter-spacing: 2px;
+        margin-bottom: 7px;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 18px;
+        margin-bottom: 30px;
+      }
+      .stat,
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+      }
+      .stat {
+        padding: 20px 23px;
+      }
+      .stat label {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .number {
+        font-size: 32px;
+        font-weight: 650;
+        line-height: 1.6;
+        letter-spacing: -1px;
+      }
+      .stat:first-child .number {
+        color: var(--accent);
+      }
+      .sectionhead {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: 25px 0 14px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+      }
+      .exit {
+        padding: 23px;
+      }
+      .exithead {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .country {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+      }
+      .flag {
+        font-size: 29px;
+      }
+      .badge {
+        border-radius: 6px;
+        padding: 3px 8px;
+        font-size: 11px;
+        background: var(--bg);
+        color: var(--muted);
+      }
+      .badge.up,
+      .badge.passed {
+        background: var(--soft);
+        color: var(--accent);
+      }
+      .badge.waiting_for_nodes,
+      .badge.blocked,
+      .badge.waiting,
+      .badge.starting,
+      .badge.running,
+      .badge.queued,
+      .badge.deferred,
+      .badge.stale,
+      .badge.expired {
+        color: var(--amber);
+      }
+      .check-spinner {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        vertical-align: -2px;
+        margin-right: 6px;
+        color: var(--accent);
+        animation: check-spin 0.8s linear infinite;
+      }
+      @keyframes check-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .check-spinner {
+          animation: none;
+        }
+      }
+      .parallel-setting {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .parallel-setting input {
+        width: 90px;
+      }
+      .badge.running,
+      .badge.submitting {
+        color: var(--accent);
+      }
+      .badge.failed,
+      .badge.error {
+        color: var(--red);
+      }
+      .ip {
+        font-size: 23px;
+        letter-spacing: 0.2px;
+        font-weight: 600;
+        margin: 21px 0 3px;
+        font-variant-numeric: tabular-nums;
+      }
+      .details {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 23px;
+        margin: 19px 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .details b {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .exitfoot {
+        border-top: 1px solid var(--line);
+        padding-top: 15px;
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+      }
+      .exitfoot button {
+        padding: 6px 10px;
+        font-size: 12px;
+      }
+      #managedThirdExits .exithead > div {
+        min-width: 0;
+      }
+      #managedThirdExits h2 {
+        overflow-wrap: anywhere;
+      }
+      #managedThirdExits .exithead > .badge {
+        flex-shrink: 0;
+        white-space: nowrap;
+      }
+      #managedDirectExit .exitfoot,
+      #managedThirdExits .exitfoot {
+        flex-wrap: wrap;
+      }
+      .bottomgrid {
+        display: grid;
+        grid-template-columns: 1.4fr 1fr;
+        gap: 18px;
+        margin-top: 22px;
+      }
+      .pad {
+        padding: 24px;
+      }
+      .start-steps { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 22px; }
+      .start-steps > span { color: var(--muted); }
+      .country-evidence { display: block; margin-top: 4px; }
+      .callout {
+        background: var(--soft);
+        border-color: transparent;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 20px;
+      }
+      .callout p {
+        margin: 8px 0 15px;
+        color: var(--muted);
+        max-width: 390px;
+      }
+      .ring {
+        font-size: 43px;
+        color: var(--accent);
+        padding: 0 10px;
+      }
+      .meter {
+        height: 7px;
+        background: var(--bg);
+        border-radius: 9px;
+        overflow: hidden;
+        margin: 20px 0 10px;
+      }
+      .meter span {
+        height: 100%;
+        display: block;
+        background: var(--accent);
+        border-radius: 9px;
+      }
+      .notice {
+        background: var(--soft);
+        color: var(--accent);
+        padding: 13px 17px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        font-size: 12px;
+      }
+      .notice.error {
+        color: var(--red);
+        background: var(--card);
+        border: 1px solid var(--red);
+      }
+      #poolRefreshProgress progress {
+        display: block;
+        width: 100%;
+        height: 6px;
+        margin-top: 10px;
+        accent-color: var(--accent);
+      }
+      #poolRefreshProgress progress[hidden] { display: none; }
+      .empty {
+        padding: 38px;
+        text-align: center;
+        color: var(--muted);
+        grid-column: 1/-1;
+      }
+      .tools {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 18px;
+      }
+      .tools input[type="search"] {
+        flex: 1;
+        min-width: 190px;
+      }
+      .tablewrap {
+        overflow: auto;
+      }
+      .tablecard {
+        padding: 0;
+        overflow: hidden;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        white-space: nowrap;
+        text-align: left;
+      }
+      th {
+        font-weight: 500;
+        color: var(--muted);
+        font-size: 11px;
+        background: var(--bg);
+      }
+      th,
+      td {
+        padding: 14px 17px;
+        border-bottom: 1px solid var(--line);
+      }
+      td {
+        font-size: 12px;
+      }
+      tbody tr:last-child td {
+        border: 0;
+      }
+      td button {
+        padding: 5px 10px;
+        font-size: 12px;
+      }
+      td small {
+        display: block;
+        max-width: 230px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .progress {
+        margin-bottom: 20px;
+      }
+      .progress .meter {
+        margin: 10px 0;
+      }
+      .jobitems {
+        max-height: 180px;
+        overflow: auto;
+      }
+      .jobitem {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 5px 0;
+        font-size: 12px;
+      }
+      .subgrid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.5fr) minmax(230px, 1fr);
+        gap: 20px;
+      }
+      .choice {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .choice:last-child {
+        border: 0;
+      }
+      .qr {
+        text-align: center;
+      }
+      .qr img {
+        display: block;
+        max-width: 100%;
+        width: 220px;
+        margin: 25px auto;
+        background: #fff;
+        border: 14px solid #fff;
+        border-radius: 12px;
+      }
+      .formgrid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin: 16px 0;
+      }
+      .field label {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .field input,
+      .field select {
+        width: 100%;
+      }
+      .full {
+        grid-column: 1/-1;
+      }
+      details {
+        margin-top: 15px;
+      }
+      summary {
+        cursor: pointer;
+        color: var(--muted);
+      }
+      dialog {
+        border: 1px solid var(--line);
+        background: var(--card);
+        color: var(--text);
+        border-radius: 20px;
+        padding: 28px;
+        width: 540px;
+        max-width: calc(100% - 30px);
+        max-height: 88vh;
+        overflow: auto;
+        box-shadow: 0 20px 90px #0003;
+      }
+      dialog::backdrop {
+        background: #0b263c66;
+        backdrop-filter: blur(4px);
+      }
+      .dialoghead {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .dialoghead button {
+        padding: 3px 10px;
+        border: 0;
+        font-size: 23px;
+      }
+      .dialogfoot {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 24px;
+      }
+      .checks {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 20px;
+      }
+      .checks label {
+        font-size: 12px;
+      }
+      .nameedit {
+        padding: 12px 0;
+        border-top: 1px solid var(--line);
+      }
+      .nameedit .row {
+        margin-top: 7px;
+      }
+      .nameedit input {
+        width: 100%;
+        min-width: 0;
+      }
+      .toast {
+        position: fixed;
+        bottom: 25px;
+        left: calc(50% + 112px);
+        transform: translateX(-50%);
+        z-index: 30;
+        max-width: 85vw;
+        background: var(--text);
+        color: var(--card);
+        padding: 12px 22px;
+        border-radius: 11px;
+        box-shadow: 0 8px 25px #0002;
+      }
+      .loading {
+        color: var(--muted);
+      }
+      button.busy {
+        opacity: 0.55;
+        pointer-events: none;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      @media (min-width: 1500px) {
+        .grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+      @media (max-width: 1100px) {
+        .sidebar {
+          width: 78px;
+          padding: 28px 14px;
+        }
+        .brand .brandtext,
+        .nav .navtext,
+        .sidefoot {
+          display: none;
+        }
+        .brand {
+          justify-content: center;
+        }
+        .nav {
+          padding: 12px;
+          justify-content: center;
+        }
+        .sidebar nav {
+          margin-top: 45px;
+        }
+        .workspace {
+          margin-left: 78px;
+        }
+        main {
+          padding: 28px 25px;
+        }
+        .topbar {
+          padding: 0 25px;
+        }
+        .toast {
+          left: calc(50% + 39px);
+        }
+        .stats {
+          gap: 12px;
+        }
+        .stat {
+          padding: 16px;
+        }
+        .bottomgrid {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      @media (max-width: 720px) {
+        .grid,
+        .bottomgrid,
+        .subgrid {
+          grid-template-columns: 1fr;
+        }
+        .pagehead {
+          align-items: flex-start;
+          flex-direction: column;
+          gap: 14px;
+        }
+        .stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .topbar {
+          height: 65px;
+        }
+        .topbar small {
+          display: none;
+        }
+        .number {
+          font-size: 28px;
+        }
+        .pagehead h1 {
+          font-size: 25px;
+        }
+        .pagehead .actions {
+          justify-content: flex-start;
+          width: 100%;
+        }
+        .pagehead .actions button {
+          flex: 1 1 auto;
+        }
+        .formgrid {
+          grid-template-columns: 1fr;
+        }
+        .callout {
+          padding: 22px;
+        }
+        .tablewrap {
+          max-height: 65vh;
+        }
+      }
+      @media (max-width: 520px) {
+        .sidebar {
+          inset: auto 0 0;
+          width: 100%;
+          height: 68px;
+          padding: 5px;
+          border: 0;
+          border-top: 1px solid var(--line);
+        }
+        .brand {
+          display: none;
+        }
+        .sidebar nav {
+          display: flex;
+          justify-content: space-around;
+          margin: 0;
+          gap: 2px;
+        }
+        .nav {
+          display: flex;
+          flex-direction: column;
+          gap: 0;
+          padding: 4px 12px;
+          font-size: 10px;
+        }
+        .nav .navtext {
+          display: block;
+        }
+        .nav span:first-child {
+          font-size: 18px;
+        }
+        .workspace {
+          margin-left: 0;
+        }
+        .topbar {
+          padding: 0 18px;
+        }
+        main {
+          padding: 24px 16px 90px;
+        }
+        .topbar .right {
+          gap: 11px;
+        }
+        .toast {
+          left: 50%;
+          bottom: 80px;
+        }
+        .exit {
+          padding: 19px;
+        }
+        .ip {
+          font-size: 22px;
+        }
+        .stat {
+          padding: 15px 18px;
+        }
+        .actions {
+          flex-wrap: wrap;
+        }
+        .tools {
+          gap: 7px;
+        }
+        .tools select {
+          flex: 1;
+        }
+        .formgrid {
+          gap: 0;
+        }
+        .pad {
+          padding: 20px;
+        }
+      }
+      .resourcefilters {
+        display: flex;
+        align-items: end;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin: 16px 0;
+      }
+      .resourcefilters label {
+        flex: 1;
+        min-width: 180px;
+      }
+      .resourcefilters label input {
+        width: 100%;
+      }
+      .resourcefilters > input {
+        flex: 2;
+        min-width: 200px;
+      }
+      .resourcefilters > select {
+        flex: 1;
+        min-width: 160px;
+      }
+      #resources .tablewrap {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--card);
+      }
+      #resourceCredentials {
+        padding: 28px;
+      }
+      #resources small {
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="mark" aria-hidden="true"></span><span class="brandtext">vgatebox</span>
+      </div>
+      <nav aria-label="主导航">
+        <button
+          class="nav active"
+          data-page="overview"
+          aria-label="出口总览"
+          title="出口总览"
+        >
+          <span>◫</span><span class="navtext">出口总览</span></button
+        ><button
+          class="nav"
+          data-page="exits"
+          aria-label="出口管理"
+          title="出口管理"
+        >
+          <span>⇄</span><span class="navtext">出口管理</span></button
+        ><button
+          class="nav"
+          data-page="subscription"
+          aria-label="我的订阅"
+          title="我的订阅"
+        >
+          <span>⌁</span><span class="navtext">我的订阅</span></button
+        ><button
+          class="nav"
+          data-page="candidates"
+          aria-label="候选节点"
+          title="候选节点"
+        >
+          <span>◎</span><span class="navtext">候选节点</span></button
+        ><button
+          class="nav"
+          data-page="resources"
+          aria-label="代理资源"
+          title="代理资源"
+        >
+          <span>◈</span><span class="navtext">代理资源</span></button
+        ><button
+          class="nav"
+          data-page="settings"
+          aria-label="设置"
+          title="设置"
+        >
+          <span>⚙</span><span class="navtext">设置</span>
+        </button>
+      </nav>
+      <div class="sidefoot">独立出口 · 自主管理<br />vgatebox Console</div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar">
+        <span
+          ><span class="dot"></span><b>vgatebox</b>
+          <small> / 独立管理控制台</small></span
+        >
+        <div class="right">
+          <small id="version">正在连接</small
+          ><button id="theme" aria-label="切换明暗主题" title="切换明暗主题">
+            ◐</button
+          ><span class="avatar" title="管理员">X</span>
+        </div>
+      </header>
+      <main>
+        <div id="globalNotice" class="notice error" hidden></div>
+        <div id="poolRefreshProgress" class="notice" role="status" aria-live="polite" hidden>
+          <span id="poolRefreshMessage"></span>
+          <progress id="poolRefreshBar" aria-label="正在刷新候选清单"></progress>
+        </div>
+        <section class="page active" id="overview">
+          <div class="pagehead">
+            <div>
+              <div class="eyebrow">YOUR NETWORK, AT A GLANCE</div>
+              <h1>出口总览</h1>
+              <p>每一条连接，都有清晰的去向。</p>
+            </div>
+            <div class="actions">
+              <button data-action="refresh">↻ 刷新候选池</button
+              ><button class="primary" data-action="target">
+                管理出口数量
+              </button>
+            </div>
+          </div>
+          <div class="card pad start-steps" aria-label="使用步骤">
+            <button data-action="refresh">① 刷新候选</button><span>→</span>
+            <button data-page="exits">② 等待就绪</button><span>→</span>
+            <button data-page="subscription">③ 复制订阅</button><span>→</span>
+            <span>④ 导入使用</span>
+          </div>
+          <div class="stats" id="stats">
+            <div class="stat loading">正在读取运行状态…</div>
+          </div>
+          <div class="sectionhead">
+            <h2>VPN Gate 出口</h2>
+            <button data-page="exits" aria-label="出口管理" title="出口管理">
+              查看全部 →
+            </button>
+          </div>
+          <div class="grid" id="overviewExits"></div>
+          <div class="card pad" style="margin-top: 20px" id="hostDirectCard">
+            <div class="row" style="justify-content: space-between">
+              <div>
+                <h2>VPS 本机直出</h2>
+                <p class="muted">
+                  使用服务器本身的网络，独立加入订阅。VPN Gate
+                  故障时不会自动切换到这里。
+                </p>
+                <small id="hostDirectStatus"></small>
+              </div>
+              <button id="hostDirectToggle">启用直出</button>
+            </div>
+          </div>
+          <div class="bottomgrid">
+            <div class="card pad callout">
+              <div>
+                <h2>一个订阅，连接所有出口</h2>
+                <p>
+                  就绪出口会自动加入原订阅。国家与名称同步更新，无需反复导入。
+                </p>
+                <button
+                  data-page="subscription"
+                  aria-label="我的订阅"
+                  title="我的订阅"
+                >
+                  管理我的订阅 →
+                </button>
+              </div>
+              <div class="ring">⌁</div>
+            </div>
+            <div class="card pad">
+              <h2>主机资源</h2>
+              <div class="meter">
+                <span id="memoryBar" style="width: 0"></span>
+              </div>
+              <div class="row" style="justify-content: space-between">
+                <small>内存使用</small><b id="memoryText">—</b>
+              </div>
+              <small
+                >增加出口会占用更多资源，软件数量上限不代表主机承载能力。</small
+              >
+            </div>
+          </div>
+        </section>
+        <section class="page" id="exits">
+          <div class="pagehead">
+            <div>
+              <div class="eyebrow">EXIT MANAGEMENT</div>
+              <h1>出口管理</h1>
+              <p>统一查看本机直出、自定义代理和 VPN Gate，明确每条连接的去向。</p>
+            </div>
+            <div class="actions">
+              <button data-action="checkAll">检测 VPN Gate</button
+              ><button class="primary" data-action="target">调整 VPN Gate 数量</button>
+            </div>
+          </div>
+          <div id="managedDirectSection" hidden>
+            <div class="sectionhead"><h2>VPS 本机直出</h2></div>
+            <div class="grid" id="managedDirectExit"></div>
+          </div>
+          <div id="managedThirdSection" hidden>
+            <div class="sectionhead">
+              <h2>自定义代理</h2>
+              <button data-page="resources" data-third-resources>代理资源 →</button>
+            </div>
+            <div class="grid" id="managedThirdExits"></div>
+          </div>
+          <div class="sectionhead"><h2>VPN Gate</h2></div>
+          <div class="notice" id="targetInfo"></div>
+          <div class="progressMount"></div>
+          <div class="grid" id="allExits"></div>
+        </section>
+        <section class="page" id="subscription">
+          <div class="pagehead">
+            <div>
+              <div class="eyebrow">ONE LINK, ALL EXITS</div>
+              <h1>我的订阅</h1>
+              <p>选择客户端格式后复制链接，刷新订阅即可同步变化。</p>
+            </div>
+          </div>
+          <div class="subgrid">
+            <div>
+              <div class="card pad">
+                <h2>订阅链接</h2>
+                <p class="muted" style="margin: 8px 0 16px">
+                  本机直出与自定义代理按启用和订阅设置输出；VPN Gate 仅输出已就绪入口。
+                </p>
+                <textarea
+                  id="subURL"
+                  rows="3"
+                  readonly
+                  aria-label="订阅链接"
+                ></textarea>
+                <label for="subFormat">客户端格式</label>
+                <select id="subFormat"><option value="base64">v2rayN / 通用节点列表</option><option value="clash">Clash Verge / Rev（Mihomo）</option></select>
+                <small>Clash 用户请选择专用格式再复制订阅；本 VPS 直接生成，无需第三方转换。</small>
+                <div class="actions" style="margin-top: 12px">
+                  <button class="primary" id="copySub">复制订阅链接</button
+                  ><button id="copyLinks">复制节点链接</button>
+                </div>
+                <small id="subCount"></small>
+              </div>
+              <div class="card pad" style="margin-top: 20px">
+                <h2>选择订阅范围</h2>
+                <label class="choice"
+                  ><input id="subDirect" type="checkbox" checked />VPS
+                  本机直出（启用后生效）</label
+                >
+                <label class="choice"
+                  ><input id="subThirdAll" type="checkbox" checked />自定义代理
+                  全选（包括今后新增）</label
+                >
+                <div id="subThirdRows"></div>
+                <label class="choice"
+                  ><input type="checkbox" id="subAll" checked />VPN Gate
+                  全选（包括今后新增）</label
+                >
+                <div id="subSlots"></div>
+              </div>
+            </div>
+            <div class="card pad qr">
+              <h2>扫码订阅</h2>
+              <img id="qr" alt="订阅二维码" hidden />
+              <p class="muted">
+                二维码在本机服务生成。<br />订阅链接包含访问口令，请妥善保存。
+              </p>
+            </div>
+          </div>
+        </section>
+        <section class="page" id="candidates">
+          <div class="pagehead">
+            <div>
+              <div class="eyebrow">DISCOVER & VERIFY</div>
+              <h1>候选节点</h1>
+              <p id="poolSummary">正在读取来源清单…</p>
+            </div>
+            <div class="actions">
+              <button id="sourceSettingsButton">来源设置</button>
+              <button id="automationButton">周期任务</button>
+              <button data-action="refresh">↻ 刷新来源</button
+              ><label class="parallel-setting"
+                >检测并发
+                <input
+                  id="checkParallelism"
+                  type="number"
+                  min="1"
+                  step="1"
+                  required
+                  aria-label="检测与建连并发数"
+                  inputmode="numeric" /></label
+              ><button id="saveCheckSettings">保存</button
+              ><button class="primary" id="testSelected">检测所选节点</button
+              ><button id="testAllNodes">检测全部候选</button>
+            </div>
+          </div>
+          <div class="notice">
+            清单数量是本次来源返回并经格式校验的候选数量，可能随时间变化。未测试不等于不可用；来源地区与实际出口地区分开展示。检测会建立临时连接并核验
+            HTTPS
+            出口。快速端口预检不代表出口可用；无需测完全部候选才能使用订阅。
+          </div>
+          <div id="poolSourceSummary" class="notice"></div>
+          <div id="automationSummary" class="notice"></div>
+          <div class="progressMount"></div>
+          <div class="tools">
+            <input
+              type="search"
+              id="search"
+              placeholder="搜索 IP、主机名或国家"
+              aria-label="搜索候选"
+            /><select id="countryFilter" aria-label="筛选来源国家">
+              <option value="">所有来源国家</option></select
+            ><select id="statusFilter" aria-label="筛选检测状态">
+              <option value="">所有状态</option>
+              <option value="passed">通过</option>
+              <option value="failed">未通过</option>
+              <option value="not_tested">未检测</option>
+              <option value="stale">结果已过期</option></select
+            ><small id="selectionCount"></small>
+          </div>
+          <div class="card tablecard tablewrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>
+                    <input
+                      id="selectVisible"
+                      type="checkbox"
+                      aria-label="选择当前筛选结果"
+                    />
+                  </th>
+                  <th>来源节点</th>
+                  <th>来源地区</th>
+                  <th>实际出口</th>
+                  <th>检测结果</th>
+                  <th>HTTPS 延迟</th>
+                  <th>检测时间</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="nodeRows"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="page" id="resources">
+          <div class="pagehead">
+            <div>
+              <div class="eyebrow">PROXY RESOURCES</div>
+              <h1>代理资源</h1>
+              <p>管理服务器代理与原始连接，各自有明确的用途。</p>
+            </div>
+            <button data-action="refresh">↻ 刷新来源</button>
+          </div>
+          <div class="actions" style="margin-bottom: 20px">
+            <button id="resourceSocksTab" class="primary">VPS SOCKS5</button
+            ><button id="resourceSstpTab">原始 SSTP</button
+            ><button id="resourceThirdTab">第三方 SOCKS5</button>
+          </div>
+          <div id="resourceThirdPane" hidden>
+            <div class="notice">
+              手动添加自己的 SOCKS5，独立加入订阅。流量经本 VPS 转发，VPN Gate
+              不可用时仍可手动选择；故障不会切换出口。供应商账号和密码不会进入客户端订阅。
+            </div>
+            <div
+              class="actions"
+              style="justify-content: space-between; margin: 24px 0 16px"
+            >
+              <h2>第三方 SOCKS5</h2>
+              <button class="primary" id="thirdAdd">＋ 添加代理</button>
+            </div>
+            <div class="tablewrap card">
+              <table>
+                <thead>
+                  <tr>
+                    <th>名称 / 服务器</th>
+                    <th>手动标注</th>
+                    <th>实际出口 / 地区</th>
+                    <th>检测</th>
+                    <th>订阅</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="thirdRows"></tbody>
+              </table>
+            </div>
+            <p class="muted" style="margin-top: 16px">
+              国家和城市选填，检测结果单独展示。地区检测不到时保留待验证；购买或手填不代表住宅属性已经验证。检测针对固定出口；本期不自动提取或轮换代理。
+            </p>
+          </div>
+          <div id="resourceSocksPane">
+            <div class="notice">
+              这些 SOCKS5 入口由 VPS 转换并持续提供服务。复制到其他设备时，VPS
+              和对应出口都需要在线。
+            </div>
+            <div class="sectionhead">
+              <h2>VPS SOCKS5</h2>
+              <div class="actions">
+                <button id="resourceExportSocks">导出已启用且就绪的连接</button
+                ><a href="advanced">接入管理 →</a>
+              </div>
+            </div>
+            <div class="tablewrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>出口</th>
+                    <th>实际 IP</th>
+                    <th>内部端口</th>
+                    <th>外部端口</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="resourceSocksRows"></tbody>
+              </table>
+            </div>
+          </div>
+          <div id="resourceSstpPane" hidden>
+            <div class="notice">
+              原始 SSTP 直接连接 VPN Gate，不是 VPS 的 SOCKS5 端口。这里验证的是
+              VPS 出网结果；CF 仍暂停，全部标记为 CF
+              待验证。来源地区不代表实际出口国家。
+            </div>
+            <details class="card pad" style="margin: 20px 0">
+              <summary>原始 SSTP 怎样使用？</summary>
+              <p style="margin: 12px 0">
+                “复制”得到的是 SSTP 连接参数，不是 v2rayN 的 VLESS 订阅。 在支持
+                SSTP 的客户端中，填写导出的服务器域名、检测通过的端口，
+                用户名和密码均为 vpn。保留域名以正常验证服务器证书。
+              </p>
+              <p>
+                也可交给支持 SSTP 的 Worker 使用，但需要该 Worker
+                的配置格式和自身实测。 保存参数后直接连接不经过本
+                VPS；节点可能失效，需要重新检测。
+              </p>
+              <p style="margin-top: 12px">
+                <a
+                  href="https://www.vpngate.net/cn/howto_sstp.aspx"
+                  target="_blank"
+                  rel="noopener"
+                  >VPN Gate 官方 SSTP 连接说明 ↗</a
+                >
+              </p>
+            </details>
+            <div id="sstpDependency" class="notice error" hidden></div>
+            <div class="card pad" style="margin: 20px 0">
+              <h2>检测与更新</h2>
+              <div class="resourcefilters" style="margin: 16px 0">
+                <label
+                  >检测与建连并发<input
+                    id="sstpParallelism"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value="2"
+                /></label>
+                <label
+                  >自动检测间隔（分钟，0 关闭）<input
+                    id="sstpInterval"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value="0"
+                /></label>
+                <label
+                  >结果有效期（分钟）<input
+                    id="sstpValid"
+                    type="number"
+                    min="1"
+                    max="10080"
+                    step="1"
+                    value="60"
+                /></label>
+                <label
+                  >单节点超时（秒）<input
+                    id="sstpTimeout"
+                    type="number"
+                    min="10"
+                    max="3600"
+                    step="1"
+                    value="90"
+                /></label>
+                <button id="sstpSaveSettings">保存设置</button>
+              </div>
+              <small
+                >自动检测与手动任务共用本页的并发额度。运行中修改并发用于下一轮；SSTP
+                不占用现有出口数量。刷新来源沿用现有候选池更新。</small
+              >
+            </div>
+            <div class="resourcefilters">
+              <input
+                id="sstpSearch"
+                type="search"
+                placeholder="搜索节点或 IP"
+                aria-label="搜索 SSTP"
+              /><select id="sstpCountry" aria-label="SSTP 来源国家">
+                <option value="">所有来源国家</option></select
+              ><select id="sstpStatus" aria-label="SSTP 结果">
+                <option value="">所有检测状态</option>
+                <option value="passed">VPS 实测通过</option>
+                <option value="failed">未通过</option>
+                <option value="deferred">暂缓检测</option>
+                <option value="cancelled">已取消</option>
+                <option value="not_tested">未检测</option>
+                <option value="stale">已过期</option>
+              </select>
+            </div>
+            <div class="actions" style="margin: 16px 0">
+              <button id="sstpCheckSelected">检测勾选</button
+              ><button id="sstpCheckAll">检测全部 SSTP 候选</button
+              ><button id="sstpCancel">取消检测</button
+              ><button id="sstpExportAll">导出全部有效 JSON</button
+              ><button id="sstpExportSelected">导出勾选 JSON</button
+              ><button id="sstpCopySelected">复制勾选 SSTP</button>
+            </div>
+            <div id="sstpProgress" class="notice">正在读取 SSTP 候选…</div>
+            <div class="tablewrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>
+                      <input
+                        id="sstpSelectVisible"
+                        type="checkbox"
+                        aria-label="勾选当前筛选的 SSTP"
+                      />
+                    </th>
+                    <th>来源节点</th>
+                    <th>来源地区</th>
+                    <th>候选端口</th>
+                    <th>实际出口</th>
+                    <th>VPS 检测</th>
+                    <th>HTTPS 延迟</th>
+                    <th>检测 / 到期</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="sstpRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+        <section class="page" id="settings">
+          <div class="pagehead">
+            <div>
+              <div class="eyebrow">MAKE IT YOURS</div>
+              <h1>设置</h1>
+              <p>管理访问入口、客户端接入和显示偏好。</p>
+            </div>
+          </div>
+          <div class="card pad" style="margin-bottom: 24px">
+            <h2>版本与更新</h2>
+            <p style="margin: 12px 0">
+              当前版本 <b id="softwareCurrent">正在读取</b>
+              <span id="softwareLatest"></span>
+            </p>
+            <div class="actions">
+              <button id="checkSoftwareUpdate">检查更新</button
+              ><button id="installSoftwareUpdate" class="primary" disabled>
+                安装更新</button
+              ><a
+                href="https://github.com/LiquorXR/vgatebox/releases"
+                target="_blank"
+                rel="noopener"
+                >版本记录 ↗</a
+              >
+            </div>
+            <p
+              id="softwareUpdateStatus"
+              class="muted"
+              role="status"
+              style="margin-top: 12px"
+            >
+              更新完整程序并保留配置；服务重启后可能需要重新登录。
+            </p>
+            <details id="softwareNotesDetails" hidden>
+              <summary>版本说明</summary>
+              <pre
+                id="softwareNotes"
+                style="white-space: pre-wrap; font: inherit"
+              ></pre>
+            </details>
+          </div>
+          <div class="subgrid">
+            <form class="card pad" id="settingsForm">
+              <h2>管理入口</h2>
+              <div class="formgrid">
+                <div class="field">
+                  <label for="settingPort">管理端口</label
+                  ><input
+                    id="settingPort"
+                    type="number"
+                    min="1"
+                    max="65535"
+                    required
+                  />
+                </div>
+                <div class="field">
+                  <label for="settingListen">监听地址</label
+                  ><input id="settingListen" required />
+                </div>
+                <div class="field full">
+                  <label for="settingPath">管理路径</label
+                  ><input id="settingPath" required />
+                </div>
+                <div class="field full">
+                  <label for="settingPassword">新密码（留空保留原密码）</label
+                  ><input
+                    id="settingPassword"
+                    type="password"
+                    autocomplete="new-password"
+                  />
+                </div>
+              </div>
+              <button class="primary" type="submit">保存设置</button>
+              <p><small>改变端口或路径后，请使用新的管理地址登录。</small></p>
+            </form>
+            <div class="card pad">
+              <span class="mark" style="margin-bottom: 17px">×</span>
+              <h2>vgatebox</h2>
+              <p class="muted" style="margin: 10px 0">
+                从候选发现到独立出口和订阅，在同一个控制台完成。
+              </p>
+              <details style="margin-bottom: 16px">
+                <summary>高级设置</summary>
+                <p class="muted">
+                  为已有出口配置额外的接入协议、端口和客户端。
+                </p>
+                <a href="advanced">接入管理 →</a>
+              </details>
+              <details>
+                <summary>开源组件与致谢</summary>
+                <p>
+                  <small
+                    >节点来源 VPN Gate；隧道 OpenVPN；数据面 Xray-core；二维码
+                    go-qrcode（MIT）。各组件许可证保留在安装包 licenses
+                    目录。</small
+                  >
+                </p>
+              </details>
+              <p style="margin-top: 20px">
+                <small
+                  >缺少可信画像时，出口类型显示 unknown，不会标为家宽。</small
+                >
+              </p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <dialog id="automationDialog" aria-labelledby="automationTitle">
+      <form id="automationForm">
+        <div class="dialoghead"><h2 id="automationTitle">周期任务</h2><button type="button" data-close="automationDialog" aria-label="关闭">×</button></div>
+        <p>自动任务最低 30 分钟，默认 60 分钟。获取和检测由本 VPS 完成；同时到期先刷新清单，再检测候选，沿用已保存的检测并发。</p>
+        <label class="choice"><input id="autoRefreshEnabled" type="checkbox" />自动刷新候选清单</label>
+        <div class="field"><label for="autoRefreshMinutes">刷新间隔（分钟）</label><input id="autoRefreshMinutes" type="number" min="30" max="525600" step="1" required /></div>
+        <label class="choice"><input id="autoCheckEnabled" type="checkbox" />自动批量检测候选</label>
+        <div class="field"><label for="autoCheckMinutes">检测间隔（分钟）</label><input id="autoCheckMinutes" type="number" min="30" max="525600" step="1" required /></div>
+        <p class="muted">按完成时间计算下一轮，不叠加任务。关闭开关停止后续自动启动，当前检测可使用取消按钮。运行出口继续独立健康检查，批量检测不强制更换正常出口。</p>
+        <div class="dialogfoot"><button type="button" data-close="automationDialog">取消</button><button id="saveAutomation" class="primary" type="submit">保存</button></div>
+      </form>
+    </dialog>
+    <dialog id="sourceDialog" aria-labelledby="sourceTitle">
+      <form id="sourceForm">
+        <div class="dialoghead"><h2 id="sourceTitle">候选来源设置</h2><button type="button" data-close="sourceDialog" aria-label="关闭">×</button></div>
+        <p>所有清单获取和节点检测都由本 VPS 执行。先尝试当前配置来源；启用后，仅在失败时请求第三方镜像原始 CSV。</p>
+        <label class="choice"><input id="sourceMirrorEnabled" type="checkbox" />允许第三方镜像后备（默认开启，可关闭）</label>
+        <p class="muted">镜像提供者：<a href="https://github.com/GeorgeXie2333/vpngate-list-mirror" target="_blank" rel="noopener noreferrer">GeorgeXie2333/vpngate-list-mirror</a>，非官方。只使用原始候选，不采用对方的检测结论；文件摘要不等于官方来源认证。</p>
+        <div class="field"><label for="sourceTimeout">每次来源请求最长等待（秒）</label><input id="sourceTimeout" type="number" min="2" max="20" step="1" required /></div>
+        <div class="field"><label for="sourceMirrorMaxAge">镜像声明抓取时间的最大年龄（小时）</label><input id="sourceMirrorMaxAge" type="number" min="1" max="168" step="1" required /><small>默认 24 小时；超过 3 小时会提示较旧。摘要、时间或格式校验失败时保留旧清单。节点仍需本 VPS 建连验证。</small></div>
+        <div class="dialogfoot"><button type="button" data-close="sourceDialog">取消</button><button id="saveSourceSettings" class="primary" type="submit">保存</button></div>
+      </form>
+    </dialog>
+    <dialog id="targetDialog" aria-labelledby="targetTitle">
+      <form id="targetForm">
+        <div class="dialoghead">
+          <h2 id="targetTitle">管理出口数量</h2>
+          <button type="button" data-close="targetDialog" aria-label="关闭">
+            ×
+          </button>
+        </div>
+        <div class="field">
+          <label for="targetCount">目标数量</label
+          ><input
+            id="targetCount"
+            type="number"
+            min="0"
+            step="1"
+            required
+          /><small id="targetHelp"></small>
+        </div>
+        <div class="field">
+          <label for="targetCountry">新增出口的国家代码（留空自动选择）</label
+          ><input
+            id="targetCountry"
+            maxlength="2"
+            placeholder="例如 JP、KR、US"
+            list="countries"
+          /><datalist id="countries">
+            <option value="JP">日本</option>
+            <option value="KR">韩国</option>
+            <option value="US">美国</option>
+            <option value="GB">英国</option>
+            <option value="DE">德国</option>
+            <option value="RU">俄罗斯</option>
+          </datalist>
+        </div>
+        <div class="field">
+          <label for="targetServer">新增入站的 REALITY 目标域名</label
+          ><input id="targetServer" required />
+        </div>
+        <div class="notice">
+          已有出口保留原策略、端口及凭据。增加数量会自动建立出口和入站；暂无合适候选时等待。减少数量会从编号最大的出口开始移除，已保存的入站凭据保留供以后复用。
+        </div>
+        <div class="dialogfoot">
+          <button type="button" data-close="targetDialog">取消</button
+          ><button class="primary" type="submit">保存数量</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="exitDialog" aria-labelledby="exitTitle">
+      <div class="dialoghead">
+        <h2 id="exitTitle">出口设置</h2>
+        <button type="button" data-close="exitDialog" aria-label="关闭">
+          ×
+        </button>
+      </div>
+      <form id="policyForm">
+        <div class="formgrid">
+          <div class="field">
+            <label for="exitCountry">目标国家（留空不限）</label
+            ><input id="exitCountry" maxlength="2" list="countries" />
+          </div>
+          <div class="field">
+            <label for="exitLatency">HTTPS 延迟上限（毫秒，0 不限）</label
+            ><input id="exitLatency" min="0" type="number" required />
+          </div>
+        </div>
+        <div class="field">
+          <label>允许的出口类型</label>
+          <div class="checks" id="typeChoices"></div>
+          <small>unknown 表示缺少可信类型证据，不等于家宽。</small>
+        </div>
+        <details>
+          <summary>ISP / ASN 约束</summary>
+          <div class="field">
+            <label for="allowedISP">允许 ISP（逗号分隔）</label
+            ><input id="allowedISP" />
+          </div>
+          <div class="field">
+            <label for="blockedISP">排除 ISP（逗号分隔）</label
+            ><input id="blockedISP" />
+          </div>
+          <div class="field">
+            <label for="allowedASN">允许 ASN（如 AS123，逗号分隔）</label
+            ><input id="allowedASN" />
+          </div>
+          <div class="field">
+            <label for="blockedASN">排除 ASN（如 AS123，逗号分隔）</label
+            ><input id="blockedASN" />
+          </div>
+        </details>
+        <div class="dialogfoot">
+          <button type="button" id="swapExit">更换 IP</button
+          ><button type="button" id="rollbackPolicy">恢复上次策略</button
+          ><button type="submit" class="primary">保存策略</button>
+        </div>
+        <small
+          >更换 IP 或策略会重新连接该出口；订阅地址和客户端凭据保留。</small
+        >
+      </form>
+      <h3 style="margin: 25px 0 10px">订阅显示名称</h3>
+      <div id="nameEdits"></div>
+    </dialog>
+    <dialog id="thirdDialog" aria-labelledby="thirdTitle">
+      <form id="thirdForm" autocomplete="off">
+        <div class="dialoghead">
+          <h2 id="thirdTitle">添加第三方 SOCKS5</h2>
+          <button type="button" data-close="thirdDialog" aria-label="关闭">
+            ×
+          </button>
+        </div>
+        <div class="field">
+          <label for="thirdRemark">备注（选填）</label
+          ><input
+            id="thirdRemark"
+            maxlength="160"
+            placeholder="例如 nov proxy-los"
+          /><small>显示在订阅名称中；留空使用“第三方”。</small>
+        </div>
+        <div class="resourcefilters">
+          <label
+            >服务器地址<input
+              id="thirdHost"
+              required
+              placeholder="域名或 IP，不含协议" /></label
+          ><label
+            >端口<input
+              id="thirdPort"
+              type="number"
+              min="1"
+              max="65535"
+              required
+          /></label>
+        </div>
+        <div class="resourcefilters">
+          <label>账号<input id="thirdUser" required autocomplete="off" /></label
+          ><label
+            >密码<input
+              id="thirdPassword"
+              type="password"
+              autocomplete="new-password"
+          /></label>
+        </div>
+        <div class="resourcefilters">
+          <label
+            >国家（选填）<select id="thirdCountry">
+              <option value="">检测后确认</option>
+            </select></label
+          ><label
+            >城市（选填）<input
+              id="thirdCity"
+              maxlength="100"
+              placeholder="例如 洛杉矶"
+          /></label>
+        </div>
+        <label class="choice"
+          ><input id="thirdEnabled" type="checkbox" checked />启用此代理</label
+        >
+        <label class="choice"
+          ><input
+            id="thirdSubscribe"
+            type="checkbox"
+            checked
+          />允许加入订阅</label
+        >
+        <p class="muted">
+          保存后自动检测，实测信息不会覆盖备注或手动标注。编辑代理可能短暂中断现有连接。
+        </p>
+        <div class="dialogfoot">
+          <button type="button" data-close="thirdDialog">取消</button
+          ><button class="primary" id="thirdSave" type="submit">
+            保存并检测
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="thirdDeleteDialog" aria-labelledby="thirdDeleteTitle">
+      <div class="dialoghead"><h2 id="thirdDeleteTitle">删除代理</h2></div>
+      <p id="thirdDeleteHelp"></p>
+      <p class="muted">该代理的原订阅入口将停止服务，不会转到其他出口。</p>
+      <div class="dialogfoot">
+        <button data-close="thirdDeleteDialog">取消</button
+        ><button class="danger" id="thirdDeleteConfirm">删除</button>
+      </div>
+    </dialog>
+    <dialog id="resourceCredentials">
+      <div class="dialoghead">
+        <h2 id="resourceCredentialTitle">SOCKS5 访问凭据</h2>
+        <button
+          type="button"
+          id="resourceCredClose"
+          aria-label="关闭 SOCKS 凭据"
+        >
+          ×
+        </button>
+      </div>
+      <p id="resourceCredentialScope"></p>
+      <label
+        >连接地址<textarea
+          id="resourceCredentialURL"
+          rows="3"
+          readonly
+        ></textarea>
+      </label>
+      <div class="resourcefilters">
+        <label>用户名<input id="resourceCredentialUser" readonly /></label
+        ><label>口令<input id="resourceCredentialPass" readonly /></label>
+      </div>
+      <p class="muted">
+        SOCKS5 无需域名证书，连接自身不加密。请通过私有方式分享。
+      </p>
+      <div class="dialogfoot">
+        <button id="resourceCredCopy">复制地址</button
+        ><a id="resourceCredAdvanced" href="advanced">修改凭据与接入设置 →</a>
+      </div>
+    </dialog>
+    <div class="toast" id="toast" role="status" hidden></div>
+    <script>
+      "use strict";
+      const $ = (id) => document.getElementById(id),
+        esc = (s) =>
+          String(s ?? "").replace(
+            /[&<>"']/g,
+            (c) =>
+              ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;",
+              })[c],
+          );
+      let summary = {},
+        exits = [],
+        nodes = [],
+        subscription = {},
+        selected = new Set(),
+        subSelected = new Set(),
+        subThirdSelected = new Set(),
+        thirdProxies = [],
+        thirdCountries = [],
+        thirdEditing = 0,
+        thirdDeleting = 0,
+        thirdSubmitting = new Set(),
+        thirdEpoch = 0,
+        hostDirect = [],
+        resourcePublicIP = "",
+        resourceTab = "socks",
+        resourceData = { nodes: [] },
+        resourceSelected = new Set(),
+        resourceSubmitting = new Set(),
+        resourcesPolling = null,
+        resourceEpoch = 0,
+        sstpSettingsDirty = false,
+        currentExit = null,
+        polling = false,
+        poolRefreshSubmitting = false,
+        poolRefreshEpoch = 0,
+        sourceSettingsLoading = false,
+        sourceSettingsSaving = false,
+        settingsLoaded = false,
+        currentPage = "overview",
+        toastTimer;
+      let softwareRelease = null,
+        softwareJob = null,
+        softwarePolling = false,
+        softwareSubmitting = false,
+        softwareCheckMessage = "";
+      const submittingChecks = new Set();
+      const phases = {
+        waiting_capacity: "等待并发名额",
+        precheck: "快速端口预检",
+        setup: "准备临时连接",
+        connecting: "连接上游节点",
+        baseline: "确认隧道出口",
+        profile: "查询出口信息",
+        verify_exit: "核验实际出口",
+        waiting_exit: "等待出口操作完成",
+        cleanup: "清理临时连接",
+      };
+      const types = {
+        strict_residential: "确认住宅",
+        likely_residential: "疑似住宅",
+        mobile: "移动网络",
+        datacenter: "数据中心",
+        business_isp: "商业 ISP",
+        unknown: "未知 / unknown",
+      };
+      const labels = {
+        up: "已就绪",
+        starting: "连接中",
+        waiting: "等待候选",
+        waiting_for_nodes: "等待候选",
+        blocked: "已阻断",
+        stopped: "已停止",
+        error: "连接异常",
+        passed: "通过",
+        failed: "未通过",
+        not_tested: "未检测",
+        stale: "结果已过期",
+        expired: "结果已过期",
+        queued: "排队中",
+        priority_queued: "优先等待",
+        running: "检测中",
+        submitting: "提交中",
+        done: "已完成",
+        cancelled: "已取消",
+        deferred: "稍后再测",
+      };
+      const errors = {
+        check_timeout: "检测超时",
+        openvpn_timeout: "隧道连接超时",
+        openvpn_failed: "隧道连接失败",
+        evidence_unavailable: "出口证据暂不可用",
+        exit_ip_mismatch: "实际出口不一致，已阻断",
+        probe_environment_failed: "检测环境初始化失败",
+        https_unreachable: "HTTPS 暂不可达",
+        exit_not_ready: "出口尚未就绪",
+        policy_latency_exceeded: "超过策略延迟上限",
+        cancelled: "已取消",
+        pool_refresh_failed_previous_pool_retained: "来源刷新失败，保留旧清单",
+        allocation_failed: "出口分配等待重试",
+        default_initialization_failed: "默认 16 个出口尚未创建，请检查实例容量或调整目标数量",
+        auto_binding_failed: "入站绑定等待重试",
+        tcp_unreachable: "TCP 端口暂不可达",
+        network_capacity_exhausted: "实例网络地址已分配完，无法建立临时连接",
+        candidate_in_use: "节点正在用于出口连接，避免重复拨号",
+        exit_recovery_priority: "已让位给出口恢复，稍后再测",
+        candidate_changed: "节点绑定已变化，请重新检测",
+        remove_failed: "出口移除等待重试",
+      };
+      let countryNames;
+      try {
+        countryNames = new Intl.DisplayNames(["zh-CN"], { type: "region" });
+      } catch {}
+      function country(code) {
+        if (!/^[A-Z]{2}$/.test(code || "")) return "地区未知";
+        return (
+          String.fromCodePoint(
+            ...[...code].map((c) => 127397 + c.charCodeAt(0)),
+          ) +
+          " " +
+          (countryNames ? countryNames.of(code) : code)
+        );
+      }
+      function verified(e) {
+        return e.status === "up" && (e.egress?.country_status === "passed" || (e.egress?.country_status === undefined && e.egress?.intelligence_status === "passed"))
+          ? e.egress.country
+          : "";
+      }
+      function name(e) {
+        const enabled = (e.inbounds || []).filter((i) => i.enable);
+        if (enabled.length === 1 && enabled[0].name_mode === "custom") {
+          return enabled[0].remark;
+        }
+        return country(verified(e)) + " · " + String(e.slot).padStart(2, "0");
+      }
+      function badge(status) {
+        return (
+          '<span class="badge ' +
+          esc(status) +
+          '">' +
+          (["running", "submitting"].includes(status)
+            ? '<span class="check-spinner" aria-hidden="true"></span>'
+            : status === "passed"
+              ? "✓ "
+              : "") +
+          esc(labels[status] || status || "—") +
+          "</span>"
+        );
+      }
+      function date(t) {
+        if (!t || String(t).startsWith("0001")) return "—";
+        const d = new Date(t);
+        return isNaN(+d)
+          ? "—"
+          : d.toLocaleString("zh-CN", {
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+      }
+      function toast(text) {
+        const dialog = document.querySelector("dialog[open]");
+        (dialog || document.body).append($("toast"));
+        $("toast").style.left = dialog ? "50%" : "";
+        $("toast").textContent = text;
+        $("toast").hidden = false;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => ($("toast").hidden = true), 4500);
+      }
+      async function api(path, body, signal) {
+        const r = await fetch(path.replace(/^\//, ""), {
+          cache: "no-store",
+          signal,
+          ...(body !== undefined
+            ? {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+              }
+            : {}),
+        });
+        if (r.status === 401) {
+          location.reload();
+          throw Error("需要重新登录");
+        }
+        let data;
+        try {
+          data = await r.json();
+        } catch {
+          throw Error("服务暂未返回有效响应");
+        }
+        if (!r.ok) throw Error(data.error || "操作失败");
+        return data;
+      }
+      async function action(fn, button) {
+        if (button) button.classList.add("busy");
+        try {
+          await fn();
+        } catch (e) {
+          toast(e.message);
+        } finally {
+          if (button) button.classList.remove("busy");
+        }
+      }
+      async function copy(text) {
+        if (!text) throw Error("请至少选择一个出口");
+        if (navigator.clipboard && window.isSecureContext)
+          await navigator.clipboard.writeText(text);
+        else {
+          const t = document.createElement("textarea");
+          t.value = text;
+          t.style.position = "fixed";
+          t.style.opacity = "0";
+          document.body.append(t);
+          t.select();
+          const ok = document.execCommand("copy");
+          t.remove();
+          if (!ok) throw Error("浏览器不允许自动复制，请手动选择链接");
+        }
+        toast("已复制");
+      }
+      function showPage(page) {
+        if (
+          ![
+            "overview",
+            "exits",
+            "subscription",
+            "candidates",
+            "settings",
+            "resources",
+          ].includes(page)
+        )
+          page = "overview";
+        currentPage = page;
+        document
+          .querySelectorAll(".page")
+          .forEach((n) => n.classList.toggle("active", n.id === page));
+        document
+          .querySelectorAll(".nav")
+          .forEach((n) =>
+            n.classList.toggle("active", n.dataset.page === page),
+          );
+        if (location.hash.slice(1) !== page)
+          history.replaceState(null, "", "#" + page);
+        if (page === "settings") {
+          if (!settingsLoaded) action(loadSettings);
+          action(loadSoftwareStatus);
+        }
+        if (page === "subscription") renderSubscription();
+        if (page === "resources") {
+          renderResources();
+          action(loadResourceSstp);
+        }
+      }
+      function countryEvidenceLabel(e) {
+        if (verified(e)) return "实际出口国家";
+        const labels = {failed: "国家查询失败", stale: "国家证据过期", not_configured: "国家查询已关闭"};
+        return (labels[e.egress?.country_status] || "出口国家未知") + " · 来源 " + country(e.region);
+      }
+      function exitCards(list) {
+        return list.length
+          ? list
+              .map((e) => {
+                const code = verified(e),
+                  lat =
+                    e.latency_ms > 0 ? Math.round(e.latency_ms) + " ms" : "—",
+                  ib = e.inbounds || [],
+                  checkState = exitCheckResult(e);
+                return (
+                  '<article class="card exit"><div class="exithead"><div class="country"><span class="flag">' +
+                  (code ? country(code).split(" ")[0] : "◎") +
+                  "</span><div><h2>" +
+                  esc(
+                    code
+                      ? country(code).split(" ").slice(1).join(" ")
+                      : "地区未知",
+                  ) +
+                  "</h2><small>VPN Gate · 出口 " +
+                  String(e.slot).padStart(2, "0") +
+                  "</small></div></div>" +
+                  badge(e.status === "starting" && e.phase === "waiting_capacity" ? "queued" : e.status) +
+                  (e.status === "starting" ? "<small>" + esc(phases[e.phase] || "准备建连") + "</small>" : "") +
+                  '</div><div class="ip">' +
+                  esc(e.status === "up" ? e.exit_ip || "核验中" : "等待连接") +
+                  "</div><small>" +
+                  esc(types[e.egress?.ip_type] || "未知 / unknown") +
+                  '</small><small class="country-evidence">' + esc(countryEvidenceLabel(e)) + '</small><div class="details"><span>HTTPS <b>' +
+                  lat +
+                  "</b></span><span>目标 <b>" +
+                  esc(
+                    e.policy?.country ? country(e.policy.country) : "自动选择",
+                  ) +
+                  "</b></span><span>入站 <b>" +
+                  esc(ib.map((i) => i.port).join(" / ") || "等待绑定") +
+                  "</b></span></div>" +
+                  (checkState
+                    ? "<small>最近检测 " +
+                      badge(checkState.stale ? "stale" : checkState.status) +
+                      " " +
+                      esc(
+                        phases[checkState.phase] ||
+                          errors[checkState.code] ||
+                          "",
+                      ) +
+                      " " +
+                      date(checkState.checked_at) +
+                      "</small>"
+                    : "") +
+                  '<div class="exitfoot"><small>SOCKS · ' +
+                  esc(e.port) +
+                  '</small><div class="actions"><button data-action="check" data-slot="' +
+                  e.slot +
+                  '" ' +
+                  (e.status === "up" &&
+                  !["running", "submitting"].includes(checkState?.status)
+                    ? ""
+                    : "disabled") +
+                  " >" +
+                  checkButtonLabel(checkState) +
+                  '</button><button data-action="edit" data-slot="' +
+                  e.slot +
+                  '">管理</button><button data-action="' +
+                  (e.status === "stopped" ? "resume" : "pause") +
+                  '" data-slot="' +
+                  e.slot +
+                  '">' +
+                  (e.status === "stopped" ? "启动" : "停止") +
+                  "</button></div></div></article>"
+                );
+              })
+              .join("")
+          : '<div class="card empty">还没有出口。点击“管理出口数量”开始创建。</div>';
+      }
+      function orderedThirdParties() {
+        return thirdProxies.slice().sort((a, b) => a.id - b.id);
+      }
+      function thirdCheckReason(code) {
+        return ({
+          proxy_https_failed: "认证、连接或 HTTPS 请求失败",
+          invalid_exit_ip: "未取得合法公网出口",
+          exit_changed: "两次出口不同，请使用固定或粘性会话",
+          proxy_content_failed: "HTTPS 内容验证失败",
+          check_cancelled: "检测已取消",
+          result_save_failed: "检测结果保存失败",
+        })[code] || "";
+      }
+      function renderManagedExits() {
+        const native = summary.backend === "native";
+        $("managedDirectSection").hidden = !native;
+        $("managedThirdSection").hidden = !native;
+        const directOn = hostDirect.some((i) => i.enable);
+        $("managedDirectExit").innerHTML =
+          '<article class="card exit"><div class="exithead"><div><h2>VPS 本机直出</h2><small>来源 · 本机网络</small></div><span class="badge">' +
+          (directOn ? "已启用" : "已停用") +
+          '</span></div><div class="ip">' + esc(resourcePublicIP || "待确认") +
+          '</div><small>服务器公网地址 · 独立加入订阅</small><div class="details"><span>接入端口 <b>' +
+          esc(hostDirect.filter((i) => i.enable).map((i) => i.port).join(" / ") || "未启用") +
+          '</b></span></div><div class="exitfoot"><small>故障时不会自动切换到此出口</small><div class="actions"><a href="advanced">接入配置 →</a><button data-direct-toggle>' +
+          (directOn ? "停用" : "启用") + '</button></div></div></article>';
+        $("managedThirdExits").innerHTML = thirdProxies.length
+          ? orderedThirdParties().map((p) => {
+              const r = thirdSubmitting.has(p.id) ? { status: "running" } : p.check || { status: "not_tested" };
+              const place = r.country ? country(r.country) + (r.city ? " · " + r.city : "") : "实际地区待验证";
+              return '<article class="card exit"><div class="exithead"><div><h2>' + esc(p.name) +
+                '</h2><small>自定义 · SOCKS5</small></div><span class="badge">' + (p.enabled ? "已启用" : "已停用") +
+                '</span></div><small>最近实测出口</small><div class="ip">' + esc(r.actual_ip || "待检测") +
+                '</div><small>' + esc(place) + ' · ' + esc(types[r.ip_type] || types.unknown) +
+                '</small>' + (p.country_mismatch || p.city_mismatch ? '<small class="warn">实测地区与手动标注不同</small>' : '') +
+                '<div class="details"><span>HTTPS <b>' + (r.latency_ms > 0 ? Math.round(r.latency_ms) + " ms" : "—") +
+                '</b></span><span>接入端口 <b>' + esc(p.entry_port) + '</b></span><span>订阅 <b>' +
+                (p.subscribe ? "已允许" : "未允许") + '</b></span></div><small>最近检测 ' + badge(r.status) + ' ' +
+                date(r.checked_at) + '</small><small>' + esc(thirdCheckReason(r.code)) +
+                '</small><div class="exitfoot"><small>与代理资源同步 · 故障不切换</small><div class="actions"><button data-third-check="' + p.id + '" ' +
+                (r.status === "running" ? 'disabled aria-busy="true"' : '') + '>' + checkButtonLabel(r) +
+                '</button><button data-third-edit="' + p.id + '">编辑</button><button data-third-toggle="' + p.id + '">' +
+                (p.enabled ? "停用" : "启用") + '</button></div></div></article>';
+            }).join("")
+          : '<div class="card empty">尚未添加自定义代理，可在“代理资源 → 第三方 SOCKS5”中添加。</div>';
+      }
+      function poolRefreshFeedback(refresh, count) {
+        const r = refresh || {};
+        const finished = r.checked_at ? " · 完成于 " + date(r.checked_at) : "";
+        if (r.status === "running") return {
+          running: true, error: false,
+          text: r.submitting ? "正在提交候选刷新请求…" : "正在获取并读取候选清单 · 已等待 " + Math.max(0, Number(r.elapsed_seconds) || 0) +
+            " 秒 · 最长等待 " + (Number(r.timeout_seconds) || 90) + " 秒。获取后仍需检测节点连通性。",
+        };
+        if (r.status === "passed") return {
+          running: false, error: false,
+          text: "候选刷新完成 · 当前 " + count + " 个候选，仍需检测后确认连通性。" + finished,
+        };
+        if (r.status === "skipped") return {
+          running: false, error: false,
+          text: "本轮未重复刷新：周期尚未到期、已关闭，或已有来源任务运行。现有候选保留。" + finished,
+        };
+        if (r.status === "failed") {
+          const reasons = {
+            pool_refresh_timeout: "刷新超时：未能在等待期限内取得候选清单",
+            pool_source_unavailable: "来源暂不可用：请求失败或未返回有效候选清单",
+            pool_source_no_matching_candidates: "清单中暂无符合当前筛选条件的候选",
+            mirror_index_invalid: "镜像索引无效，未采用新清单",
+            mirror_index_unavailable: "原来源失败，镜像索引也暂不可达",
+            mirror_time_invalid: "镜像声明时间异常，请检查系统时间或稍后重试",
+            mirror_snapshot_expired: "镜像快照已超过设置的最大年龄，未采用新清单",
+            mirror_snapshot_rollback: "镜像返回了更旧的快照，已拒绝回退",
+            mirror_snapshot_conflict: "镜像同一时间的内容不一致，未采用新清单",
+            mirror_integrity_failed: "镜像文件长度或摘要不符，未采用新清单",
+            mirror_download_failed: "原来源失败，镜像文件也暂不可达",
+            mirror_csv_invalid: "镜像未返回可解析的原始清单",
+            pool_refresh_busy: "已有候选构建任务，请稍后重试",
+            pool_refresh_input_error: "候选配置或文件读取异常，请检查配置和日志",
+            pool_refresh_invalid_pool: "清单无法读取为有效候选，请检查来源结果",
+            pool_refresh_cancelled: "刷新已中止，可以重新尝试",
+            pool_refresh_submit_failed: "刷新请求未成功提交，请检查管理连接后重试",
+          };
+          return {running: false, error: true,
+            text: (reasons[r.cause] || "候选刷新失败，请稍后重试或查看日志") +
+              (count ? "。现有 " + count + " 个候选保留。" : "。当前仍未取得候选。") +
+              "本机直出和第三方 SOCKS5 可独立使用。" + finished};
+        }
+        return null;
+      }
+      function renderPoolRefresh() {
+        const f = poolRefreshFeedback(summary.refresh, nodes.length);
+        $("poolRefreshProgress").hidden = !f;
+        $("poolRefreshBar").hidden = !f?.running;
+        $("poolRefreshMessage").textContent = f?.text || "";
+        $("poolRefreshProgress").className = f?.error ? "notice error" : "notice";
+      }
+      function poolSourceText(source, generatedAt) {
+        if (!generatedAt) return "清单获取由本 VPS 执行，尚未取得候选。可在来源设置中选择是否启用第三方镜像后备。";
+        const s = source || {};
+        let text = "当前清单：" + (s.label || "既有清单");
+        if (s.retrieved_at) text += " · 本机获取/导入 " + date(s.retrieved_at);
+        if (s.kind === "mirror") {
+          text += " · 镜像声明抓取 " + date(s.snapshot_fetched_at);
+          if (s.stale) text += "（超过 3 小时，快照较旧）";
+          text += s.integrity_verified ? " · 文件完整性已校验" : " · 元数据待核对";
+        }
+        return text + "。候选仍需本 VPS 建连和真实出口验证。";
+      }
+      function render() {
+        const s = summary;
+        if (currentPage === "resources") {
+          renderResources();
+          loadResourceSstp().catch((e) => toast(e.message));
+        }
+        const directOn = hostDirect.some((i) => i.enable);
+        $("hostDirectStatus").textContent = directOn
+          ? "已启用 · 端口 " +
+            hostDirect
+              .filter((i) => i.enable)
+              .map((i) => i.port)
+              .join(" / ") +
+            " · 刷新客户端订阅即可看到"
+          : "未启用";
+        $("hostDirectToggle").textContent = directOn ? "停用直出" : "启用直出";
+        $("hostDirectCard").hidden = s.backend !== "native";
+        $("version").textContent = s.version || "开发版";
+        $("softwareCurrent").textContent = s.version || "开发版";
+        if (currentPage === "settings") loadSoftwareStatus().catch(() => {});
+        if (
+          document.activeElement !== $("checkParallelism") &&
+          !$("checkParallelism").dataset.dirty
+        )
+          $("checkParallelism").value = s.check_settings?.parallelism || 2;
+        $("testAllNodes").disabled =
+          !nodes.length || s.check?.status === "running";
+        $("stats").innerHTML = [
+          ["VPN Gate 就绪", s.ready || 0, "可加入订阅"],
+          ["VPN Gate 目标", s.target || 0, "自定义代理与直出单独管理"],
+          ["VPN Gate 等待", s.waiting || 0, (s.stopped || 0) + " 个已停止"],
+          ["来源候选", s.candidates || 0, "候选数量 ≠ 可用数量"],
+        ]
+          .map(
+            (v) =>
+              '<div class="stat"><label>' +
+              v[0] +
+              '</label><div class="number">' +
+              v[1] +
+              "</div><small>" +
+              v[2] +
+              "</small></div>",
+          )
+          .join("");
+        $("overviewExits").innerHTML = exitCards(exits.slice(0, 6));
+        $("allExits").innerHTML = exitCards(exits);
+        renderManagedExits();
+        $("targetInfo").textContent =
+          "VPN Gate 目标 " +
+          (s.target || 0) +
+          " 个 · 就绪 " +
+          (s.ready || 0) +
+          " 个 · 等待 " +
+          (s.waiting || 0) +
+          " 个 · 停止 " +
+          (s.stopped || 0) +
+          " 个。候选不足时保留策略等待，不强求指定国家当时必须有节点。" +
+          (s.target_configured === false && !s.allocated ? " 取得候选后将自动创建 16 个出口，无需先设置数量。" : "") +
+          (s.plan_error ? " " + (errors[s.plan_error] || "计划等待重试") : "");
+        const m = s.memory || {},
+          used = Math.max(0, (m.MemTotal || 0) - (m.MemAvailable || 0)),
+          pct = m.MemTotal ? Math.round((used / m.MemTotal) * 100) : 0;
+        $("memoryBar").style.width = pct + "%";
+        $("memoryText").textContent = m.MemTotal
+          ? pct +
+            "% · " +
+            (used / 1073741824).toFixed(1) +
+            " / " +
+            (m.MemTotal / 1073741824).toFixed(1) +
+            " GB"
+          : "暂不可用";
+        $("poolSummary").textContent =
+          nodes.length +
+          " 个来源候选 · 上次成功获取 " +
+          date(s.pool_generated_at);
+        $("poolSourceSummary").textContent = poolSourceText(s.pool_source, s.pool_generated_at);
+        $("automationSummary").textContent = automationText(s.automation);
+        document.querySelectorAll("[data-action=refresh]").forEach((b) => {
+          b.disabled = poolRefreshSubmitting || s.refresh?.status === "running";
+          b.textContent = b.disabled ? "↻ 正在刷新…" : "↻ 刷新候选池";
+        });
+        const missingPool = !nodes.length && !s.pool_generated_at;
+        const warning = missingPool && !["running", "failed"].includes(s.refresh?.status)
+          ? "尚未取得 VPN Gate 候选清单，可点击刷新来源；系统也会定时重试。本机直出与第三方 SOCKS5 可独立使用，VPN Gate 出口继续等待，不自动切换。"
+          : "";
+        $("globalNotice").hidden = !warning;
+        $("globalNotice").textContent = warning;
+        $("globalNotice").className = "notice";
+        renderPoolRefresh();
+        renderProgress();
+        renderNodes();
+        renderSubscription();
+      }
+      function renderProgress() {
+        const j = summary.check;
+        document.querySelectorAll(".progressMount").forEach((m) => {
+          if (!j) {
+            m.innerHTML = "";
+            return;
+          }
+          m.innerHTML =
+            '<div class="card pad progress"><div class="row" style="justify-content:space-between"><h3>' +
+            "连通性检测" +
+            " · " +
+            j.done +
+            " / " +
+            j.total +
+            " <small>最多同时 " +
+            (j.parallelism || 1) +
+            " 个</small></h3>" +
+            (j.status === "running"
+              ? '<button data-action="cancelCheck">取消检测</button>'
+              : badge(j.status)) +
+            '</div><div class="meter"><span style="width:' +
+            (j.total ? (j.done / j.total) * 100 : 0) +
+            '%"></span></div><div class="jobitems">' +
+            (j.items || [])
+              .slice()
+              .sort(
+                (a, b) =>
+                  (({ running: 0, queued: 1 })[a.status] ?? 2) -
+                  ({ running: 0, queued: 1 }[b.status] ?? 2),
+              )
+              .map(
+                (i) =>
+                  '<div class="jobitem"><span>' +
+                  esc(i.slot ? "出口 " + i.slot : i.host) +
+                  "</span><span>" +
+                  badge(i.status) +
+                  " " +
+                  esc(
+                    i.status === "running" ? phases[i.phase] || "开始检测" : "",
+                  ) +
+                  " " +
+                  esc(errors[i.code] || "") +
+                  "</span></div>",
+              )
+              .join("") +
+            "</div></div>";
+        });
+      }
+      function nodeResult(n) {
+        if (submittingChecks.has("host:" + n.hostname))
+          return { status: "submitting" };
+        const pending =
+          summary.check?.status === "running" &&
+          summary.check.items?.find(
+            (i) =>
+              i.host === n.hostname && ["running", "queued"].includes(i.status),
+          );
+        if (pending) return pending;
+        const r = summary.results?.[n.hostname];
+        return r
+          ? { ...r, status: r.stale ? "stale" : r.status }
+          : { status: "not_tested" };
+      }
+      function checkButtonLabel(r) {
+        return ["running", "submitting"].includes(r?.status)
+          ? '<span class="check-spinner" aria-hidden="true"></span>' +
+              esc(labels[r.status])
+          : r?.status === "queued"
+            ? "优先检测"
+            : "检测";
+      }
+      function exitCheckResult(e) {
+        if (submittingChecks.has("slot:" + e.slot))
+          return { status: "submitting" };
+        return (
+          (summary.check?.status === "running" &&
+            summary.check.items?.find(
+              (i) =>
+                (i.slot === e.slot || i.host === e.host) &&
+                ["running", "queued"].includes(i.status),
+            )) ||
+          summary.results?.[e.host]
+        );
+      }
+      function filteredNodes() {
+        const q = $("search").value.trim().toLowerCase(),
+          c = $("countryFilter").value,
+          s = $("statusFilter").value;
+        return nodes.filter(
+          (n) =>
+            (!q ||
+              (n.hostname + " " + n.ip + " " + country(n.country_code))
+                .toLowerCase()
+                .includes(q)) &&
+            (!c || n.country_code === c) &&
+            (!s || nodeResult(n).status === s),
+        );
+      }
+      function renderNodes() {
+        const known = new Set(nodes.map((n) => n.hostname));
+        selected = new Set([...selected].filter((host) => known.has(host)));
+        const codes = [
+            ...new Set(nodes.map((n) => n.country_code).filter(Boolean)),
+          ].sort(),
+          old = $("countryFilter").value,
+          options =
+            '<option value="">所有来源国家</option>' +
+            codes
+              .map(
+                (c) =>
+                  '<option value="' +
+                  esc(c) +
+                  '">' +
+                  esc(country(c)) +
+                  "</option>",
+              )
+              .join("");
+        if ($("countryFilter").innerHTML !== options) {
+          $("countryFilter").innerHTML = options;
+          $("countryFilter").value = old;
+        }
+        const visible = filteredNodes();
+        $("nodeRows").innerHTML = visible.length
+          ? visible
+              .map((n) => {
+                const r = nodeResult(n),
+                  live = exits.find(
+                    (e) => e.host === n.hostname && e.status === "up",
+                  );
+                return (
+                  '<tr><td><input type="checkbox" data-node="' +
+                  esc(n.hostname) +
+                  '" ' +
+                  (selected.has(n.hostname) ? "checked" : "") +
+                  ' aria-label="选择 ' +
+                  esc(n.hostname) +
+                  '"></td><td>' +
+                  esc(n.ip || n.hostname) +
+                  "<small>" +
+                  esc(n.hostname) +
+                  "</small></td><td>" +
+                  esc(country(n.country_code)) +
+                  "</td><td>" +
+                  esc(r.actual_ip || live?.exit_ip || "—") +
+                  "<small>" +
+                  esc(
+                    r.country
+                      ? country(r.country)
+                      : live
+                        ? country(verified(live))
+                        : "",
+                  ) +
+                  "</small></td><td>" +
+                  badge(
+                    r.status === "queued" && r.priority
+                      ? "priority_queued"
+                      : r.status,
+                  ) +
+                  (r.status === "running"
+                    ? "<small>" +
+                      esc(phases[r.phase] || "开始检测") +
+                      "</small>"
+                    : "") +
+                  (live ? " <small>运行出口</small>" : "") +
+                  "</td><td>" +
+                  (r.latency_ms > 0 ? Math.round(r.latency_ms) + " ms" : "—") +
+                  "</td><td>" +
+                  date(r.checked_at) +
+                  '</td><td><button data-action="testNode" data-host="' +
+                  esc(n.hostname) +
+                  '\" ' +
+                  (["running", "submitting"].includes(r.status)
+                    ? 'disabled aria-busy="true"'
+                    : "") +
+                  ">" +
+                  checkButtonLabel(r) +
+                  "</button></td></tr>"
+                );
+              })
+              .join("")
+          : '<tr><td colspan="8" class="empty">没有匹配的候选节点</td></tr>';
+        $("selectionCount").textContent = "已选 " + selected.size + " 个";
+        $("selectVisible").checked =
+          visible.length > 0 && visible.every((n) => selected.has(n.hostname));
+        $("testSelected").disabled =
+          !selected.size || summary.check?.status === "running";
+      }
+      function selectedSubURL() {
+        if (!subscription.url) return "";
+        const all = $("subAll").checked;
+        const ids = exits
+          .filter((e) => subSelected.has(e.slot))
+          .map((e) => e.slot);
+        const direct = $("subDirect").checked;
+        const thirdAll = $("subThirdAll").checked;
+        const thirdIDs = orderedThirdParties()
+          .filter((p) => subThirdSelected.has(p.id))
+          .map((p) => p.id);
+        if (!all && !ids.length && !direct && !thirdAll && !thirdIDs.length)
+          return "";
+        const u = new URL(subscription.url, location.href);
+        for (const k of ["slots", "vpn", "direct", "proxies", "third", "target"])
+          u.searchParams.delete(k);
+        if ($("subFormat")?.value === "clash") u.searchParams.set("target", "clash");
+        if (!direct) u.searchParams.set("direct", "0");
+        else if (!all) u.searchParams.set("direct", "1");
+        if (!all) {
+          if (ids.length) u.searchParams.set("slots", ids.join(","));
+          else u.searchParams.set("vpn", "0");
+        }
+        if (thirdAll) u.searchParams.set("third", "1");
+        else if (thirdIDs.length)
+          u.searchParams.set("proxies", thirdIDs.join(","));
+        else u.searchParams.set("third", "0");
+        return u.href;
+      }
+      function renderSubscription() {
+        if (!subscription.url) return;
+        const u = selectedSubURL();
+        $("subURL").value = u;
+        $("copySub").disabled = !u;
+        $("copyLinks").disabled = !u;
+        const all = $("subAll").checked,
+          ready = exits.filter(
+            (e) => e.status === "up" && (all || subSelected.has(e.slot)),
+          );
+        $("subCount").textContent =
+          "当前范围：" +
+          ($("subDirect").checked && hostDirect.some((i) => i.enable)
+            ? "VPS 本机直出 · "
+            : "") +
+          thirdProxies.filter(
+            (p) =>
+              p.enabled &&
+              p.subscribe &&
+              ($("subThirdAll").checked || subThirdSelected.has(p.id)),
+          ).length +
+          " 个自定义入口 · " +
+          ready.reduce(
+            (s, e) => s + (e.inbounds || []).filter((i) => i.enable).length,
+            0,
+          ) +
+          " 个 VPN Gate 入站（" + ready.length + " 个就绪出口）";
+        $("subSlots").innerHTML = exits
+          .map(
+            (e) =>
+              '<label class="choice"><input type="checkbox" data-sub-slot="' +
+              e.slot +
+              '" ' +
+              (all || subSelected.has(e.slot) ? "checked" : "") +
+              " " +
+              (all ? "disabled" : "") +
+              ">" +
+              esc(name(e)) +
+              " " +
+              badge(e.status) +
+              "</label>",
+          )
+          .join("");
+        const thirdAll = $("subThirdAll").checked;
+        $("subThirdRows").innerHTML = thirdProxies.length
+          ? orderedThirdParties()
+              .map(
+                (p) =>
+                  '<label class="choice"><input type="checkbox" data-sub-third="' +
+                  p.id +
+                  '" ' +
+                  (thirdAll || subThirdSelected.has(p.id) ? "checked " : "") +
+                  (thirdAll ? "disabled " : "") +
+                  "><span>" +
+                  esc(p.name) +
+                  ' <small>自定义 · SOCKS5</small> ' +
+                  (!p.enabled
+                    ? " <small>已停用</small>"
+                    : !p.subscribe
+                      ? " <small>未允许订阅</small>"
+                      : "") +
+                  "</span></label>",
+              )
+              .join("")
+          : '<p class="muted">尚未添加第三方代理</p>';
+        const qr = $("qr");
+        qr.hidden = !u;
+        if (u) {
+          const params = new URL(u).searchParams;
+          params.delete("token");
+          const path = "api/console/qr?" + params.toString();
+          if (qr.getAttribute("src") !== path) qr.src = path;
+        }
+      }
+      function renderThirdParties() {
+        $("thirdRows").innerHTML = thirdProxies.length
+          ? orderedThirdParties()
+              .map((p) => {
+                const r = thirdSubmitting.has(p.id)
+                  ? { status: "running" }
+                  : p.check || { status: "not_tested" };
+                const place = r.country
+                  ? country(r.country) + (r.city ? " · " + r.city : "")
+                  : "地区待验证";
+                return (
+                  "<tr><td><strong>" +
+                  esc(p.name) +
+                  "</strong><small>" +
+                  esc(p.host) +
+                  ":" +
+                  p.port +
+                  "</small><small>加密接入端口 " +
+                  p.entry_port +
+                  (p.enabled ? "" : " · 已停用") +
+                  "</small></td><td>" +
+                  esc(p.country ? country(p.country) : "未填写") +
+                  "<small>" +
+                  esc(p.city || "城市未填写") +
+                  "</small></td><td>" +
+                  esc(r.actual_ip || "—") +
+                  "<small>" +
+                  esc(place) +
+                  "</small><small>" +
+                  esc(types[r.ip_type] || "unknown") +
+                  "</small>" +
+                  (p.country_mismatch || p.city_mismatch
+                    ? '<small class="warn">实测地区与手动标注不同</small>'
+                    : "") +
+                  "</td><td>" +
+                  badge(r.status) +
+                  (r.latency_ms > 0
+                    ? "<small>" + Math.round(r.latency_ms) + " ms</small>"
+                    : "") +
+                  "<small>" +
+                  esc(thirdCheckReason(r.code)) +
+                  "</small><small>" +
+                  date(r.checked_at) +
+                  '</small></td><td><label><input type="checkbox" data-third-subscribe="' +
+                  p.id +
+                  '" ' +
+                  (p.subscribe ? "checked" : "") +
+                  '> 加入订阅</label></td><td><div class="actions"><button data-third-check="' +
+                  p.id +
+                  '" ' +
+                  (r.status === "running" ? 'disabled aria-busy="true"' : "") +
+                  ">" +
+                  (r.status === "running" ? "检测中" : "检测") +
+                  '</button><button data-third-edit="' +
+                  p.id +
+                  '">编辑</button><button data-third-toggle="' +
+                  p.id +
+                  '">' +
+                  (p.enabled ? "停用" : "启用") +
+                  '</button><button data-third-delete="' +
+                  p.id +
+                  '">删除</button></div></td></tr>'
+                );
+              })
+              .join("")
+          : '<tr><td colspan="6" class="empty">添加自己的固定 SOCKS5，即可独立加入订阅。</td></tr>';
+        renderManagedExits();
+      }
+      async function refreshThirdParties() {
+        const epoch = thirdEpoch;
+        const data = await api("api/resources/third-party");
+        if (epoch !== thirdEpoch) return;
+        thirdProxies = data.proxies || [];
+        thirdCountries = data.countries || thirdCountries;
+        renderThirdParties();
+        renderSubscription();
+      }
+      async function checkThirdParty(id) {
+        thirdEpoch++;
+        thirdSubmitting.add(id);
+        renderThirdParties();
+        try {
+          await api("api/resources/third-party/check", { id });
+          thirdEpoch++;
+          const p = thirdProxies.find((p) => p.id === id);
+          if (p) p.check = { status: "running" };
+          await refreshThirdParties();
+        } finally {
+          thirdSubmitting.delete(id);
+          renderThirdParties();
+        }
+      }
+      async function openThirdParty(id = 0) {
+        let p = {},
+          enabled = true;
+        if (!thirdCountries.length) await refreshThirdParties();
+        if (id) {
+          const data = await api("api/resources/third-party?id=" + id);
+          p = data.proxy;
+          enabled = data.enabled;
+        }
+        thirdEditing = id;
+        $("thirdTitle").textContent = id
+          ? "编辑第三方 SOCKS5"
+          : "添加第三方 SOCKS5";
+        $("thirdCountry").innerHTML =
+          '<option value="">检测后确认</option>' +
+          thirdCountries
+            .map(
+              (c) =>
+                '<option value="' +
+                esc(c.code) +
+                '">' +
+                esc(c.name) +
+                "</option>",
+            )
+            .join("");
+        for (const [field, key] of [
+          ["thirdHost", "host"],
+          ["thirdPort", "port"],
+          ["thirdUser", "username"],
+          ["thirdCountry", "country"],
+          ["thirdCity", "city"],
+          ["thirdRemark", "remark"],
+        ])
+          $(field).value = p[key] || "";
+        $("thirdPassword").value = "";
+        $("thirdPassword").required = !id;
+        $("thirdPassword").placeholder = id ? "留空保留现有密码" : "供应商密码";
+        $("thirdEnabled").checked = enabled;
+        $("thirdSubscribe").checked = id ? p.subscribe : true;
+        $("thirdDialog").showModal();
+      }
+      $("thirdAdd").onclick = () => action(() => openThirdParty());
+      $("thirdForm").onsubmit = (e) => {
+        e.preventDefault();
+        action(async () => {
+          thirdEpoch++;
+          const body = {
+            id: thirdEditing,
+            enabled: $("thirdEnabled").checked,
+            subscribe: $("thirdSubscribe").checked,
+          };
+          for (const [field, key] of [
+            ["thirdHost", "host"],
+            ["thirdUser", "username"],
+            ["thirdCountry", "country"],
+            ["thirdCity", "city"],
+            ["thirdRemark", "remark"],
+            ["thirdPassword", "password"],
+          ])
+            body[key] = $(field).value;
+          body.port = Number($("thirdPort").value);
+          const result = await api("api/resources/third-party", body);
+          thirdEpoch++;
+          $("thirdPassword").value = "";
+          $("thirdDialog").close();
+          await refreshThirdParties();
+          toast("代理已保存，正在检测；客户端刷新订阅后生效");
+          await checkThirdParty(result.id);
+        }, $("thirdSave"));
+      };
+      $("thirdDeleteConfirm").onclick = () =>
+        action(async () => {
+          thirdEpoch++;
+          await api("api/resources/third-party/delete", { id: thirdDeleting });
+          thirdEpoch++;
+          subThirdSelected.delete(thirdDeleting);
+          $("thirdDeleteDialog").close();
+          await refreshThirdParties();
+          toast("代理已删除");
+        }, $("thirdDeleteConfirm"));
+      $("resourceThirdTab").onclick = () => {
+        resourceTab = "third";
+        renderResources();
+        action(refreshThirdParties);
+      };
+      document.addEventListener("click", (e) => {
+        const button = e.target.closest(
+          "[data-third-check],[data-third-edit],[data-third-toggle],[data-third-delete]",
+        );
+        if (!button) return;
+        if (button.dataset.thirdCheck)
+          return action(
+            () => checkThirdParty(Number(button.dataset.thirdCheck)),
+            button,
+          );
+        if (button.dataset.thirdEdit)
+          return action(
+            () => openThirdParty(Number(button.dataset.thirdEdit)),
+            button,
+          );
+        if (button.dataset.thirdToggle)
+          return action(async () => {
+            const id = Number(button.dataset.thirdToggle),
+              p = thirdProxies.find((p) => p.id === id);
+            thirdEpoch++;
+            await api("api/resources/third-party/toggle", {
+              id,
+              enabled: !p.enabled,
+            });
+            thirdEpoch++;
+            await refreshThirdParties();
+          }, button);
+        thirdDeleting = Number(button.dataset.thirdDelete);
+        $("thirdDeleteHelp").textContent =
+          "删除“" +
+          (thirdProxies.find((p) => p.id === thirdDeleting)?.name || "此代理") +
+          "”？";
+        $("thirdDeleteDialog").showModal();
+      });
+      document.addEventListener("change", (e) => {
+        if (e.target.dataset.subThird) {
+          const id = Number(e.target.dataset.subThird);
+          e.target.checked
+            ? subThirdSelected.add(id)
+            : subThirdSelected.delete(id);
+          renderSubscription();
+        }
+        if (e.target.dataset.thirdSubscribe)
+          action(async () => {
+            thirdEpoch++;
+            await api("api/resources/third-party/subscribe", {
+              id: Number(e.target.dataset.thirdSubscribe),
+              subscribe: e.target.checked,
+            });
+            thirdEpoch++;
+            await refreshThirdParties();
+          });
+      });
+      $("subThirdAll").onchange = () => {
+        if (!$("subThirdAll").checked) subThirdSelected.clear();
+        renderSubscription();
+      };
+      const sstpPhases = {
+        sstp_tls: "验证 SSTP 证书",
+        setup: "准备隔离连接",
+        sstp_connecting: "建立 SSTP / PPP",
+        verify_exit: "核验实际出网",
+        profile: "查询出口信息",
+        cleanup: "清理临时连接",
+      };
+      const sstpCodes = {
+        sstp_certificate_rejected: "服务器证书未通过验证",
+        sstp_unreachable: "SSTP 入口不可达",
+        sstp_handshake_failed: "SSTP / PPP 协商失败",
+        sstp_https_failed: "HTTPS 出网失败",
+        sstp_content_failed: "HTTPS 内容验证失败",
+        exit_ip_mismatch: "出口不符合验证要求",
+        candidate_in_use: "节点正在用于正式出口或其他检测",
+        exit_recovery_priority: "已让位于出口恢复",
+        check_timeout: "检测超时",
+        invalid_sstp_candidate: "候选地址无效",
+        sstp_cleanup_failed: "临时资源清理失败",
+        network_capacity_exhausted: "实例网络地址已分配完，无法建立临时连接",
+        result_save_failed: "结果保存失败",
+        probe_environment_failed: "无法准备检测环境",
+        cancelled: "已取消",
+      };
+      function loadResourceSstp(force = false) {
+        if (resourcesPolling && !force) return resourcesPolling;
+        const epoch = resourceEpoch;
+        const request = api("api/resources/sstp")
+          .then((data) => {
+            if (epoch !== resourceEpoch) return;
+            resourceData = data;
+            if (currentPage === "resources") renderResources();
+          })
+          .finally(() => {
+            if (resourcesPolling === request) resourcesPolling = null;
+          });
+        resourcesPolling = request;
+        return request;
+      }
+      function resourceSocksURL(e) {
+        const pub = e.public_socks?.enable;
+        const host = pub ? resourcePublicIP : "127.0.0.1",
+          port = pub ? e.public_socks.port : e.port;
+        return (
+          "socks5://" +
+          encodeURIComponent(e.socks_user) +
+          ":" +
+          encodeURIComponent(e.socks_pass) +
+          "@" +
+          host +
+          ":" +
+          port
+        );
+      }
+      function resourceResult(n) {
+        if (resourceSubmitting.has(n.hostname)) return { status: "submitting" };
+        const attempt = n.attempt;
+        // Use the server's freshness/identity checks for completed evidence.
+        if (attempt && ["passed", "failed"].includes(attempt.status)) {
+          if (attempt.checked_at && n.result?.checked_at === attempt.checked_at)
+            return n.result;
+        }
+        return attempt || n.result || { status: "not_tested" };
+      }
+      function resourceFiltered() {
+        const q = $("sstpSearch").value.trim().toLowerCase(),
+          c = $("sstpCountry").value,
+          status = $("sstpStatus").value;
+        return (resourceData.nodes || []).filter((n) => {
+          const r = resourceResult(n);
+          return (
+            (!q ||
+              [n.hostname, n.server_ip, r.actual_ip]
+                .join(" ")
+                .toLowerCase()
+                .includes(q)) &&
+            (!c || n.source_country === c) &&
+            (!status ||
+              (status === "stale" ? r.stale : !r.stale && r.status === status))
+          );
+        });
+      }
+      function renderResources() {
+        $("resourceThirdPane").hidden = resourceTab !== "third";
+        $("resourceThirdTab").classList.toggle(
+          "primary",
+          resourceTab === "third",
+        );
+        renderThirdParties();
+        $("resourceSocksPane").hidden = resourceTab !== "socks";
+        $("resourceSstpPane").hidden = resourceTab !== "sstp";
+        $("resourceSocksTab").classList.toggle(
+          "primary",
+          resourceTab === "socks",
+        );
+        $("resourceSstpTab").classList.toggle(
+          "primary",
+          resourceTab === "sstp",
+        );
+        $("resourceSocksRows").innerHTML =
+          exits
+            .map(
+              (e) =>
+                "<tr><td>" +
+                esc(name(e)) +
+                "</td><td>" +
+                esc(e.exit_ip || "—") +
+                "</td><td>仅本机 · " +
+                e.port +
+                "</td><td>" +
+                esc(e.public_socks?.enable ? e.public_socks.port : "未启用") +
+                "</td><td>" +
+                badge(e.status) +
+                '</td><td><div class="actions"><button data-resource-cred="' +
+                e.slot +
+                '">查看 / 复制</button><button data-resource-toggle="' +
+                e.slot +
+                '">' +
+                (e.public_socks?.enable ? "关闭外部" : "启用外部") +
+                "</button></div></td></tr>",
+            )
+            .join("") ||
+          '<tr><td colspan="6">暂无出口，请先在出口管理中创建。</td></tr>';
+        $("sstpDependency").hidden = !resourceData.dependency_error;
+        $("sstpDependency").textContent = resourceData.dependency_error || "";
+        if (!sstpSettingsDirty && resourceData.settings) {
+          for (const [id, key] of [
+            ["sstpParallelism", "parallelism"],
+            ["sstpInterval", "interval_minutes"],
+            ["sstpValid", "valid_minutes"],
+            ["sstpTimeout", "timeout_seconds"],
+          ])
+            if (document.activeElement !== $(id))
+              $(id).value = resourceData.settings[key];
+        }
+        const selectedCountry = $("sstpCountry").value;
+        $("sstpCountry").innerHTML =
+          '<option value="">所有来源国家</option>' +
+          [...new Set((resourceData.nodes || []).map((n) => n.source_country))]
+            .sort()
+            .map(
+              (c) =>
+                '<option value="' +
+                esc(c) +
+                '">' +
+                esc(country(c)) +
+                "</option>",
+            )
+            .join("");
+        $("sstpCountry").value = selectedCountry;
+        const j = resourceData.check,
+          running = j?.status === "running",
+          valid = (resourceData.nodes || []).filter(
+            (n) => n.result?.status === "passed" && !n.result.stale,
+          ).length;
+        $("sstpProgress").textContent = running
+          ? "正在检测 " + j.done + " / " + j.total + " · 并发 " + j.parallelism
+          : "共 " +
+            (resourceData.nodes || []).length +
+            " 个候选 · " +
+            valid +
+            " 个有效的 VPS 实测结果 · CF 待验证";
+        $("sstpCheckAll").disabled =
+          running ||
+          !resourceData.nodes?.length ||
+          !!resourceData.dependency_error;
+        $("sstpCheckSelected").disabled =
+          !resourceSelected.size || running || !!resourceData.dependency_error;
+        $("sstpCancel").disabled = !running;
+        $("sstpExportSelected").disabled = $("sstpCopySelected").disabled =
+          !resourceSelected.size;
+        const visibleSstp = resourceFiltered();
+        $("sstpSelectVisible").checked =
+          visibleSstp.length > 0 &&
+          visibleSstp.every((n) => resourceSelected.has(n.hostname));
+        $("sstpSelectVisible").indeterminate =
+          visibleSstp.some((n) => resourceSelected.has(n.hostname)) &&
+          !$("sstpSelectVisible").checked;
+        $("sstpRows").innerHTML =
+          resourceFiltered()
+            .map((n) => {
+              const r = resourceResult(n),
+                active = ["running", "submitting"].includes(r.status),
+                previousValid =
+                  ["deferred", "cancelled"].includes(r.status) &&
+                  n.result?.status === "passed" &&
+                  !n.result.stale,
+                label =
+                  r.status === "deferred"
+                    ? "暂缓检测"
+                    : r.stale
+                      ? "结果已过期"
+                      : r.status === "passed"
+                        ? "VPS 实测通过"
+                        : r.status === "not_tested"
+                          ? "未检测"
+                          : labels[r.status] || r.status;
+              return (
+                '<tr><td><input type="checkbox" data-sstp-select="' +
+                esc(n.hostname) +
+                '" ' +
+                (resourceSelected.has(n.hostname) ? "checked" : "") +
+                ' aria-label="选择 ' +
+                esc(n.hostname) +
+                '" /></td><td>' +
+                esc(n.server_ip) +
+                '<small style="display:block">' +
+                esc(n.hostname) +
+                "</small></td><td>" +
+                esc(country(n.source_country)) +
+                "</td><td>" +
+                esc((n.candidates || []).map((c) => c.port).join(" / ")) +
+                "</td><td>" +
+                esc(r.actual_ip || "—") +
+                '<small style="display:block">' +
+                esc(r.country ? country(r.country) : "实际国家待验证") +
+                '</small></td><td><span class="badge ' +
+                (r.stale ? "stale" : r.status) +
+                '">' +
+                (active
+                  ? '<span class="check-spinner" aria-hidden="true"></span>'
+                  : "") +
+                esc(label) +
+                '</span><small style="display:block">' +
+                esc(sstpPhases[r.phase] || sstpCodes[r.code] || "") +
+                (previousValid ? " · 上次通过结果仍有效" : "") +
+                "</small></td><td>" +
+                esc(r.latency_ms ? Math.round(r.latency_ms) + " ms" : "—") +
+                "</td><td><small>" +
+                date(r.checked_at) +
+                "<br>" +
+                date(r.expires_at) +
+                '</small></td><td><div class="actions"><button data-sstp-check="' +
+                esc(n.hostname) +
+                '" ' +
+                (active ? "disabled" : "") +
+                ">" +
+                (active
+                  ? "检测中"
+                  : r.status === "queued"
+                    ? "优先检测"
+                    : "检测") +
+                "</button>" +
+                ((!r.stale && r.status === "passed") || previousValid
+                  ? '<button data-sstp-copy="' +
+                    esc(n.hostname) +
+                    '">' +
+                    (previousValid ? "复制上次通过" : "复制") +
+                    "</button>"
+                  : "") +
+                "</div></td></tr>"
+              );
+            })
+            .join("") ||
+          '<tr><td colspan="9">没有符合筛选条件的 SSTP 候选。</td></tr>';
+      }
+      async function checkSstpResources(body) {
+        const hosts = body.all
+          ? (resourceData.nodes || []).map((n) => n.hostname)
+          : body.hosts || [];
+        resourceEpoch++;
+        hosts.forEach((h) => resourceSubmitting.add(h));
+        renderResources();
+        try {
+          const job = await api("api/resources/sstp/check", body);
+          resourceEpoch++;
+          resourceData.check = job;
+          for (const item of job.items || []) {
+            const row = (resourceData.nodes || []).find(
+              (n) => n.hostname === item.host,
+            );
+            if (row) row.attempt = item;
+          }
+          await loadResourceSstp(true);
+        } finally {
+          hosts.forEach((h) => resourceSubmitting.delete(h));
+          renderResources();
+        }
+      }
+      async function resourceExport(hosts, format, copyOnly = false) {
+        const q = new URLSearchParams({ format });
+        if (hosts?.length) q.set("hosts", hosts.join(","));
+        const r = await fetch("api/resources/sstp/export?" + q, {
+          cache: "no-store",
+        });
+        const text = await r.text();
+        if (!r.ok) throw Error(text || "导出失败");
+        if (copyOnly) {
+          await copy(text);
+          return;
+        }
+        const u = URL.createObjectURL(
+          new Blob([text], {
+            type: format === "json" ? "application/json" : "text/plain",
+          }),
+        );
+        const a = document.createElement("a");
+        a.href = u;
+        a.download = "vgatebox-sstp." + (format === "json" ? "json" : "txt");
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(u), 1000);
+      }
+      $("resourceSocksTab").onclick = () => {
+        resourceTab = "socks";
+        renderResources();
+      };
+      $("resourceSstpTab").onclick = () => {
+        resourceTab = "sstp";
+        renderResources();
+        action(loadResourceSstp);
+      };
+      $("sstpCheckAll").onclick = () =>
+        action(() => checkSstpResources({ all: true }), $("sstpCheckAll"));
+      $("sstpCheckSelected").onclick = () =>
+        action(
+          () => checkSstpResources({ hosts: [...resourceSelected] }),
+          $("sstpCheckSelected"),
+        );
+      $("sstpCancel").onclick = () =>
+        action(async () => {
+          await api("api/resources/sstp/cancel", {});
+          await loadResourceSstp();
+        }, $("sstpCancel"));
+      $("sstpSaveSettings").onclick = () =>
+        action(async () => {
+          const settings = {};
+          for (const [id, key] of [
+            ["sstpParallelism", "parallelism"],
+            ["sstpInterval", "interval_minutes"],
+            ["sstpValid", "valid_minutes"],
+            ["sstpTimeout", "timeout_seconds"],
+          ]) {
+            const n = Number($(id).value);
+            if (!Number.isSafeInteger(n)) throw Error("请输入整数设置");
+            settings[key] = n;
+          }
+          await api("api/resources/sstp/settings", settings);
+          sstpSettingsDirty = false;
+          await loadResourceSstp();
+          toast("SSTP 设置已保存");
+        }, $("sstpSaveSettings"));
+      for (const id of [
+        "sstpParallelism",
+        "sstpInterval",
+        "sstpValid",
+        "sstpTimeout",
+      ])
+        $(id).oninput = () => {
+          sstpSettingsDirty = true;
+        };
+      for (const id of ["sstpSearch", "sstpCountry", "sstpStatus"])
+        $(id).addEventListener(
+          id === "sstpSearch" ? "input" : "change",
+          renderResources,
+        );
+      $("sstpSelectVisible").onchange = (e) => {
+        resourceFiltered().forEach((n) =>
+          e.target.checked
+            ? resourceSelected.add(n.hostname)
+            : resourceSelected.delete(n.hostname),
+        );
+        renderResources();
+      };
+      $("sstpExportAll").onclick = () =>
+        action(() => resourceExport([], "json"), $("sstpExportAll"));
+      $("sstpExportSelected").onclick = () =>
+        action(
+          () => resourceExport([...resourceSelected], "json"),
+          $("sstpExportSelected"),
+        );
+      $("sstpCopySelected").onclick = () =>
+        action(
+          () => resourceExport([...resourceSelected], "text", true),
+          $("sstpCopySelected"),
+        );
+      $("resourceExportSocks").onclick = () =>
+        action(async () => {
+          const data = await api("api/console/socks");
+          const u = URL.createObjectURL(
+            new Blob([JSON.stringify(data, null, 2)], {
+              type: "application/json",
+            }),
+          );
+          const a = document.createElement("a");
+          a.href = u;
+          a.download = "vgatebox-socks.json";
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(u), 1000);
+        }, $("resourceExportSocks"));
+      $("resourceCredClose").onclick = () => $("resourceCredentials").close();
+      $("resourceCredCopy").onclick = () =>
+        action(() => copy($("resourceCredentialURL").value));
+      document.addEventListener("change", (e) => {
+        if (e.target.dataset.sstpSelect) {
+          e.target.checked
+            ? resourceSelected.add(e.target.dataset.sstpSelect)
+            : resourceSelected.delete(e.target.dataset.sstpSelect);
+          renderResources();
+        }
+      });
+      document.addEventListener("click", (e) => {
+        const check = e.target.closest("[data-sstp-check]");
+        if (check)
+          return action(
+            () =>
+              checkSstpResources({
+                hosts: [check.dataset.sstpCheck],
+                priority: true,
+              }),
+            check,
+          );
+        const copyButton = e.target.closest("[data-sstp-copy]");
+        if (copyButton)
+          return action(
+            () => resourceExport([copyButton.dataset.sstpCopy], "text", true),
+            copyButton,
+          );
+        const toggle = e.target.closest("[data-resource-toggle]");
+        if (toggle) {
+          const row = exits.find(
+            (x) => x.slot === Number(toggle.dataset.resourceToggle),
+          );
+          return action(async () => {
+            await api("api/console/socks", {
+              slot: row.slot,
+              enabled: !row.public_socks?.enable,
+            });
+            await poll();
+          }, toggle);
+        }
+        const cred = e.target.closest("[data-resource-cred]");
+        if (cred) {
+          const row = exits.find(
+            (x) => x.slot === Number(cred.dataset.resourceCred),
+          );
+          $("resourceCredentialTitle").textContent = name(row) + " · SOCKS5";
+          $("resourceCredentialScope").textContent = row.public_socks?.enable
+            ? "外部接入已开启，使用独立外部端口。"
+            : "当前仅 VPS 本机可用，启用外部接入后才能供其他设备使用。";
+          $("resourceCredentialURL").value = resourceSocksURL(row);
+          $("resourceCredentialUser").value = row.socks_user;
+          $("resourceCredentialPass").value = row.socks_pass;
+          $("resourceCredAdvanced").href = "advanced?slot=" + row.slot;
+          $("resourceCredentials").showModal();
+        }
+      });
+
+      async function poll() {
+        if (polling) return;
+        polling = true;
+        try {
+          const thirdPollEpoch = thirdEpoch;
+          const refreshPollEpoch = poolRefreshEpoch;
+          const [s, e, n, sub, third] = await Promise.all([
+            api("api/console"),
+            api("api/exits"),
+            api("api/nodes?all=1"),
+            api("api/sub"),
+            api("api/resources/third-party").catch(() => ({
+              proxies: thirdProxies,
+            })),
+          ]);
+          if (refreshPollEpoch !== poolRefreshEpoch || poolRefreshSubmitting) s.refresh = summary.refresh;
+          if (summary.refresh?.cause === "pool_refresh_submit_failed" &&
+              (s.refresh?.started_at || "") === summary.refresh.previous_started_at) s.refresh = summary.refresh;
+          summary = s;
+          summary.backend = e.backend;
+          hostDirect = e.host_direct || [];
+          resourcePublicIP = e.public_ip || location.hostname;
+          exits = (e.exits || []).sort((a, b) => a.slot - b.slot);
+          nodes = n.nodes || [];
+          subscription = sub;
+          if (thirdPollEpoch === thirdEpoch) {
+            thirdProxies = third.proxies || [];
+            thirdCountries = third.countries || thirdCountries;
+          }
+          render();
+        } catch (e) {
+          $("globalNotice").hidden = false;
+          $("globalNotice").className = "notice error";
+          $("globalNotice").textContent = "连接暂时中断：" + e.message;
+        } finally {
+          polling = false;
+        }
+      }
+      function automationText(value) {
+        if (!value) return "周期任务设置读取中…";
+        const labels = {never:"尚未执行",running:"进行中",passed:"刷新成功",failed:"刷新失败",completed:"检测完成",cancelled:"已取消",interrupted:"上次中断",no_candidates:"没有候选，等待下轮",invalid:"状态异常，自动任务暂停"};
+        const one=(title,r)=> !r?.enabled ? title+"：已关闭" : title+"：每 "+r.minutes+" 分钟 · "+(labels[r.status]||"待执行")+(r.running?"，完成后再计时":" · 下次 "+date(r.next_at))+(r.finished_at?" · 上次 "+date(r.finished_at):"");
+        return one("清单刷新",value.refresh)+"。 "+one("候选检测",value.check)+(value.check?.status==="completed"?" · 本轮通过 "+value.check.passed+" / "+value.check.nodes:"")+(value.error?"。 "+value.error:"");
+      }
+      $("automationButton").onclick=()=>action(async()=>{
+        const v=await api("api/console/automation"),s=v.settings;
+        $("autoRefreshEnabled").checked=s.refresh_enabled;$("autoRefreshMinutes").value=s.refresh_minutes;
+        $("autoCheckEnabled").checked=s.check_enabled;$("autoCheckMinutes").value=s.check_minutes;
+        $("automationDialog").showModal();
+      },$("automationButton"));
+      $("automationForm").onsubmit=e=>{e.preventDefault();action(async()=>{
+        const refresh=Number($("autoRefreshMinutes").value),check=Number($("autoCheckMinutes").value);
+        if (![refresh,check].every(n=>Number.isSafeInteger(n)&&n>=30&&n<=525600)) throw Error("自动任务间隔须为 30–525600 分钟");
+        const v=await api("api/console/automation",{refresh_enabled:$("autoRefreshEnabled").checked,refresh_minutes:refresh,check_enabled:$("autoCheckEnabled").checked,check_minutes:check});
+        summary.automation=v;$("automationSummary").textContent=automationText(v);$("automationDialog").close();toast("周期任务已保存");
+      },$("saveAutomation"));};
+      async function openSourceSettings() {
+        if (sourceSettingsLoading || $("sourceDialog").open) return;
+        sourceSettingsLoading = true;
+        try {
+          const s = await api("api/console/source-settings");
+          $("sourceMirrorEnabled").checked = s.mirror_enabled === true;
+          $("sourceTimeout").value = s.source_timeout_seconds;
+          $("sourceMirrorMaxAge").value = s.mirror_max_age_hours;
+          $("sourceDialog").showModal();
+        } finally {
+          sourceSettingsLoading = false;
+        }
+      }
+      $("sourceSettingsButton").onclick = () => action(openSourceSettings, $("sourceSettingsButton"));
+      $("sourceForm").onsubmit = (e) => {
+        e.preventDefault();
+        if (sourceSettingsSaving) return;
+        action(async () => {
+          const timeout = Number($("sourceTimeout").value), age = Number($("sourceMirrorMaxAge").value);
+          if (!Number.isSafeInteger(timeout) || timeout < 2 || timeout > 20 || !Number.isSafeInteger(age) || age < 1 || age > 168) throw Error("请填写有效的来源等待和镜像最大年龄");
+          sourceSettingsSaving = true;
+          try {
+            await api("api/console/source-settings", {mirror_enabled: $("sourceMirrorEnabled").checked, source_timeout_seconds: timeout, mirror_max_age_hours: age});
+            $("sourceDialog").close();
+            toast("来源设置已保存，下次刷新生效");
+          } finally {
+            sourceSettingsSaving = false;
+          }
+        }, $("saveSourceSettings"));
+      };
+      async function refreshPool() {
+        if (poolRefreshSubmitting || summary.refresh?.status === "running") return;
+        poolRefreshSubmitting = true;
+        poolRefreshEpoch++;
+        const previousStarted = summary.refresh?.started_at || "";
+        summary.refresh = {status: "running", submitting: true, elapsed_seconds: 0, timeout_seconds: 90};
+        render();
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+        try {
+          await api("api/console/refresh", {}, controller.signal);
+          summary.refresh.submitting = false;
+        } catch (e) {
+          summary.refresh = {status: "failed", cause: "pool_refresh_submit_failed", previous_started_at: previousStarted};
+          throw e;
+        } finally {
+          clearTimeout(timeout);
+          poolRefreshSubmitting = false;
+          render();
+        }
+        await poll();
+      }
+      function openTarget() {
+        if (summary.capacity === undefined) {
+          toast("请等待状态读取完成");
+          return;
+        }
+        $("targetCount").value = summary.target_configured === false ? (summary.suggested_target || 16) : summary.target;
+
+        $("targetCountry").value = summary.plan?.policy?.country || "";
+        $("targetServer").value =
+          summary.plan?.server_name ||
+          summary.default_server_name ||
+          "www.tesla.com";
+        $("targetHelp").textContent =
+          "按服务器资源和上游供给设置数量。设为 0 会移除全部活动出口；端口或地址不足时会显示原因。";
+        $("targetDialog").showModal();
+      }
+      function openExit(slot) {
+        currentExit = exits.find((e) => e.slot === slot);
+        if (!currentExit) return;
+        const p = currentExit.policy || {};
+        $("exitTitle").textContent =
+          "出口 " + String(slot).padStart(2, "0") + " 设置";
+        $("exitCountry").value = p.country || "";
+        $("exitLatency").value = p.maximum_latency_ms || 0;
+        $("typeChoices").innerHTML = Object.entries(types)
+          .map(
+            ([k, v]) =>
+              '<label><input type="checkbox" name="ip_type" value="' +
+              k +
+              '" ' +
+              ((p.allowed_ip_types || []).includes(k) ? "checked" : "") +
+              "> " +
+              esc(v) +
+              "</label>",
+          )
+          .join("");
+        for (const [id, key] of [
+          ["allowedISP", "allowed_isp"],
+          ["blockedISP", "blocked_isp"],
+          ["allowedASN", "allowed_asn"],
+          ["blockedASN", "blocked_asn"],
+        ])
+          $(id).value = (p[key] || []).join(", ");
+        $("rollbackPolicy").hidden = !currentExit.can_rollback_policy;
+        $("nameEdits").innerHTML =
+          (currentExit.inbounds || [])
+            .map(
+              (i) =>
+                '<div class="nameedit" data-inbound="' +
+                i.id +
+                '"><small>' +
+                esc(i.protocol.toUpperCase()) +
+                " · " +
+                i.port +
+                '</small><div class="row"><select aria-label="名称模式"><option value="auto" ' +
+                (i.name_mode !== "custom" ? "selected" : "") +
+                '>国旗 + 国家 + 编号</option><option value="custom" ' +
+                (i.name_mode === "custom" ? "selected" : "") +
+                '>自定义名称</option></select><input aria-label="自定义名称" value="' +
+                esc(i.remark) +
+                '"><button type="button" data-action="saveName" data-id="' +
+                i.id +
+                '">保存</button></div></div>',
+            )
+            .join("") || "<small>等待自动绑定入站</small>";
+        $("exitDialog").showModal();
+      }
+      async function check(req) {
+        const keys = [
+          ...(req.hosts || []).map((h) => "host:" + h),
+          ...(req.slots || []).map((n) => "slot:" + n),
+        ];
+        if (keys.some((k) => submittingChecks.has(k))) return;
+        keys.forEach((k) => submittingChecks.add(k));
+        render();
+        try {
+          req.kind = "checks";
+          req.parallelism = Number($("checkParallelism").value);
+          if (!Number.isSafeInteger(req.parallelism) || req.parallelism < 1)
+            throw Error("请输入正整数并发数");
+          const job = await api("api/console/check", req);
+          summary.check = job;
+          if (!req.priority) {
+            delete $("checkParallelism").dataset.dirty;
+            summary.check_settings = { parallelism: req.parallelism };
+          }
+          toast(req.priority ? "已提交优先检测" : "检测已开始");
+        } finally {
+          keys.forEach((k) => submittingChecks.delete(k));
+          render();
+        }
+        await poll();
+      }
+      document.addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        if (!b) return;
+        if (b.dataset.page) {
+          if (b.hasAttribute("data-third-resources")) resourceTab = "third";
+          showPage(b.dataset.page);
+          return;
+        }
+        if (b.dataset.close) {
+          $(b.dataset.close).close();
+          return;
+        }
+        if (b.hasAttribute("data-direct-toggle")) return toggleHostDirect(b);
+        if (!b.dataset.action) return;
+        action(async () => {
+          const a = b.dataset.action,
+            slot = Number(b.dataset.slot);
+          if (a === "target") openTarget();
+          if (a === "edit") openExit(slot);
+          if (a === "refresh") {
+            await refreshPool();
+          }
+          if (a === "check") await check({ slots: [slot], priority: true });
+          if (a === "checkAll") {
+            const slots = exits
+              .filter((e) => e.status === "up")
+              .map((e) => e.slot);
+            if (!slots.length) throw Error("当前没有就绪出口");
+            await check({ kind: "exits", slots });
+          }
+          if (a === "testNode")
+            await check({ hosts: [b.dataset.host], priority: true });
+          if (a === "cancelCheck") {
+            await api("api/console/check/cancel", {});
+            toast("正在取消并清理临时连接");
+            await poll();
+          }
+          if (a === "pause" || a === "resume") {
+            await api(
+              (a === "pause" ? "api/stop" : "api/slot/resume") +
+                "?slot=" +
+                slot,
+              {},
+            );
+            await poll();
+          }
+          if (a === "saveName") {
+            const row = b.closest(".nameedit"),
+              mode = row.querySelector("select").value,
+              remark = row.querySelector("input").value.trim();
+            if (mode === "custom" && !remark) throw Error("请输入自定义名称");
+            await api(
+              "api/panel/inbound/update?id=" +
+                b.dataset.id +
+                "&name_mode=" +
+                mode +
+                (mode === "custom"
+                  ? "&remark=" + encodeURIComponent(remark)
+                  : ""),
+              {},
+            );
+            toast("订阅名称已更新");
+            await poll();
+          }
+        }, b);
+      });
+      $("targetForm").addEventListener("submit", (e) => {
+        e.preventDefault();
+        action(async () => {
+          const count = Number($("targetCount").value);
+          if (
+            count < (summary.allocated || 0) &&
+            !confirm(
+              "将从编号最大的出口开始移除，相关连接会中断。确认调整为 " +
+                count +
+                " 个？",
+            )
+          )
+            return;
+          const policy = structuredClone(
+            summary.plan?.policy || { allowed_ip_types: Object.keys(types) },
+          );
+          policy.country = $("targetCountry").value.trim().toUpperCase();
+          await api("api/console/target", {
+            count,
+            policy,
+            server_name: $("targetServer").value.trim(),
+          });
+          $("targetDialog").close();
+          toast("目标数量已保存，正在按策略连接");
+          await poll();
+        }, e.submitter);
+      });
+      function split(id, numeric = false) {
+        const v = $(id)
+          .value.split(/[,，\n]/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        if (!numeric) return v;
+        if (v.some((s) => !/^(AS)?\d+$/i.test(s)))
+          throw Error("ASN 请填写 AS 加数字");
+        return v.map((s) => "AS" + s.replace(/^AS/i, ""));
+      }
+      $("policyForm").addEventListener("submit", (e) => {
+        e.preventDefault();
+        action(async () => {
+          if (!confirm("保存策略将重新核验并连接该出口。继续？")) return;
+          const p = structuredClone(currentExit.policy || {});
+          p.country = $("exitCountry").value.trim().toUpperCase();
+          p.maximum_latency_ms = Number($("exitLatency").value);
+          p.allowed_ip_types = [
+            ...document.querySelectorAll("[name=ip_type]:checked"),
+          ].map((n) => n.value);
+          p.allowed_isp = split("allowedISP");
+          p.blocked_isp = split("blockedISP");
+          p.allowed_asn = split("allowedASN", true);
+          p.blocked_asn = split("blockedASN", true);
+          await api("api/slot/policy?slot=" + currentExit.slot, p);
+          $("exitDialog").close();
+          toast("出口策略已保存");
+          await poll();
+        }, e.submitter);
+      });
+      $("swapExit").onclick = () =>
+        action(async () => {
+          if (
+            !confirm("更换 IP 会中断该出口当前连接，保留原策略和凭据。继续？")
+          )
+            return;
+          await api("api/swap?slot=" + currentExit.slot, {});
+          $("exitDialog").close();
+          toast("正在寻找符合策略的新出口");
+          await poll();
+        }, $("swapExit"));
+      $("rollbackPolicy").onclick = () =>
+        action(async () => {
+          if (!confirm("恢复上次策略并重新连接该出口？")) return;
+          await api("api/slot/policy/rollback?slot=" + currentExit.slot, {});
+          $("exitDialog").close();
+          await poll();
+        }, $("rollbackPolicy"));
+      $("checkParallelism").oninput = () => {
+        $("checkParallelism").dataset.dirty = "1";
+      };
+      $("saveCheckSettings").onclick = () =>
+        action(async () => {
+          const n = Number($("checkParallelism").value);
+          if (!Number.isSafeInteger(n) || n < 1)
+            throw Error("请输入正整数并发数");
+          const saved = await api("api/console/check/settings", {
+            parallelism: n,
+          });
+          summary.check_settings = saved;
+          delete $("checkParallelism").dataset.dirty;
+          toast(
+            summary.check?.status === "running"
+              ? "已保存，将用于下一轮检测"
+              : "检测并发已保存",
+          );
+        }, $("saveCheckSettings"));
+      $("testAllNodes").onclick = () =>
+        action(() => check({ all: true }), $("testAllNodes"));
+      $("testSelected").onclick = () =>
+        action(
+          () => check({ kind: "candidates", hosts: [...selected] }),
+          $("testSelected"),
+        );
+      for (const id of ["search", "countryFilter", "statusFilter"])
+        $(id).addEventListener(
+          id === "search" ? "input" : "change",
+          renderNodes,
+        );
+      $("selectVisible").onchange = (e) => {
+        for (const n of filteredNodes())
+          e.target.checked
+            ? selected.add(n.hostname)
+            : selected.delete(n.hostname);
+        renderNodes();
+      };
+      document.addEventListener("change", (e) => {
+        if (e.target.dataset.node) {
+          e.target.checked
+            ? selected.add(e.target.dataset.node)
+            : selected.delete(e.target.dataset.node);
+          renderNodes();
+        }
+        if (e.target.dataset.subSlot) {
+          const slot = Number(e.target.dataset.subSlot);
+          e.target.checked ? subSelected.add(slot) : subSelected.delete(slot);
+          renderSubscription();
+        }
+      });
+      $("subDirect").onchange = renderSubscription;
+      function toggleHostDirect(button) {
+        return action(async () => {
+          await api("api/console/direct", {
+            enabled: !hostDirect.some((i) => i.enable),
+          });
+          await poll();
+          toast("本机直出设置已保存，请刷新客户端订阅");
+        }, button);
+      }
+      $("hostDirectToggle").onclick = () => toggleHostDirect($("hostDirectToggle"));
+      $("subAll").onchange = () => {
+        if (!$("subAll").checked) subSelected.clear();
+        renderSubscription();
+      };
+      $("subFormat").value=localStorage.getItem("vgatebox-sub-format")==="clash"?"clash":"base64";
+      $("subFormat").onchange=()=>{localStorage.setItem("vgatebox-sub-format",$("subFormat").value);renderSubscription();};
+      $("copySub").onclick = () => action(() => copy(selectedSubURL()));
+      $("copyLinks").onclick = () =>
+        action(async () => {
+          const u = new URL(selectedSubURL() || location.href);
+          u.searchParams.set("target", "links");
+          const r = await fetch(u, { cache: "no-store" });
+          if (!r.ok) throw Error("读取节点链接失败");
+          const t = await r.text();
+          if (!t.trim()) throw Error("当前范围暂无就绪入站");
+          await copy(t);
+        });
+      function renderSoftwareUpdate() {
+        const running = softwareSubmitting || softwareJob?.status === "running";
+        $("checkSoftwareUpdate").disabled = running;
+        $("installSoftwareUpdate").disabled =
+          running ||
+          !softwareRelease?.has_update ||
+          !softwareRelease?.supported;
+        $("installSoftwareUpdate").textContent = running
+          ? "正在更新…"
+          : "安装更新";
+        $("softwareLatest").textContent = softwareRelease
+          ? " · 最新正式版 " + softwareRelease.latest
+          : "";
+        if (softwareCheckMessage && softwareJob?.status !== "running") {
+          $("softwareUpdateStatus").textContent = softwareCheckMessage;
+        } else if (softwareJob && softwareJob.status !== "idle") {
+          $("softwareUpdateStatus").textContent =
+            (softwareJob.target ? softwareJob.target + " · " : "") +
+            softwareJob.message +
+            (softwareJob.status === "failed" && softwareJob.rolled_back
+              ? "，可以检查日志后重试。"
+              : "");
+        }
+      }
+      async function loadSoftwareStatus() {
+        if (softwarePolling) return;
+        softwarePolling = true;
+        try {
+          softwareJob = await api("api/update/status");
+          renderSoftwareUpdate();
+        } finally {
+          softwarePolling = false;
+        }
+      }
+      $("checkSoftwareUpdate").onclick = () =>
+        action(async () => {
+          softwareRelease = await api("api/update/check");
+          renderSoftwareUpdate();
+          $("softwareNotes").textContent =
+            softwareRelease.notes || "此版本暂无附加说明。";
+          $("softwareNotesDetails").hidden = false;
+          if (softwareJob?.status !== "running")
+            $("softwareUpdateStatus").textContent = softwareCheckMessage =
+              !softwareRelease.supported
+                ? "当前架构暂无可用安装包。"
+                : softwareRelease.has_update
+                  ? "发现新版本，可备份并更新完整程序。"
+                  : "当前已是最新正式版本。";
+        }, $("checkSoftwareUpdate"));
+      $("installSoftwareUpdate").onclick = () =>
+        action(async () => {
+          if (!softwareRelease?.has_update || softwareSubmitting) return;
+          if (
+            !confirm(
+              "将备份并更新至 " +
+                softwareRelease.latest +
+                "，连接会短暂中断，原配置与订阅保留。继续更新？",
+            )
+          )
+            return;
+          softwareSubmitting = true;
+          softwareCheckMessage = "";
+          renderSoftwareUpdate();
+          try {
+            const r = await api("api/update/apply", {
+              expected_version: softwareRelease.latest,
+            });
+            if (r.status) softwareJob = r;
+            await loadSoftwareStatus();
+          } finally {
+            softwareSubmitting = false;
+            renderSoftwareUpdate();
+          }
+        }, $("installSoftwareUpdate"));
+      async function loadSettings() {
+        const s = await api("api/settings");
+        $("settingPort").value = s.port;
+        $("settingListen").value = s.listen_addr;
+        $("settingPath").value = s.base_path;
+        settingsLoaded = true;
+      }
+      $("settingsForm").onsubmit = (e) => {
+        e.preventDefault();
+        action(async () => {
+          const data = {
+            port: Number($("settingPort").value),
+            listen_addr: $("settingListen").value.trim(),
+            base_path: $("settingPath").value.trim(),
+          };
+          if ($("settingPassword").value)
+            data.password = $("settingPassword").value;
+          const r = await api("api/settings", data);
+          $("settingPassword").value = "";
+          toast("设置已保存");
+          const u = new URL(location.href);
+          u.port = String(r.port);
+          u.pathname = r.base_path + "/";
+          if (u.href !== location.href) location.href = u.href;
+        }, e.submitter);
+      };
+      try {
+        if (localStorage.getItem("vgatebox-theme") === "dark")
+          document.body.classList.add("dark");
+      } catch {}
+      $("theme").onclick = () => {
+        document.body.classList.toggle("dark");
+        try {
+          localStorage.setItem(
+            "vgatebox-theme",
+            document.body.classList.contains("dark") ? "dark" : "light",
+          );
+        } catch {}
+      };
+      window.addEventListener("hashchange", () =>
+        showPage(location.hash.slice(1)),
+      );
+      showPage(location.hash.slice(1));
+      poll();
+      setInterval(poll, 2000);
+    </script>
+  </body>
+</html>

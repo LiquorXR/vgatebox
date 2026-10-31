@@ -1,0 +1,10 @@
+[Unit]
+Description=vgatebox shared candidate pool builder
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/vgatebox/scripts/toolbox.py --config /etc/vgatebox/pool.json pool --output /var/lib/vgatebox/pool --schedule-dir /var/lib/vgatebox/fanout --scheduled
+TimeoutStartSec=120
+UMask=0077

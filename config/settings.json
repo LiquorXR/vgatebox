@@ -1,0 +1,22 @@
+{
+  "source_urls": ["https://www.vpngate.net/api/iphone/", "https://download.vpngate.jp/api/iphone/"],
+  "pool_source_timeout_seconds": 10,
+  "mirror_fallback": {"enabled": true, "max_age_hours": 24},
+  "countries": [],
+  "candidate_limit": 50,
+  "sstp_concurrency": 4,
+  "xray_concurrency": 2,
+  "node_timeout_seconds": 30,
+  "chain_timeout_seconds": 45,
+  "chain_ttl_seconds": 3600,
+  "intelligence_ttl_seconds": 86400,
+  "intelligence_query_limit": 50,
+  "echo_urls": ["https://api.ipify.org", "https://ipv4.icanhazip.com"],
+  "content_url": "https://www.example.com/",
+  "content_marker": "Example Domain",
+  "edge_adapter": "edgetunnel-globalproxy-v1",
+  "edge_port": 443,
+  "edge_base_path": "/",
+  "consumer_asns": ["AS7922", "AS20115", "AS7018", "AS4713", "AS2516", "AS4766"],
+  "consumer_isp_patterns": ["Comcast", "Spectrum", "Charter", "AT&T", "NTT", "KDDI", "Korea Telecom"]
+}

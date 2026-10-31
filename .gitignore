@@ -1,0 +1,15 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+.venv/
+.wrangler/
+__pycache__/
+*.py[cod]
+*.egg-info/
+runtime/
+data/
+public/
+tools/bin/
+dist/
+build/
