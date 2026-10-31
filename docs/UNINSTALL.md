@@ -16,9 +16,9 @@ vgatebox uninstall --purge --legacy
 
 只卸载当前项目并保留备份，用 `vgatebox uninstall`。`--purge` 同时永久删除本项目备份；`--legacy` 额外清理标准旧版的 `/var/lib/fanout`、`fanout.service`、`/usr/local/bin/fanout`，以及具有旧菜单签名的 `/usr/local/bin/f`。无关的 `f` 工具保留。自动化需明确添加 `--yes`，不接受隐式管道确认。
 
-## 旧版本或卸载中断后
+## 卸载中断后
 
-旧版本没有该命令。可以直接下载固定版本、独立运行的卸载工具，无需先升级或启动代理：
+如果 `vgatebox uninstall` 不可用，可以直接下载固定版本、独立运行的卸载工具，无需先启动代理：
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/LiquorXR/vgatebox/v1.1.2/vps/deploy/uninstall.py -o /tmp/vgatebox-uninstall.py
@@ -26,7 +26,7 @@ python3 /tmp/vgatebox-uninstall.py --dry-run --purge --legacy
 python3 /tmp/vgatebox-uninstall.py --purge --legacy
 ```
 
-临时下载文件可以在完成后自行删除。重新安装使用 [安装命令](../README.md#安装)，会生成新的管理身份和订阅；旧客户端订阅需替换。使用旧备份恢复属于迁移，不能算全新安装验收。
+临时下载文件可以在完成后自行删除。
 
 ## 清理和保留的边界
 

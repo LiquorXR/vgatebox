@@ -140,4 +140,4 @@ python3 scripts/toolbox.py --config config/settings.json --env-file /path/intell
 
 ## 卸载
 
-`vgatebox uninstall --dry-run --purge --legacy` 只读预览；`vgatebox uninstall --purge --legacy` 确认后删除本项目、备份及已确认的默认旧版安装。省略 `--purge` 保留已有备份，省略 `--legacy` 保留旧 fanout。旧版本独立工具、清理范围与停止条件见 [卸载说明](../docs/UNINSTALL.md)。
+`vgatebox uninstall --dry-run --purge --legacy` 只读预览；`vgatebox uninstall --purge --legacy` 确认后删除本项目、备份及已确认的默认旧 fanout 安装。省略 `--purge` 保留已有备份，省略 `--legacy` 保留旧 fanout。独立卸载工具、清理范围与停止条件见 [卸载说明](../docs/UNINSTALL.md)。

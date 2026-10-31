@@ -36,10 +36,6 @@ CentOS 首次安装会编译 SSTP 客户端，耗时和内存需求高于 Debian
 
 第三方镜像后备默认开启，可在候选页的「来源设置」关闭；已有明确保存的关闭选择保留。仍由自己的 VPS 优先请求原来源，失败后下载并校验镜像原始 CSV，再自行检测节点与真实出口；不采用镜像的检测结论。页面区分本机获取时间和镜像声明的抓取时间。详见 [候选来源](docs/POOL_SOURCE_FALLBACK.md)。
 
-## 从旧版迁移
-
-如果你之前安装过旧版 `xnvgatebox`，新版使用不同的程序路径和服务名。先运行旧版 `xnvgatebox uninstall`（默认保留备份），再按上面的命令安装 `vgatebox`。
-
 ## 首次使用
 
 1. 刷新候选
@@ -78,7 +74,7 @@ vgatebox uninstall --dry-run --purge --legacy
 vgatebox uninstall --purge --legacy
 ```
 
-卸载需确认，不移除其他程序或共享系统依赖。旧版本用法见 [卸载说明](docs/UNINSTALL.md)。
+卸载需确认，不移除其他程序或共享系统依赖。卸载细节见 [卸载说明](docs/UNINSTALL.md)。
 
 ## 使用须知
 

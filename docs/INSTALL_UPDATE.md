@@ -1,6 +1,6 @@
 # Linux 安装与完整包在线更新
 
-固定版本统一安装命令见 [README](../README.md#安装)，自动选择 APT 或 DNF，并在安装后显示随机管理地址和密码。VPN Gate 来源不可用时仍可完成安装；直出及第三方 SOCKS5 可由用户独立配置，VPN Gate 出口等待候选而不回落。用户可在候选页开启第三方镜像后备，清单获取及出口验证仍由自己的 VPS 完成，见 [来源说明](POOL_SOURCE_FALLBACK.md)。系统支持范围见 [系统兼容性](LINUX_SUPPORT.md)。卸载和旧版本独立工具见 [卸载说明](UNINSTALL.md)。
+固定版本统一安装命令见 [README](../README.md#安装)，自动选择 APT 或 DNF，并在安装后显示随机管理地址和密码。VPN Gate 来源不可用时仍可完成安装；直出及第三方 SOCKS5 可由用户独立配置，VPN Gate 出口等待候选而不回落。用户可在候选页开启第三方镜像后备，清单获取及出口验证仍由自己的 VPS 完成，见 [来源说明](POOL_SOURCE_FALLBACK.md)。系统支持范围见 [系统兼容性](LINUX_SUPPORT.md)。卸载和独立卸载工具见 [卸载说明](UNINSTALL.md)。
 
 ## 运行要求
 
