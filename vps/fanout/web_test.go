@@ -17,8 +17,8 @@ func TestHandleIndexRedirectsNextWithoutSlash(t *testing.T) {
 	if rec.Code != http.StatusTemporaryRedirect {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	if got := rec.Header().Get("Location"); got != "/next/?x=1" {
-		t.Fatalf("location = %q", got)
+	if got, want := rec.Header().Get("Location"), currentBasePath()+"/next/?x=1"; got != want {
+		t.Fatalf("location = %q, want %q", got, want)
 	}
 }
 
@@ -28,8 +28,8 @@ func TestLegacyAdvancedRedirectsToAccessTab(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	if got := rec.Header().Get("Location"); got != "/#/access" {
-		t.Fatalf("location = %q", got)
+	if got, want := rec.Header().Get("Location"), currentBasePath()+"/#/access"; got != want {
+		t.Fatalf("location = %q, want %q", got, want)
 	}
 }
 

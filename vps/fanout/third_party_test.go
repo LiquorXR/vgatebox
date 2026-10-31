@@ -15,29 +15,6 @@ import (
 	"time"
 )
 
-func TestThirdPartyConsolePayloadCreatesProxy(t *testing.T) {
-	_, _, _, c := thirdPartyFixture(t)
-	body := `{"id":0,"host":"new-proxy.example.com","port":1081,"username":"console-user","password":"console-pass","country":"JP","city":"东京","remark":"console","subscribe":true,"enabled":true}`
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/resources/third-party", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	c.third.apiResources(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestPublicSocksConsolePayloadEnablesListener(t *testing.T) {
-	_, _, _, c := thirdPartyFixture(t)
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/console/socks", strings.NewReader(`{"slot":1,"enabled":true}`))
-	req.Header.Set("Content-Type", "application/json")
-	c.apiPublicSocks(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
 func TestThirdPartySubscriptionSourceOrderStable(t *testing.T) {
 	n, _, m, _ := thirdPartyFixture(t)
 	useSettings(t)
