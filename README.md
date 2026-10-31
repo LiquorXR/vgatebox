@@ -90,5 +90,3 @@ vgatebox uninstall --purge --legacy
 [首次使用](docs/FIRST_USE.md) · [第三方 SOCKS5](docs/THIRD_PARTY_SOCKS.md) · [代理资源](docs/PROXY_RESOURCES.md) · [原始 SSTP](docs/SSTP_USAGE.md) · [安装更新](docs/INSTALL_UPDATE.md) · [开发与测试](docs/TESTING.md)
 
 核心工具采用 [GPL-3.0-only](LICENSE)。独立 EdgeTunnel 修改采用 GPL-2.0-only；依赖许可、上游来源及复用边界见 [THIRD_PARTY.md](THIRD_PARTY.md)。
-
-本项目基于 [hanhaoops/xnvgatebox](https://github.com/hanhaoops/xnvgatebox)（GPL-3.0）修改，`vps/fanout` 基于 [byJoey/fanout](https://github.com/byJoey/fanout)（MIT）。上游版权归各自作者，许可证全文保留。
