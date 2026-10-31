@@ -50,6 +50,10 @@ def main():
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
+    if not args.manager and not (ROOT / "vps/fanout/webdist/index.html").is_file():
+        raise SystemExit(
+            "frontend build missing: run `cd vps/fanout/frontend && npm ci --ignore-scripts && npm run build` first"
+        )
     with tempfile.TemporaryDirectory() as tmp:
         stage = Path(tmp)
         (stage / "bin").mkdir()

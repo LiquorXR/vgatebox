@@ -5,6 +5,37 @@ on:
 permissions:
   contents: read
 jobs:
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: vps/fanout/frontend/package-lock.json
+      - name: Install
+        working-directory: vps/fanout/frontend
+        run: npm ci --ignore-scripts
+      - name: Typecheck
+        working-directory: vps/fanout/frontend
+        run: npm run typecheck
+      - name: Unit tests
+        working-directory: vps/fanout/frontend
+        run: npm run test:unit
+      - name: Build
+        working-directory: vps/fanout/frontend
+        run: npm run build
+      - name: Install Playwright Chromium
+        working-directory: vps/fanout/frontend
+        run: npx playwright install --with-deps chromium
+      - name: Browser tests
+        working-directory: vps/fanout/frontend
+        run: npm run test:e2e
+
   test:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -21,8 +52,4 @@ jobs:
       - run: python scripts/install_xray.py
       - run: node tests/test_worker_guards.mjs
       - run: node tests/test_cf_control.mjs
-      - run: node tests/test_console_sstp.mjs
-      - run: node tests/test_console_third_party.mjs
-      - run: node tests/test_console_flow.mjs
-      - run: node tests/test_console_automation.mjs
       - run: python -m unittest discover -s tests -v

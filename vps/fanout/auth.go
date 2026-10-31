@@ -4,11 +4,11 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	_ "embed"
 	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -148,12 +148,22 @@ const sessionCookie = "fanout_session"
 func (a *Auth) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/login" {
+			if c, err := r.Cookie(sessionCookie); err == nil && a.valid(c.Value) {
+				http.Redirect(w, r, "./", http.StatusSeeOther)
+				return
+			}
 			a.handleLogin(w, r)
 			return
 		}
 		// 订阅得让客户端直接拉，带不了登录态，所以这条路放行。
 		// 它不是无门槛：handleSub 自己校验一串独立口令，且仍在访问路径之后。
 		if r.URL.Path == "/sub" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Public build assets are needed by the login page itself. They contain
+		// no management data and are safe to serve before authentication.
+		if isPublicAsset(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -165,9 +175,41 @@ func (a *Auth) Wrap(next http.Handler) http.Handler {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "未登录"})
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(loginHTML))
+		serveLoginPage(w)
 	})
+}
+
+func wantsHTMLRedirect(r *http.Request) bool {
+	if strings.EqualFold(r.Header.Get("Sec-Fetch-Mode"), "navigate") {
+		return true
+	}
+	accept := r.Header.Get("Accept")
+	return strings.Contains(accept, "text/html") && !strings.Contains(accept, "application/json")
+}
+
+// safeReferer keeps the post-login redirect on this management instance. The
+// path is ignored unless it belongs to the current access path.
+func safeReferer(r *http.Request) string {
+	ref := r.Referer()
+	if ref == "" {
+		return "./"
+	}
+	u, err := url.Parse(ref)
+	if err != nil || (u.Host != "" && u.Host != r.Host) {
+		return "./"
+	}
+	p := u.EscapedPath()
+	base := currentBasePath()
+	if p == "" || p == "/login" || p == base+"/login" {
+		return "./"
+	}
+	if !strings.HasPrefix(p, base+"/") {
+		return "./"
+	}
+	if u.RawQuery != "" {
+		p += "?" + u.RawQuery
+	}
+	return p
 }
 
 // blocked 判断某来源 IP 是否处于登录冷却期。
@@ -222,8 +264,7 @@ func clientIP(r *http.Request) string {
 
 func (a *Auth) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(loginHTML))
+		serveLoginPage(w)
 		return
 	}
 	ip := clientIP(r)
@@ -250,8 +291,9 @@ func (a *Auth) handleLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(sessionTTL.Seconds()),
 	})
+	if wantsHTMLRedirect(r) {
+		http.Redirect(w, r, safeReferer(r), http.StatusSeeOther)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "已登录"})
 }
-
-//go:embed login.html
-var loginHTML string

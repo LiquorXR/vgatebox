@@ -10,6 +10,20 @@ python3 scripts/toolbox.py pool
 
 生成 `data/node_pool.json`、摘要和 `data/configs/*.ovpn`；可通过 `--csv-file /absolute/path/vpngate.csv` 解析官方格式快照。配置见 `config/settings.json`。真实验活另需 curl、Xray 和对应协议依赖。
 
+## 新控制台
+
+```sh
+cd vps/fanout/frontend
+npm ci --ignore-scripts
+npm run typecheck
+npm run test:unit
+npm run build
+npx playwright install chromium
+npm run test:e2e
+```
+
+构建产物 `webdist` 不提交；CI 会在 Go 测试和打包前完成构建，并运行 Playwright 主流程。新控制台是默认入口，`/next/` 为别名，详见 [前端说明](FRONTEND.md)。
+
 ## 回归测试
 
 ```sh
@@ -17,13 +31,9 @@ python3 scripts/install_xray.py
 python3 -m unittest discover -s tests -v
 node tests/test_worker_guards.mjs
 node tests/test_cf_control.mjs
-node tests/test_console_sstp.mjs
-node tests/test_console_third_party.mjs
-node tests/test_console_flow.mjs
-node tests/test_console_automation.mjs
 ```
 
-Python 检查解析、证据一致性、异常响应、证书拒绝、订阅清理、私密性、锁和进程清理。Node 检查控制台交互和保留的 Worker 边界。Linux Go 测试包含网络隔离、出口生命周期、阻断及并发检查。合成测试与真实 VPN 节点验收分别记录，不因前者通过而认定后者可用。
+Python 检查解析、证据一致性、异常响应、证书拒绝、订阅清理、私密性、锁和进程清理。Node 检查保留的 Worker 边界；新控制台的纯逻辑由 Vitest 检查。Linux Go 测试包含网络隔离、出口生命周期、阻断及并发检查。合成测试与真实 VPN 节点验收分别记录，不因前者通过而认定后者可用。
 
 ## GitHub Actions
 

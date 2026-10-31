@@ -794,7 +794,7 @@
           <b>日常管理，从控制台开始</b
           >这里管理客户端如何接入。出口数量、国家策略和连通性检测可在出口管理中完成。
         </div>
-        <span class="spacer"></span><a href="./#exits">管理出口 →</a>
+        <span class="spacer"></span><a href="./#/exits">管理出口 →</a>
       </div>
       <div id="loadError" class="notice" role="alert" hidden></div>
       <div class="tools">
@@ -1352,7 +1352,7 @@
                   "</article>",
               )
               .join("")
-          : '<div class="empty">还没有出口，先在控制台设置数量。<br><a href="./#exits">前往出口管理 →</a></div>';
+          : '<div class="empty">还没有出口，先在控制台设置数量。<br><a href="./#/exits">前往出口管理 →</a></div>';
       }
       function renderHostDirect() {
         let box = $("#hostConnections");
@@ -1454,7 +1454,7 @@
           const auto = i.managed_slot && !!e;
           const place = direct ? 'VPS 本机直出' : e ? exitName(e) : '未绑定';
           const state = !i.enable ? '已停用' : direct ? '已启用' : !e ? '未绑定 · 阻断' : (e.status === 'starting' && e.phase === 'waiting_capacity' ? '等待建连' : STATUS[e.status] || e.status);
-          return '<tr><td><strong>' + esc(e ? connectionName(i,e) : i.remark || '未命名入口') + '</strong><small style="display:block">' + (auto ? '自动入口' : direct ? '本机直出' : '手动入口') + '</small></td><td>' + esc(i.protocol.toUpperCase()) + ' · ' + i.port + '</td><td>' + esc(place) + '</td><td>' + esc(state) + '</td><td><div style="display:flex;gap:8px;flex-wrap:wrap"><button data-detail="' + i.id + '">配置</button><button data-entry-toggle="' + i.id + '" data-enabled="' + (i.enable ? '1' : '0') + '">' + (i.enable ? '停用' : '启用') + '</button>' + (auto ? '<a href="./#exits">管理出口</a>' : '<button data-delone="' + i.id + '">删除</button>') + '</div></td></tr>';
+          return '<tr><td><strong>' + esc(e ? connectionName(i,e) : i.remark || '未命名入口') + '</strong><small style="display:block">' + (auto ? '自动入口' : direct ? '本机直出' : '手动入口') + '</small></td><td>' + esc(i.protocol.toUpperCase()) + ' · ' + i.port + '</td><td>' + esc(place) + '</td><td>' + esc(state) + '</td><td><div style="display:flex;gap:8px;flex-wrap:wrap"><button data-detail="' + i.id + '">配置</button><button data-entry-toggle="' + i.id + '" data-enabled="' + (i.enable ? '1' : '0') + '">' + (i.enable ? '停用' : '启用') + '</button>' + (auto ? '<a href="./#/exits">管理出口</a>' : '<button data-delone="' + i.id + '">删除</button>') + '</div></td></tr>';
         }).join('') + '</tbody></table></div>' : '<div class="empty">暂无入口，请先在出口管理设置数量或启用本机直出。</div>';
       }
       document.addEventListener('click', async e => {

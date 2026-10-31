@@ -13,3 +13,6 @@ public/
 tools/bin/
 dist/
 build/
+.opencode/
+vps/fanout/webdist/*
+!vps/fanout/webdist/.gitkeep

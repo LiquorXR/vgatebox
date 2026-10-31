@@ -209,7 +209,9 @@ func main() {
 		log.Printf("已生成访问路径，见 %s", filepath.Join(*workDir, "basepath"))
 	}
 
-	srv := newWebServer(StripBasePath(auth.Wrap(mux)))
+	handler := StripBasePath(auth.Wrap(mux))
+	handler = withSecurityHeaders(withGzip(handler))
+	srv := newWebServer(handler)
 	// 设置面板：改密码 / 改路径 / 改端口 / 改本地监听。
 	mux.HandleFunc("/api/settings", apiSettings(auth, srv))
 	updater := newUpdateManager(*workDir)
