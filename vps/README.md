@@ -2,14 +2,16 @@
 
 管理进程、内置 Xray、共享候选池都在 VPS 本地运行，无需额外安装 3x-ui。要求 Linux amd64、root 和 systemd；统一安装入口支持 Debian 12/13、Ubuntu 22.04/24.04 与 CentOS Stream 9/10。各系统自动测试与真实 VPS 验收范围见 [系统兼容性](../docs/LINUX_SUPPORT.md)。
 
-## 安装与升级（v1.1.2）
+## 安装与升级
 
 支持的系统均以 root 执行：
 
 ```sh
 if command -v apt-get >/dev/null; then apt-get update && apt-get install -y ca-certificates curl; else dnf -y install ca-certificates && { command -v curl >/dev/null || dnf -y install curl; }; fi &&
-curl -fsSL https://raw.githubusercontent.com/LiquorXR/vgatebox/v1.1.2/vps/install.sh -o /tmp/vgatebox-install.sh && bash /tmp/vgatebox-install.sh --version v1.1.2 && vgatebox access
+curl -fsSL https://github.com/LiquorXR/vgatebox/releases/latest/download/install.sh -o /tmp/vgatebox-install.sh && bash /tmp/vgatebox-install.sh && vgatebox access
 ```
+
+需要固定版本时，把 `bash /tmp/vgatebox-install.sh` 改为 `bash /tmp/vgatebox-install.sh --version vX.Y.Z`。
 
 只下载本项目 GitHub Release 的完整包和 SHA256，固定 Xray 在构建时验证官方归档摘要。安装器检查归档路径、类型、重复项、完整文件清单、成员摘要和正式版本构建信息。下载、包校验及本地候选配置检查在停止旧服务之前完成；安装不请求 VPN Gate 来源，保留旧池，没有旧池也可安装。候选由后台或定时器获取。登录后可独立配置本机直出及第三方 SOCKS5，VPN Gate 等待候选，不自动回落直出。
 
@@ -17,7 +19,7 @@ curl -fsSL https://raw.githubusercontent.com/LiquorXR/vgatebox/v1.1.2/vps/instal
 
 上面的一键安装命令已接上 `vgatebox access`，安装成功后直接显示登录信息。首次安装生成独立随机路径、密码和订阅凭据；已有安装更新时继续保留原值。查看命令不会重置密码。重装系统后的全新测试会生成新身份，旧链接需更新或在之后有意恢复备份。
 
-更新入口为“设置 → 版本与更新”或 `vgatebox update`；`vgatebox check-update` 检查最新正式版，`vgatebox update-status` 查看结果。可用 `vgatebox update --version v1.1.2` 指定正式版本。网页任务独立于管理服务，更新后重新登录查看结果。
+更新入口为“设置 → 版本与更新”或 `vgatebox update`；`vgatebox check-update` 检查最新正式版，`vgatebox update-status` 查看结果。需要固定版本时使用 `vgatebox update --version vX.Y.Z`。网页任务独立于管理服务，更新后重新登录查看结果。
 
 备份仅覆盖本项目受管文件，不是整机或 3x-ui 备份；重装前请另存到本机。见 [重装准备](../docs/BACKUP_REINSTALL.md)。
 

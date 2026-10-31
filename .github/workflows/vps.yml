@@ -52,6 +52,12 @@ jobs:
         run: |
           [[ "$PACKAGE_VERSION" =~ ^(dev|v[0-9]+\.[0-9]+\.[0-9]+)$ ]]
           python scripts/build_vps_package.py --version "$PACKAGE_VERSION"
+          cp vps/install.sh dist/install.sh
+          cp vps/deploy/uninstall.py dist/uninstall.py
+          test -s dist/install.sh
+          test -s dist/uninstall.py
+          bash -n dist/install.sh
+          python3 -c "compile(open('dist/uninstall.py','rb').read(), 'uninstall.py', 'exec')"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: vgatebox-linux-amd64

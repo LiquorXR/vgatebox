@@ -21,7 +21,7 @@ vgatebox uninstall --purge --legacy
 如果 `vgatebox uninstall` 不可用，可以直接下载固定版本、独立运行的卸载工具，无需先启动代理：
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/LiquorXR/vgatebox/v1.1.2/vps/deploy/uninstall.py -o /tmp/vgatebox-uninstall.py
+curl -fsSL https://github.com/LiquorXR/vgatebox/releases/latest/download/uninstall.py -o /tmp/vgatebox-uninstall.py
 python3 /tmp/vgatebox-uninstall.py --dry-run --purge --legacy
 python3 /tmp/vgatebox-uninstall.py --purge --legacy
 ```

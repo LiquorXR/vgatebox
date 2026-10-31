@@ -36,6 +36,10 @@ jobs:
           PYCODE
           gh run download "$RUN_ID" -n vgatebox-linux-amd64 -D package
           (cd package && sha256sum --check checksums.txt)
+          test -s package/install.sh
+          test -s package/uninstall.py
+          bash -n package/install.sh
+          python3 -c "compile(open('package/uninstall.py','rb').read(), 'uninstall.py', 'exec')"
           python3 - <<'PYCODE'
           import hashlib,json,os,pathlib,tarfile
           with tarfile.open('package/vgatebox-linux-amd64.tar.gz') as t:
@@ -62,5 +66,5 @@ jobs:
           assert release['isDraft'], 'Refusing to overwrite a published release'
           assert release['targetCommitish']==pathlib.Path('source-sha').read_text().strip(), 'Draft targets another commit'
           PYCODE
-          gh release upload "$RELEASE_TAG" package/vgatebox-linux-amd64.tar.gz package/checksums.txt --clobber
+          gh release upload "$RELEASE_TAG" package/vgatebox-linux-amd64.tar.gz package/checksums.txt package/install.sh package/uninstall.py --clobber
           gh release edit "$RELEASE_TAG" --draft=false --latest

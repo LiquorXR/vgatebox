@@ -8,9 +8,9 @@
 | --- | --- |
 | `vgatebox-source-<提交>.tar.gz` | 当前已提交源码、安装脚本和文档 |
 | `vgatebox-all-refs.bundle` | Git 提交历史、现有分支与标签，可独立恢复仓库 |
-| `v1.1.2-current-private.tar.gz` | 停止本项目后取得的一致完整部署与私有配置 |
+| `<版本>-current-private.tar.gz` | 停止本项目后取得的一致完整部署与私有配置 |
 | `local-private-inputs.tar.gz` | 本机私有连接/代理输入及相关本地配置 |
-| `release-v1.1.2/` | 已核验的正式安装包和官方校验文件副本 |
+| `release-<版本>/` | 已核验的正式安装包和官方校验文件副本 |
 | `manifest.json`、`SHA256SUMS` | 备份范围、校验结果和摘要 |
 
 服务器归档覆盖本项目程序、固定 Xray、共享工具、`/etc/vgatebox`、私有状态和受管服务文件，包括管理路径/密码、订阅口令、客户端身份、第三方代理凭据、Slot 策略和启停意图。它不是整机镜像，不包含 3x-ui 数据库、系统 SSH 主机密钥或所有系统软件包。
