@@ -210,7 +210,7 @@ func main() {
 	}
 
 	handler := StripBasePath(auth.Wrap(mux))
-	handler = withSecurityHeaders(withGzip(handler))
+	handler = withStatusLog(withSecurityHeaders(withRecovery(withGzip(handler))))
 	srv := newWebServer(handler)
 	// 设置面板：改密码 / 改路径 / 改端口 / 改本地监听。
 	mux.HandleFunc("/api/settings", apiSettings(auth, srv))

@@ -22,6 +22,17 @@ func TestHandleIndexRedirectsNextWithoutSlash(t *testing.T) {
 	}
 }
 
+func TestLegacyAdvancedRedirectsToAccessTab(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handleIndex(rec, httptest.NewRequest(http.MethodGet, "/advanced", nil))
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if got := rec.Header().Get("Location"); got != "/#/access" {
+		t.Fatalf("location = %q", got)
+	}
+}
+
 func TestRootServesNewConsole(t *testing.T) {
 	if !webUIAvailable() {
 		t.Skip("frontend not built")

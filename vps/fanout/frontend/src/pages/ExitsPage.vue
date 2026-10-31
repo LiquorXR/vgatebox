@@ -1,22 +1,22 @@
 <script setup lang="ts">
-import { ArrowLeftRight, ChevronRight, Copy, Pause, Play, RefreshCw, RotateCcw, Search, ShieldCheck, SlidersHorizontal } from "@lucide/vue";
+import { ArrowLeftRight, ChevronRight, Pause, Play, RefreshCw, RotateCcw, Search, ShieldCheck, SlidersHorizontal, X } from "@lucide/vue";
 import { useMutation, useQueryClient } from "@tanstack/vue-query";
 import { computed, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { post, queryString } from "@/api/client";
-import { keys, useConsoleQuery, useExitsQuery } from "@/api/queries";
+import { keys, useConsoleQuery, useExitsQuery, useNodesQuery } from "@/api/queries";
 import type { Exit, ExitInbound, ExitPlan, SlotPolicy } from "@/api/types";
-import CopyButton from "@/components/CopyButton.vue";
 import DialogShell from "@/components/DialogShell.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import EmptyState from "@/components/EmptyState.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import Panel from "@/components/Panel.vue";
+import ProgressBar from "@/components/ProgressBar.vue";
 import SectionTabs from "@/components/SectionTabs.vue";
 import SkeletonBlock from "@/components/SkeletonBlock.vue";
+import Spinner from "@/components/Spinner.vue";
 import StatusBadge from "@/components/StatusBadge.vue";
 import UiButton from "@/components/UiButton.vue";
-import { copyText } from "@/lib/clipboard";
 import { countryName, formatDateTime, formatLatency, pad2 } from "@/lib/format";
 import { initialTarget } from "@/lib/plan";
 import { toast, toastError } from "@/lib/toast";
@@ -31,6 +31,7 @@ import {
   exitStatusTone,
   exitSubLabel,
   ipTypeLabels,
+  phaseLabels,
 } from "@/lib/status";
 
 const ALL_TYPES = Object.keys(ipTypeLabels);
@@ -57,6 +58,7 @@ const router = useRouter();
 const queryClient = useQueryClient();
 const { data: summary } = useConsoleQuery();
 const { data: view, isLoading, isError, error, refetch } = useExitsQuery(true);
+const { data: nodesView } = useNodesQuery(true);
 
 const exits = computed(() => view.value?.exits || []);
 const hostDirect = computed(() => view.value?.host_direct || []);
@@ -97,6 +99,31 @@ const rows = computed(() => {
 });
 
 const showDirect = computed(() => (kindFilter.value === "all" || kindFilter.value === "direct") && directOn.value);
+
+const check = computed(() => summary.value?.check || null);
+const checkRunning = computed(() => check.value?.status === "running");
+const checkPercent = computed(() => {
+  if (!check.value?.total) return 0;
+  return (check.value.done / check.value.total) * 100;
+});
+const checkCurrent = computed(() =>
+  (check.value?.items || [])
+    .filter((item) => item.status === "running")
+    .slice(0, 3)
+    .map((item) => `${item.slot ? `出口 ${pad2(item.slot)}` : item.host}${item.phase ? ` · ${phaseLabels[item.phase] || item.phase}` : ""}`),
+);
+
+function checkItemFor(exit: Exit) {
+  return check.value?.items?.find((item) => item.slot === exit.slot || (item.host && item.host === exit.host)) || null;
+}
+
+function checkItemState(exit: Exit): { label: string; running: boolean } | null {
+  const item = checkItemFor(exit);
+  if (!item) return null;
+  if (item.status === "running") return { label: phaseLabels[item.phase || ""] || "检测中", running: true };
+  if (["queued", "priority_queued"].includes(item.status)) return { label: "排队中", running: false };
+  return null;
+}
 
 // Target dialog
 const targetOpen = ref(false);
@@ -168,6 +195,27 @@ const checkAllMutation = useMutation({
   onError: (error) => toastError(error, "提交检测失败"),
 });
 
+const cancelCheckMutation = useMutation({
+  mutationFn: () => post("api/console/check/cancel", {}),
+  onSuccess: () => {
+    toast("正在取消检测");
+    void queryClient.invalidateQueries({ queryKey: keys.console });
+  },
+  onError: (error) => toastError(error, "取消失败"),
+});
+
+const swapConfirmOpen = ref(false);
+const swapMutation = useMutation({
+  mutationFn: (slot: number) => post(`api/swap${queryString({ slot })}`, {}),
+  onSuccess: () => {
+    swapConfirmOpen.value = false;
+    toast("正在更换节点；出口编号和端口保持不变", { tone: "success" });
+    void queryClient.invalidateQueries({ queryKey: keys.exits });
+    void queryClient.invalidateQueries({ queryKey: keys.console });
+  },
+  onError: (error) => toastError(error, "更换节点失败"),
+});
+
 // Drawer
 const drawerOpen = ref(false);
 const activeSlot = ref(0);
@@ -175,6 +223,18 @@ const selectedExit = computed(() => exits.value.find((exit) => exit.slot === act
 
 const nameEdits = reactive<Record<number, { mode: string; remark: string }>>({});
 const policyForm = reactive<SlotPolicy>(defaultPolicy());
+
+const countryOptions = computed(() => {
+  const map = new Map<string, string>();
+  for (const node of nodesView.value?.nodes || []) {
+    if (node.country_code) map.set(node.country_code, node.country || countryName(node.country_code));
+  }
+  for (const exit of exits.value) {
+    if (exit.region) map.set(exit.region, countryName(exit.region));
+  }
+  if (policyForm.country) map.set(policyForm.country, countryName(policyForm.country));
+  return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "zh-CN"));
+});
 
 function populateDrawer(exit: Exit | null) {
   for (const key of Object.keys(nameEdits)) delete nameEdits[Number(key)];
@@ -184,7 +244,13 @@ function populateDrawer(exit: Exit | null) {
   Object.assign(policyForm, exit?.policy ? clonePolicy(exit.policy) : defaultPolicy());
 }
 
-watch(selectedExit, (exit) => populateDrawer(exit), { immediate: true });
+watch(
+  () => selectedExit.value?.slot,
+  (slot) => {
+    if (slot) populateDrawer(selectedExit.value);
+  },
+  { immediate: true },
+);
 
 watch(
   () => route.query.slot,
@@ -272,16 +338,6 @@ const rollbackMutation = useMutation({
   onError: (error) => toastError(error, "回滚失败"),
 });
 
-const socksMutation = useMutation({
-  mutationFn: ({ slot, enabled }: { slot: number; enabled: boolean }) =>
-    post("api/console/socks", { slot, enabled }),
-  onSuccess: () => {
-    toast("外部 SOCKS5 设置已更新", { tone: "success" });
-    void queryClient.invalidateQueries({ queryKey: keys.exits });
-  },
-  onError: (error) => toastError(error, "更新外部访问失败"),
-});
-
 function saveName(inbound: ExitInbound) {
   const edit = nameEdits[inbound.id];
   if (!edit) return;
@@ -293,25 +349,6 @@ function toggleType(type: string, checked: boolean) {
   if (checked) values.add(type);
   else values.delete(type);
   policyForm.allowed_ip_types = [...values];
-}
-
-function socksUrl(exit: Exit): string {
-  const host = view.value?.public_ip || window.location.hostname;
-  if (!exit.socks_user) return `socks5://${host}:${exit.public_socks?.port || exit.port}`;
-  return `socks5://${encodeURIComponent(exit.socks_user)}:${encodeURIComponent(exit.socks_pass || "")}@${host}:${exit.public_socks?.port || exit.port}`;
-}
-
-async function copySocks(exit: Exit) {
-  if (!exit.public_socks?.enable) {
-    toast("外部访问未开启；先开启外部 SOCKS5 再复制地址", { tone: "error" });
-    return;
-  }
-  try {
-    await copyText(socksUrl(exit));
-    toast("SOCKS5 地址已复制", { tone: "success" });
-  } catch (error) {
-    toastError(error, "复制失败");
-  }
 }
 
 function listText(value: string[] | undefined): string {
@@ -348,7 +385,7 @@ const statusOptions = [
   <div class="space-y-5">
     <PageHeader title="出口" description="统一查看本机直出、自定义代理和 VPN Gate，明确每条连接的去向。">
       <template #actions>
-        <UiButton :loading="checkAllMutation.isPending.value" :disabled="ready === 0" @click="checkAllMutation.mutate()">
+        <UiButton :loading="checkAllMutation.isPending.value" :disabled="ready === 0 || checkRunning" @click="checkAllMutation.mutate()">
           <ShieldCheck :size="15" />检测就绪出口
         </UiButton>
         <UiButton variant="primary" @click="openTarget">
@@ -371,6 +408,27 @@ const statusOptions = [
 
     <div v-if="summary?.plan_error" class="rounded-xl border border-warn/25 bg-warn-soft px-4 py-3 text-sm text-warn" role="status">
       出口计划等待重试：{{ summary.plan_error }}。候选不足时会保留策略等待，不会强行使用其他出口。
+    </div>
+
+    <div v-if="checkRunning && check" class="rounded-xl border border-line bg-surface px-4 py-3" role="status" aria-live="polite">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2 text-xs font-medium text-ink">
+          <Spinner :size="14" class="text-accent" />
+          正在检测出口
+          <span class="tnum font-normal text-muted">{{ check.done }} / {{ check.total }}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <StatusBadge label="检测中" tone="info" size="sm" pulse />
+          <UiButton variant="ghost" size="sm" :loading="cancelCheckMutation.isPending.value" @click="cancelCheckMutation.mutate()">
+            <X :size="13" />取消检测
+          </UiButton>
+        </div>
+      </div>
+      <ProgressBar :value="checkPercent" class="mt-2.5" label="出口检测进度" />
+      <div class="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-faint">
+        <span class="truncate">并发 {{ check.parallelism }}<template v-if="checkCurrent.length"> · {{ checkCurrent.join("；") }}</template></span>
+        <span>结果会随检测自动更新</span>
+      </div>
     </div>
 
     <div class="flex flex-wrap items-center gap-2">
@@ -433,7 +491,13 @@ const statusOptions = [
                 <div class="truncate text-[11px] text-faint">{{ exitSubLabel(exit) }} · {{ pad2(exit.slot) }}</div>
               </div>
             </div>
-            <StatusBadge :label="exitStatusLabel(exit.status)" :tone="exitStatusTone(exit.status)" size="sm" :pulse="exit.status === 'starting'" />
+            <div class="space-y-1">
+              <StatusBadge :label="exitStatusLabel(exit.status)" :tone="exitStatusTone(exit.status)" size="sm" :pulse="exit.status === 'starting'" />
+              <span v-if="checkItemState(exit)" class="flex items-center gap-1 text-[10px] text-info">
+                <Spinner v-if="checkItemState(exit)?.running" :size="10" />
+                {{ checkItemState(exit)?.label }}
+              </span>
+            </div>
             <span class="truncate text-xs text-muted">{{ exit.exit_ip || "—" }}</span>
             <span class="tnum text-xs text-muted">{{ formatLatency(exit.latency_ms) }}</span>
             <span class="flex items-center justify-end gap-1">
@@ -490,6 +554,16 @@ const statusOptions = [
       @confirm="pendingSave?.()"
     />
 
+    <ConfirmDialog
+      :open="swapConfirmOpen"
+      title="更换出口 IP"
+      description="将断开当前节点并重新挑选一个候选；出口编号、端口和订阅入口保持不变。正在使用该出口的客户端会短暂中断。"
+      confirm-label="更换 IP"
+      :busy="swapMutation.isPending.value"
+      @update:open="swapConfirmOpen = $event"
+      @confirm="selectedExit && swapMutation.mutate(selectedExit.slot)"
+    />
+
     <DialogShell
       :open="drawerOpen"
       :title="selectedExit ? exitName(selectedExit) : '出口详情'"
@@ -515,8 +589,11 @@ const statusOptions = [
         </dl>
 
         <div class="flex flex-wrap gap-2">
-          <UiButton size="sm" :loading="checkMutation.isPending.value" @click="checkMutation.mutate(selectedExit.slot)">
+          <UiButton size="sm" :loading="checkMutation.isPending.value" :disabled="checkRunning" @click="checkMutation.mutate(selectedExit.slot)">
             <RefreshCw :size="14" />立即检测
+          </UiButton>
+          <UiButton size="sm" :loading="swapMutation.isPending.value" @click="swapConfirmOpen = true">
+            <ArrowLeftRight :size="14" />更换 IP
           </UiButton>
           <UiButton
             v-if="selectedExit.status === 'stopped'"
@@ -572,35 +649,16 @@ const statusOptions = [
           <p v-else class="text-xs text-faint">等待自动绑定入站。</p>
         </section>
 
-        <section v-if="selectedExit.socks_user">
-          <h3 class="mb-2 text-xs font-semibold text-ink">SOCKS5 凭据</h3>
-          <div class="space-y-2 rounded-lg border border-line bg-surface-2 p-3">
-            <div class="grid grid-cols-2 gap-3 text-xs">
-              <div><span class="text-faint">账号</span><div class="mt-0.5 break-all font-mono">{{ selectedExit.socks_user }}</div></div>
-              <div><span class="text-faint">口令</span><div class="mt-0.5 break-all font-mono">{{ selectedExit.socks_pass || "—" }}</div></div>
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <UiButton size="sm" @click="copySocks(selectedExit)"><Copy :size="13" />复制 SOCKS5 地址</UiButton>
-              <UiButton
-                v-if="view?.backend === 'native'"
-                size="sm"
-                :loading="socksMutation.isPending.value"
-                @click="socksMutation.mutate({ slot: selectedExit.slot, enabled: !selectedExit.public_socks?.enable })"
-              >
-                {{ selectedExit.public_socks?.enable ? "关闭外部访问" : "开启外部访问" }}
-              </UiButton>
-            </div>
-            <p class="text-[11px] text-faint">外部访问端口：{{ selectedExit.public_socks?.port || "未开启" }}。凭据只在本机管理界面显示。</p>
-          </div>
-        </section>
-
         <section>
           <h3 class="mb-2 text-xs font-semibold text-ink">选择策略</h3>
           <form class="space-y-3" @submit.prevent="policyMutation.mutate(selectedExit.slot)">
             <div class="grid gap-3 sm:grid-cols-2">
               <label class="block">
-                <span class="mb-1 block text-[11px] text-faint">指定国家代码</span>
-                <input v-model="policyForm.country" name="policy-country" maxlength="2" placeholder="留空自动" class="h-8 w-full rounded-md border border-line-strong bg-surface px-2 text-xs uppercase outline-none focus:border-accent" />
+                <span class="mb-1 block text-[11px] text-faint">指定国家</span>
+                <select v-model="policyForm.country" name="policy-country" class="h-8 w-full rounded-md border border-line-strong bg-surface px-2 text-xs outline-none focus:border-accent">
+                  <option value="">留空自动</option>
+                  <option v-for="[code, label] in countryOptions" :key="code" :value="code">{{ label }}（{{ code }}）</option>
+                </select>
               </label>
               <label class="block">
                 <span class="mb-1 block text-[11px] text-faint">延迟上限（毫秒，0 不限）</span>

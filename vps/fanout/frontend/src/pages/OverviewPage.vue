@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRight, Check, Copy, Database, Gauge, Link2, MemoryStick, RefreshCw, Server, X } from "@lucide/vue";
+import { ArrowRight, Check, Copy, Database, Gauge, Link2, RefreshCw, Server, X } from "@lucide/vue";
 import { useMutation, useQueryClient } from "@tanstack/vue-query";
 import { computed } from "vue";
 import { RouterLink, useRouter } from "vue-router";
@@ -177,27 +177,27 @@ function openExit(exit: Exit) {
       </button>
     </div>
 
-    <div v-if="s" class="grid grid-cols-2 gap-2.5 rounded-xl border border-line bg-surface p-2.5 sm:grid-cols-4">
-      <div class="rounded-lg px-2 py-1.5">
+    <div v-if="s" class="grid grid-cols-2 gap-2 rounded-xl border border-line bg-surface p-2.5 sm:grid-cols-[repeat(4,minmax(0,1fr))] sm:items-center">
+      <RouterLink to="/nodes" class="min-w-0 rounded-lg px-2.5 py-2 transition-colors hover:bg-surface-2">
         <div class="flex items-center gap-1.5 text-[11px] text-muted"><Database :size="13" /> 候选节点</div>
         <div class="tnum mt-1 text-xl font-semibold">{{ formatNumber(candidates) }}</div>
         <div class="truncate text-[11px] text-faint">{{ formatDateTime(s.pool_generated_at) }}</div>
-      </div>
-      <div class="rounded-lg bg-accent-soft px-2 py-1.5">
+      </RouterLink>
+      <RouterLink to="/exits" class="min-w-0 rounded-lg bg-accent-soft px-2.5 py-2 transition-colors hover:bg-accent-soft/80">
         <div class="flex items-center gap-1.5 text-[11px] text-accent"><Server :size="13" /> 就绪出口</div>
         <div class="tnum mt-1 text-xl font-semibold text-accent">{{ ready }}<span class="text-xs font-medium text-muted"> / {{ target }}</span></div>
         <div class="truncate text-[11px] text-muted">{{ waiting }} 个等待</div>
-      </div>
-      <div class="rounded-lg px-2 py-1.5">
+      </RouterLink>
+      <RouterLink to="/subscription" class="min-w-0 rounded-lg px-2.5 py-2 transition-colors hover:bg-surface-2">
         <div class="flex items-center gap-1.5 text-[11px] text-muted"><Link2 :size="13" /> 订阅入口</div>
         <div class="tnum mt-1 text-xl font-semibold">{{ ready + (directOn ? 1 : 0) }}</div>
-        <div class="truncate text-[11px] text-faint">VPN Gate + 本机直出</div>
-      </div>
-      <div class="rounded-lg px-2 py-1.5">
-        <div class="flex items-center gap-1.5 text-[11px] text-muted"><MemoryStick :size="13" /> 主机内存</div>
+        <div class="truncate text-[11px] text-faint">VPN Gate + 本机直出 · 2 种格式</div>
+      </RouterLink>
+      <RouterLink to="/settings" class="min-w-0 rounded-lg px-2.5 py-2 transition-colors hover:bg-surface-2">
+        <div class="flex items-center gap-1.5 text-[11px] text-muted"><Gauge :size="13" /> 主机内存</div>
         <div class="tnum mt-1 text-xl font-semibold">{{ memory.percent }}<span class="text-xs font-medium text-muted">%</span></div>
         <div class="truncate text-[11px] text-faint">{{ formatBytes(memory.used) }} / {{ formatBytes(memory.total) }}</div>
-      </div>
+      </RouterLink>
     </div>
 
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)]">
@@ -214,9 +214,7 @@ function openExit(exit: Exit) {
             <EmptyState compact title="还没有可用的出口" description="先刷新来源，取得候选后系统会按目标数量创建出口。">
               <template #icon><Server :size="26" /></template>
               <template #action>
-                <UiButton :loading="refreshMutation.isPending.value" @click="refreshMutation.mutate()">
-                  <RefreshCw :size="14" />刷新来源
-                </UiButton>
+                <UiButton @click="router.push('/nodes')">前往节点池</UiButton>
               </template>
             </EmptyState>
           </div>
@@ -305,14 +303,13 @@ function openExit(exit: Exit) {
                   <span class="block text-[13px] font-medium" :class="step.done ? 'text-muted' : 'text-ink'">{{ step.title }}</span>
                   <span class="block truncate text-[11px] text-faint">{{ step.hint }}</span>
                 </span>
-                <UiButton
+                <RouterLink
                   v-if="step.key === 'subscribe' && step.active"
-                  size="sm"
-                  variant="ghost"
-                  @click="copySubscription"
+                  to="/subscription"
+                  class="shrink-0 text-[11px] font-semibold text-accent hover:underline"
                 >
-                  <Copy :size="12" />复制
-                </UiButton>
+                  去订阅 →
+                </RouterLink>
               </li>
             </ol>
           </Panel>
@@ -350,9 +347,7 @@ function openExit(exit: Exit) {
                 <p class="text-[11px] text-faint">上次刷新 {{ formatDateTime(s?.refresh?.checked_at) }}</p>
               </div>
             </div>
-            <UiButton size="sm" :loading="refreshMutation.isPending.value" @click="refreshMutation.mutate()">
-              <RefreshCw :size="14" />刷新来源
-            </UiButton>
+            <RouterLink to="/nodes" class="text-[11px] font-semibold text-accent hover:underline">前往节点池 →</RouterLink>
           </div>
         </Panel>
 
@@ -367,17 +362,6 @@ function openExit(exit: Exit) {
           </div>
         </Panel>
 
-        <Panel title="订阅">
-          <p class="text-xs leading-relaxed text-muted">
-            就绪出口会自动加入原订阅。国家与名称同步更新，客户端刷新订阅即可看到。
-          </p>
-          <div class="mt-3 flex flex-wrap gap-2">
-            <UiButton size="sm" variant="primary" :disabled="ready === 0" @click="copySubscription">
-              <Copy :size="14" />复制订阅链接
-            </UiButton>
-            <UiButton size="sm" @click="router.push('/subscription')">管理订阅</UiButton>
-          </div>
-        </Panel>
       </div>
     </div>
 

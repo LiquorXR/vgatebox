@@ -340,6 +340,30 @@ const sstp = {
   cf_status: "not_tested",
 };
 
+const inbounds = [
+  {
+    id: 101,
+    port: 31001,
+    protocol: "vless",
+    remark: "",
+    enable: true,
+    tag: "in-1",
+    managed_slot: true,
+    bound_slot: 1,
+    name_mode: "auto",
+  },
+  {
+    id: 900,
+    port: 32000,
+    protocol: "vless",
+    remark: "VPS 本机直出",
+    enable: true,
+    tag: "host-direct",
+    host_direct: true,
+    name_mode: "custom",
+  },
+];
+
 const settings = {
   base_path: "",
   port: 8899,
@@ -370,6 +394,16 @@ const payloads: Record<string, unknown> = {
   },
   "/api/console/automation": consoleData.automation,
   "/api/console/source-settings": { mirror_enabled: true, source_timeout_seconds: 10, mirror_max_age_hours: 24 },
+  "/api/xui/inbounds": inbounds,
+  "/api/xui/detail": {
+    ...inbounds[0],
+    clients: [{ email: "client@example", id: "00000000-0000-0000-0000-000000000001", enable: true }],
+    links: ["vless://00000000-0000-0000-0000-000000000001@203.0.113.2:31001?type=tcp&security=reality#JP"],
+    listen: "0.0.0.0",
+    network: "tcp",
+    tls: "reality",
+  },
+  "/api/panel/mode": { mode: "", kind: "native", describe: "内置 Xray", modes: [{ mode: "native", label: "内置 Xray", available: true }] },
 };
 
 export async function mockApi(page: Page): Promise<void> {

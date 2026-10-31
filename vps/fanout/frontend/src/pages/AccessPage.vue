@@ -3,9 +3,10 @@ import { Copy, Download, Globe2, Plug, Plus, Search, ShieldCheck, Trash2 } from 
 import { useMutation, useQueryClient } from "@tanstack/vue-query";
 import { computed, reactive, ref, watch } from "vue";
 import { z } from "zod";
-import { api, apiUrl, appUrl, post, queryString } from "@/api/client";
+import { api, ApiError, apiUrl, post, queryString } from "@/api/client";
 import { keys, useExitsQuery, useSocksLinksQuery, useSstpQuery, useThirdPartyQuery } from "@/api/queries";
-import type { ThirdPartyProxy, ThirdPartyRow } from "@/api/types";
+import type { Exit, ThirdPartyProxy, ThirdPartyRow } from "@/api/types";
+import AdvancedAccessPanel from "@/components/AdvancedAccessPanel.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import CopyButton from "@/components/CopyButton.vue";
 import DialogShell from "@/components/DialogShell.vue";
@@ -30,6 +31,14 @@ const { data: exitsView, isLoading: exitsLoading } = useExitsQuery(true);
 const tab = ref("socks");
 const native = computed(() => exitsView.value?.backend === "native");
 const exits = computed(() => exitsView.value?.exits || []);
+const hostDirect = computed(() => exitsView.value?.host_direct || []);
+const direct = computed(() => exitsView.value?.direct || []);
+const inboundCount = computed(
+  () =>
+    exits.value.reduce((total, exit) => total + (exit.inbounds?.length || 0), 0) +
+    hostDirect.value.length +
+    direct.value.length,
+);
 
 const { data: socksData } = useSocksLinksQuery(computed(() => tab.value === "socks"));
 const { data: sstpData, isLoading: sstpLoading } = useSstpQuery(computed(() => tab.value === "sstp"));
@@ -41,6 +50,7 @@ const tabs = computed(() => [
   { key: "socks", label: "VPS SOCKS5", count: exits.value.filter((exit) => exit.public_socks?.enable).length },
   { key: "sstp", label: "原始 SSTP", count: sstpData.value?.nodes.length },
   { key: "third", label: "第三方 SOCKS5", count: thirdData.value?.proxies.length },
+  { key: "advanced", label: "高级接入", count: inboundCount.value },
 ]);
 
 // ---- VPS SOCKS5 ----
@@ -53,6 +63,39 @@ const socksRows = computed(() => {
   }));
 });
 
+const socksDetailOpen = ref(false);
+const socksDetailSlot = ref(0);
+const socksDetail = computed(() => socksRows.value.find((row) => row.exit.slot === socksDetailSlot.value) || null);
+
+function socksAddress(exit: Exit, external: boolean): string {
+  const port = external ? exit.public_socks?.port : exit.port;
+  if (!port) return "";
+  const host = external ? exitsView.value?.public_ip || window.location.hostname : "127.0.0.1";
+  const auth = exit.socks_user
+    ? `${encodeURIComponent(exit.socks_user)}:${encodeURIComponent(exit.socks_pass || "")}@`
+    : "";
+  return `socks5://${auth}${host}:${port}`;
+}
+
+function openSocksDetail(row: { exit: Exit }) {
+  socksDetailSlot.value = row.exit.slot;
+  socksDetailOpen.value = true;
+}
+
+function accessError(error: unknown, fallback: string) {
+  void queryClient.invalidateQueries({ queryKey: keys.exits });
+  void queryClient.invalidateQueries({ queryKey: keys.socks });
+  void queryClient.invalidateQueries({ queryKey: keys.thirdParty });
+  if (error instanceof ApiError && error.status >= 500) {
+    toast(`操作未完成（HTTP ${error.status}）。已刷新当前状态，请确认是否生效后再重试。`, {
+      tone: "error",
+      duration: 9000,
+    });
+    return;
+  }
+  toastError(error, fallback);
+}
+
 const socksMutation = useMutation({
   mutationFn: ({ slot, enabled }: { slot: number; enabled: boolean }) => post("api/console/socks", { slot, enabled }),
   onSuccess: () => {
@@ -60,7 +103,7 @@ const socksMutation = useMutation({
     void queryClient.invalidateQueries({ queryKey: keys.exits });
     void queryClient.invalidateQueries({ queryKey: keys.socks });
   },
-  onError: (error) => toastError(error, "更新外部访问失败"),
+  onError: (error) => accessError(error, "更新外部访问失败"),
 });
 
 async function copySocks(url: string) {
@@ -270,7 +313,7 @@ async function saveThird() {
     void queryClient.invalidateQueries({ queryKey: keys.thirdParty });
     void queryClient.invalidateQueries({ queryKey: keys.exits });
   } catch (error) {
-    toastError(error, "保存代理失败");
+    accessError(error, "保存代理失败");
   } finally {
     thirdSaving.value = false;
   }
@@ -286,7 +329,7 @@ async function toggleThird(row: ThirdPartyRow, action: "toggle" | "subscribe") {
     void queryClient.invalidateQueries({ queryKey: keys.thirdParty });
     void queryClient.invalidateQueries({ queryKey: keys.exits });
   } catch (error) {
-    toastError(error, "更新失败");
+    accessError(error, "更新失败");
   }
 }
 
@@ -329,7 +372,6 @@ const deleteMutation = useMutation({
 
     <div class="flex flex-wrap items-center gap-3">
       <SectionTabs v-model="tab" :items="tabs" />
-      <a :href="appUrl('advanced')" class="ml-auto text-xs font-semibold text-accent hover:underline">高级接入管理（旧版） →</a>
     </div>
 
     <div v-if="!native && exitsView" class="rounded-xl border border-warn/25 bg-warn-soft px-4 py-3 text-xs leading-relaxed text-warn">
@@ -370,6 +412,7 @@ const deleteMutation = useMutation({
                 <td class="py-2.5 pr-3"><StatusBadge :label="exitStatusLabel(row.exit.status)" :tone="exitStatusTone(row.exit.status)" size="sm" /></td>
                 <td class="py-2.5 text-right">
                   <div class="flex justify-end gap-1">
+                    <UiButton size="sm" variant="ghost" @click="openSocksDetail(row)">详情</UiButton>
                     <CopyButton v-if="row.link?.url" :text="row.link.url" label="复制" size="sm" variant="ghost" />
                     <UiButton
                       v-if="native && row.exit.status === 'up'"
@@ -499,6 +542,10 @@ const deleteMutation = useMutation({
       </div>
     </template>
 
+    <template v-else-if="tab === 'advanced'">
+      <AdvancedAccessPanel :exits="exits" :backend="exitsView?.backend || ''" />
+    </template>
+
     <template v-else-if="tab === 'third'">
       <div class="space-y-4">
         <div class="rounded-xl border border-line bg-surface-2 px-4 py-3 text-xs leading-relaxed text-muted">
@@ -618,6 +665,55 @@ const deleteMutation = useMutation({
           <UiButton type="submit" variant="primary" :loading="thirdSaving">保存</UiButton>
         </div>
       </form>
+    </DialogShell>
+
+    <DialogShell
+      :open="socksDetailOpen"
+      :title="socksDetail ? `${exitName(socksDetail.exit)} · SOCKS5` : 'SOCKS5 详情'"
+      description="查看并复制服务端 SOCKS5 入口的完整连接信息。"
+      size="md"
+      @update:open="socksDetailOpen = $event"
+    >
+      <div v-if="socksDetail" class="space-y-4">
+        <dl class="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border border-line bg-surface-2 p-3 text-xs">
+          <div><dt class="text-faint">实际出口 IP</dt><dd class="mt-0.5 font-mono">{{ socksDetail.exit.exit_ip || "—" }}</dd></div>
+          <div><dt class="text-faint">服务器地址</dt><dd class="mt-0.5 font-mono">{{ exitsView?.public_ip || "本机地址" }}</dd></div>
+          <div><dt class="text-faint">内部端口</dt><dd class="tnum mt-0.5">{{ socksDetail.exit.port || "—" }}</dd></div>
+          <div><dt class="text-faint">外部端口</dt><dd class="tnum mt-0.5">{{ socksDetail.exit.public_socks?.port || "未开启" }}</dd></div>
+          <div><dt class="text-faint">账号</dt><dd class="mt-0.5 break-all font-mono">{{ socksDetail.exit.socks_user || "—" }}</dd></div>
+          <div><dt class="text-faint">口令</dt><dd class="mt-0.5 break-all font-mono">{{ socksDetail.exit.socks_pass || "—" }}</dd></div>
+        </dl>
+
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-medium">外部连接地址</span>
+            <CopyButton v-if="socksDetail.enabled" :text="socksAddress(socksDetail.exit, true)" label="复制地址" size="sm" />
+          </div>
+          <p class="break-all rounded-lg border border-line bg-surface-2 px-3 py-2 font-mono text-[11px] text-muted">
+            {{ socksDetail.enabled ? socksAddress(socksDetail.exit, true) : "外部访问未开启；先在下方开启外部端口。" }}
+          </p>
+        </div>
+
+        <div class="space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-medium">服务器本机地址</span>
+            <CopyButton :text="socksAddress(socksDetail.exit, false)" label="复制地址" size="sm" />
+          </div>
+          <p class="break-all rounded-lg border border-line bg-surface-2 px-3 py-2 font-mono text-[11px] text-muted">{{ socksAddress(socksDetail.exit, false) }}</p>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+          <p class="text-[11px] text-faint">外部端口需在防火墙放行；SOCKS5 连接本身不加密。</p>
+          <UiButton
+            v-if="native"
+            size="sm"
+            :loading="socksMutation.isPending.value"
+            @click="socksMutation.mutate({ slot: socksDetail.exit.slot, enabled: !socksDetail.enabled })"
+          >
+            {{ socksDetail.enabled ? "关闭外部访问" : "开启外部访问" }}
+          </UiButton>
+        </div>
+      </div>
     </DialogShell>
 
     <ConfirmDialog

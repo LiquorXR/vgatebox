@@ -316,6 +316,43 @@ export interface SstpRow {
   attempt?: CheckResult;
 }
 
+export interface Inbound {
+  id: number;
+  port: number;
+  protocol: string;
+  remark: string;
+  enable: boolean;
+  tag: string;
+  bound_to?: string;
+  bound_slot?: number;
+  name_mode?: string;
+  managed_slot?: boolean;
+  manual?: boolean;
+  host_direct?: boolean;
+  bound_up?: boolean;
+}
+
+export interface InboundClient {
+  email: string;
+  id: string;
+  enable: boolean;
+}
+
+export interface InboundDetail extends Inbound {
+  clients: InboundClient[];
+  links: string[];
+  listen: string;
+  network: string;
+  tls: string;
+}
+
+export interface PanelModeView {
+  mode: string;
+  kind?: string;
+  describe?: string;
+  modes?: { mode: string; label: string; available: boolean; reason?: string }[];
+}
+
 export interface SocksLink {
   slot: number;
   name: string;

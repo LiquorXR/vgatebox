@@ -4,7 +4,9 @@ import { api } from "./client";
 import type {
   ConsoleSummary,
   ExitsView,
+  Inbound,
   NodesView,
+  PanelModeView,
   SettingsInfo,
   SocksLinksView,
   SstpView,
@@ -23,6 +25,8 @@ export const keys = {
   thirdParty: ["third-party"] as const,
   sstp: ["sstp"] as const,
   socks: ["socks-links"] as const,
+  inbounds: ["inbounds"] as const,
+  panelMode: ["panel-mode"] as const,
 };
 
 const enabledRef = (value: MaybeRefOrGetter<boolean>) => computed(() => toValue(value));
@@ -31,7 +35,10 @@ export function useConsoleQuery() {
   return useQuery({
     queryKey: keys.console,
     queryFn: () => api<ConsoleSummary>("api/console"),
-    refetchInterval: 5000,
+    refetchInterval: (query) => {
+      const data = query.state.data as ConsoleSummary | undefined;
+      return data?.check?.status === "running" || data?.refresh?.status === "running" ? 2000 : 5000;
+    },
     refetchIntervalInBackground: false,
     staleTime: 1500,
   });
@@ -104,6 +111,25 @@ export function useSocksLinksQuery(enabled: MaybeRefOrGetter<boolean> = true) {
     enabled: enabledRef(enabled),
     refetchInterval: 5000,
     refetchIntervalInBackground: false,
+  });
+}
+
+export function useInboundsQuery(enabled: MaybeRefOrGetter<boolean> = true) {
+  return useQuery({
+    queryKey: keys.inbounds,
+    queryFn: () => api<Inbound[]>("api/xui/inbounds"),
+    enabled: enabledRef(enabled),
+    refetchInterval: 5000,
+    refetchIntervalInBackground: false,
+  });
+}
+
+export function usePanelModeQuery(enabled: MaybeRefOrGetter<boolean> = true) {
+  return useQuery({
+    queryKey: keys.panelMode,
+    queryFn: () => api<PanelModeView>("api/panel/mode"),
+    enabled: enabledRef(enabled),
+    staleTime: 30_000,
   });
 }
 

@@ -9,9 +9,6 @@ import (
 	"strings"
 )
 
-//go:embed advanced.html
-var advancedHTML string
-
 // webdist is the Vite build output. A fresh checkout only contains .gitkeep, so
 // the Go package still compiles before the frontend has been built.
 //
@@ -67,7 +64,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/":
 		serveWebFile(w, r, "index.html")
 	case r.URL.Path == "/advanced":
-		serveLegacyPage(w, &advancedHTML)
+		http.Redirect(w, r, currentBasePath()+"/#/access", http.StatusFound)
 	case r.URL.Path == "/next":
 		target := currentBasePath() + "/next/"
 		if r.URL.RawQuery != "" {
@@ -85,12 +82,6 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
-}
-
-func serveLegacyPage(w http.ResponseWriter, html *string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte(*html))
 }
 
 func serveWebFile(w http.ResponseWriter, r *http.Request, name string) {

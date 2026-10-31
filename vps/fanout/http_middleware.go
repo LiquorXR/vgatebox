@@ -2,7 +2,9 @@ package main
 
 import (
 	"compress/gzip"
+	"log"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"sync"
 )
@@ -76,6 +78,79 @@ func withGzip(next http.Handler) http.Handler {
 			gzipPool.Put(gz)
 		}()
 		next.ServeHTTP(gw, r)
+	})
+}
+
+type recoveryWriter struct {
+	http.ResponseWriter
+	wrote bool
+}
+
+func (w *recoveryWriter) WriteHeader(status int) {
+	w.wrote = true
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *recoveryWriter) Write(data []byte) (int, error) {
+	w.wrote = true
+	return w.ResponseWriter.Write(data)
+}
+
+func (w *recoveryWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+// withRecovery turns an unexpected handler panic into a logged 500 instead of
+// dropping the connection. The access mutations are the main reason to keep
+// this visible: a broken panel restart otherwise looks like a generic gateway
+// error in the browser.
+func withRecovery(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rw := &recoveryWriter{ResponseWriter: w}
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.Printf("panic serving %s %s: %v\n%s", r.Method, r.URL.Path, recovered, debug.Stack())
+				if !rw.wrote {
+					writeJSON(rw, http.StatusInternalServerError, map[string]string{"error": "管理服务内部错误，请查看服务日志"})
+				}
+			}
+		}()
+		next.ServeHTTP(rw, r)
+	})
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *statusWriter) Write(data []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.ResponseWriter.Write(data)
+}
+
+func (w *statusWriter) Flush() {
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func withStatusLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sw := &statusWriter{ResponseWriter: w}
+		next.ServeHTTP(sw, r)
+		if sw.status >= 500 {
+			log.Printf("HTTP %d %s %s", sw.status, r.Method, r.URL.Path)
+		}
 	})
 }
 

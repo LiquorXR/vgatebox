@@ -10,11 +10,33 @@ test("root loads the new console and exits page", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "总览" })).toBeVisible();
   await expect(page.getByText("就绪出口").first()).toBeVisible();
   await expect(page.getByText("2 / 4").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "刷新来源" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "复制订阅" })).toHaveCount(1);
 
-  await page.getByRole("link", { name: "出口" }).click();
+  await page.locator('nav[aria-label="主导航"] a[href="#/exits"]').click();
   await expect(page.getByRole("heading", { name: "出口" })).toBeVisible();
   await expect(page.getByText("日本 · 01")).toBeVisible();
   await expect(page.getByText("韩国 · 02")).toBeVisible();
+});
+
+test("exit drawer keeps policy edits and offers a node swap", async ({ page }) => {
+  await page.goto("/#/exits?slot=1");
+  await expect(page.getByRole("dialog").getByText("日本 · 01", { exact: false })).toBeVisible();
+  await expect(page.getByText("SOCKS5 凭据")).toHaveCount(0);
+
+  const country = page.locator('select[name="policy-country"]');
+  await expect(country.locator("option").filter({ hasText: "日本" })).toHaveCount(1);
+
+  const checkbox = page.locator('input[name="policy-ip-type"]').first();
+  const before = await checkbox.isChecked();
+  await checkbox.click();
+  await page.waitForTimeout(5500);
+  expect(await checkbox.isChecked()).toBe(!before);
+
+  await page.getByRole("button", { name: "更换 IP" }).click();
+  await expect(page.getByText("将断开当前节点并重新挑选一个候选", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "更换 IP" }).last().click();
+  await expect(page.getByText("正在更换节点；出口编号和端口保持不变")).toBeVisible();
 });
 
 test("target dialog saves and closes", async ({ page }) => {
@@ -48,10 +70,27 @@ test("node search filters the candidate table", async ({ page }) => {
 
 test("access tabs render SSTP and third-party resources", async ({ page }) => {
   await page.goto("/#/access");
+  await page.getByRole("button", { name: "详情" }).first().click();
+  await expect(page.getByText("外部连接地址")).toBeVisible();
+  await expect(page.getByText("服务器本机地址")).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "关闭", exact: true }).click();
+
   await page.getByRole("tab", { name: /第三方 SOCKS5/ }).click();
   await expect(page.getByText("美国 · 自有代理")).toBeVisible();
   await page.getByRole("tab", { name: /原始 SSTP/ }).click();
   await expect(page.getByText("public-vpn-102")).toBeVisible();
+  await page.getByRole("tab", { name: /高级接入/ }).click();
+  await expect(page.getByText("自动入口 · in-1")).toBeVisible();
+  await expect(page.getByText("本机直出 · host-direct")).toBeVisible();
+
+  await page.getByRole("button", { name: "新增接入入口" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.locator('select').filter({ hasText: "VLESS" }).first()).toBeVisible();
+  await page.getByRole("button", { name: "取消" }).click();
+
+  await page.getByRole("button", { name: "详情" }).first().click();
+  await expect(page.getByText("客户端 · 1")).toBeVisible();
+  await expect(page.getByText("client@example")).toBeVisible();
 });
 
 test("theme choice persists across reloads", async ({ page }) => {
