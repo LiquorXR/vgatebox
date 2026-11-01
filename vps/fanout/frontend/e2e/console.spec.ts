@@ -62,8 +62,9 @@ test("exit deletion reduces the target count", async ({ page }) => {
   await page.getByRole("dialog").getByRole("button", { name: "删除出口" }).click();
   const confirm = page.getByRole("dialog").filter({ hasText: "删除后目标数量会减少 1" });
   await expect(confirm).toBeVisible();
+  await expect(confirm.getByText("同时清理归档入口")).toBeVisible();
   await confirm.getByRole("button", { name: "删除出口" }).click();
-  expect((await request).postDataJSON()).toEqual({ slot: 1 });
+  expect((await request).postDataJSON()).toEqual({ slot: 1, cleanup_archive: false });
   await expect(page.getByText("出口已删除，目标数量已减少 1")).toBeVisible();
 });
 
@@ -137,9 +138,26 @@ test("managed exit deletion uses the console target API", async ({ page }) => {
   await page.getByRole("row").filter({ hasText: "自动入口 · in-1" }).getByRole("button", { name: "删除出口" }).click();
   const confirm = page.getByRole("dialog").filter({ hasText: "目标数量会自动减少 1" });
   await expect(confirm).toBeVisible();
+  await confirm.locator('input[name="cleanup-archive"]').check();
   await confirm.getByRole("button", { name: "删除出口" }).click();
-  expect((await request).postDataJSON()).toEqual({ slot: 1 });
-  await expect(page.getByText("自动出口已删除")).toBeVisible();
+  expect((await request).postDataJSON()).toEqual({ slot: 1, cleanup_archive: true });
+  await expect(page.getByText("自动出口和归档入口已删除")).toBeVisible();
+});
+
+test("archived automatic entry can be cleaned without an exit", async ({ page }) => {
+  await page.goto("/#/access");
+  await page.getByRole("tab", { name: /高级接入/ }).click();
+  const row = page.getByRole("row").filter({ hasText: "in-30006-tcp" });
+  await expect(row.getByText("归档入口", { exact: false })).toBeVisible();
+  const request = page.waitForRequest(
+    (req) => req.url().includes("/api/xui/delete") && req.url().includes("ids=906"),
+  );
+  await row.getByRole("button", { name: "清理入口" }).click();
+  const confirm = page.getByRole("dialog").filter({ hasText: "对应出口已不存在" });
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole("button", { name: "清理" }).click();
+  await request;
+  await expect(page.getByText("归档入口已清理")).toBeVisible();
 });
 
 test("socks credentials can be edited from the access drawer", async ({ page }) => {

@@ -402,7 +402,8 @@ func (c *Console) apiDeleteSlot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Slot int `json:"slot"`
+		Slot           int  `json:"slot"`
+		CleanupArchive bool `json:"cleanup_archive"`
 	}
 	if err := readConsoleJSON(w, r, &in); err != nil || in.Slot < 1 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "需要有效的出口编号"})
@@ -412,7 +413,41 @@ func (c *Console) apiDeleteSlot(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": firstLine(err.Error())})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	cleanupError := ""
+	if in.CleanupArchive {
+		if err := c.cleanupArchivedInbounds(in.Slot); err != nil {
+			cleanupError = firstLine(err.Error())
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "cleanup_error": cleanupError})
+}
+
+// cleanupArchivedInbounds removes the automatic entries left behind by a
+// deleted Slot. It only matches managed inbounds for that exact Slot, so
+// manual entries and inbounds belonging to other exits are untouched.
+func (c *Console) cleanupArchivedInbounds(slot int) error {
+	p, err := openPanel()
+	if err != nil {
+		return err
+	}
+	list, err := p.Inbounds(liveHosts(c.m))
+	if err != nil {
+		return err
+	}
+	ids := make([]int, 0, 1)
+	for _, ib := range list {
+		if ib.ManagedSlot && ib.BoundSlot == slot {
+			ids = append(ids, ib.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	if err := p.DeleteInbounds(ids, c.m.Tunnels()); err != nil {
+		return err
+	}
+	invalidateInbounds()
+	return nil
 }
 
 func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {

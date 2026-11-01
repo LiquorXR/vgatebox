@@ -217,15 +217,29 @@ const swapMutation = useMutation({
 });
 
 const deleteExitConfirmOpen = ref(false);
+const deleteCleanupArchive = ref(false);
+function openDeleteExit() {
+  deleteCleanupArchive.value = false;
+  deleteExitConfirmOpen.value = true;
+}
 const deleteExitMutation = useMutation({
-  mutationFn: (slot: number) => post("api/console/slot/delete", { slot }),
-  onSuccess: () => {
+  mutationFn: ({ slot, cleanup }: { slot: number; cleanup: boolean }) =>
+    post<{ ok: boolean; cleanup_error?: string }>("api/console/slot/delete", {
+      slot,
+      cleanup_archive: cleanup,
+    }),
+  onSuccess: (value) => {
     deleteExitConfirmOpen.value = false;
     drawerOpen.value = false;
     void router.replace({ path: "/exits" });
-    toast("出口已删除，目标数量已减少 1", { tone: "success" });
+    if (value.cleanup_error) {
+      toast(`出口已删除，但归档入口清理失败：${value.cleanup_error}`, { tone: "error" });
+    } else {
+      toast("出口已删除，目标数量已减少 1", { tone: "success" });
+    }
     void queryClient.invalidateQueries({ queryKey: keys.exits });
     void queryClient.invalidateQueries({ queryKey: keys.console });
+    void queryClient.invalidateQueries({ queryKey: keys.inbounds });
   },
   onError: (error) => toastError(error, "删除出口失败"),
 });
@@ -234,6 +248,9 @@ const deleteExitMutation = useMutation({
 const drawerOpen = ref(false);
 const activeSlot = ref(0);
 const selectedExit = computed(() => exits.value.find((exit) => exit.slot === activeSlot.value) || null);
+const selectedManagedInbounds = computed(() =>
+  (selectedExit.value?.inbounds || []).filter((inbound) => inbound.managed_slot),
+);
 
 const nameEdits = reactive<Record<number, { mode: string; remark: string }>>({});
 const policyForm = reactive<SlotPolicy>(defaultPolicy());
@@ -619,12 +636,23 @@ const statusOptions = [
     <ConfirmDialog
       :open="deleteExitConfirmOpen"
       title="删除出口"
-      description="删除后目标数量会减少 1，其他出口编号和端口保持不变。该出口的客户端连接和订阅入口会立即失效。"
+      description="删除后目标数量会减少 1，其他出口编号和端口保持不变。该出口的客户端连接和订阅入口会立即失效。自动入口默认归档保留，重建同一编号时可复用。"
       confirm-label="删除出口"
       :busy="deleteExitMutation.isPending.value"
       @update:open="deleteExitConfirmOpen = $event"
-      @confirm="selectedExit && deleteExitMutation.mutate(selectedExit.slot)"
-    />
+      @confirm="selectedExit && deleteExitMutation.mutate({ slot: selectedExit.slot, cleanup: deleteCleanupArchive })"
+    >
+      <label
+        v-if="selectedManagedInbounds.length"
+        class="flex items-start gap-2 rounded-lg border border-line p-3 text-xs text-muted"
+      >
+        <input v-model="deleteCleanupArchive" type="checkbox" name="cleanup-archive" class="mt-0.5 accent-accent" />
+        <span>
+          同时清理归档入口
+          <span class="mt-0.5 block text-[11px] text-faint">勾选后会删除该出口的自动入口和客户端凭据，无法恢复；不勾选则保留归档，之后重建同一编号时复用。</span>
+        </span>
+      </label>
+    </ConfirmDialog>
 
     <ConfirmDialog
       :open="swapConfirmOpen"
@@ -691,7 +719,7 @@ const statusOptions = [
           >
             <RotateCcw :size="14" />回滚策略
           </UiButton>
-          <UiButton size="sm" variant="danger" @click="deleteExitConfirmOpen = true">
+          <UiButton size="sm" variant="danger" @click="openDeleteExit">
             <Trash2 :size="14" />删除出口
           </UiButton>
         </div>

@@ -367,6 +367,17 @@ const inbounds = [
     host_direct: true,
     name_mode: "custom",
   },
+  {
+    id: 906,
+    port: 30006,
+    protocol: "vless",
+    remark: "出口 06",
+    enable: true,
+    tag: "in-30006-tcp",
+    managed_slot: true,
+    bound_slot: 6,
+    name_mode: "auto",
+  },
 ];
 
 const settings = {

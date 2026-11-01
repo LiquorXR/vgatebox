@@ -38,19 +38,23 @@ function ownerOf(inbound: Inbound): Exit | null {
 
 function rowName(inbound: Inbound): string {
   const owner = ownerOf(inbound);
-  if (inbound.managed_slot && owner) return exitName(owner);
+  if (inbound.managed_slot) {
+    if (owner) return exitName(owner);
+    return inbound.remark ? `${inbound.remark} · 归档` : "归档入口";
+  }
   if (inbound.host_direct) return "VPS 本机直出";
   return inbound.remark || `${inbound.protocol.toUpperCase()} · ${inbound.port}`;
 }
 
 function rowKind(inbound: Inbound): string {
   if (inbound.host_direct) return "本机直出";
-  if (inbound.managed_slot) return "自动入口";
+  if (inbound.managed_slot) return ownerOf(inbound) ? "自动入口" : "归档入口";
   if (inbound.manual) return "手动入口";
   return "接入入口";
 }
 
 function rowState(inbound: Inbound): { label: string; tone: "ok" | "warn" | "bad" | "info" | "neutral" } {
+  if (inbound.managed_slot && !ownerOf(inbound)) return { label: "出口已删除 · 归档阻断", tone: "bad" };
   if (!inbound.enable) return { label: "已停用", tone: "neutral" };
   if (inbound.host_direct) return { label: "已启用", tone: "ok" };
   const owner = ownerOf(inbound);
@@ -66,7 +70,11 @@ function bindValue(inbound: Inbound): string {
 function bindLabel(inbound: Inbound): string {
   const owner = ownerOf(inbound);
   if (inbound.host_direct) return "独立使用服务器网络";
-  if (inbound.managed_slot) return owner ? `随出口 ${exitName(owner)}` : "随出口维护";
+  if (inbound.managed_slot) {
+    if (owner) return `随出口 ${exitName(owner)}`;
+    const slot = inbound.bound_slot ? `出口 ${String(inbound.bound_slot).padStart(2, "0")}` : "出口";
+    return `${slot} 已删除 · 归档`;
+  }
   return owner ? `${exitName(owner)} · ${exitStatusLabel(owner.status)}` : "未绑定（阻断）";
 }
 
@@ -291,12 +299,22 @@ const confirmTitle = ref("");
 const confirmDescription = ref("");
 const confirmLabel = ref("确认");
 const confirmAction = ref<null | (() => Promise<void>)>(null);
+const confirmCleanupVisible = ref(false);
+const confirmCleanup = ref(false);
 
-function ask(title: string, description: string, action: () => Promise<void>, label = "确认") {
+function ask(
+  title: string,
+  description: string,
+  action: () => Promise<void>,
+  label = "确认",
+  options: { cleanup?: boolean } = {},
+) {
   confirmTitle.value = title;
   confirmDescription.value = description;
   confirmLabel.value = label;
   confirmAction.value = action;
+  confirmCleanupVisible.value = !!options.cleanup;
+  confirmCleanup.value = false;
   confirmOpen.value = true;
 }
 
@@ -325,19 +343,43 @@ function deleteInbound(inbound: Inbound) {
 function deleteManagedExit(inbound: Inbound) {
   const owner = ownerOf(inbound);
   if (!owner) {
-    toast("找不到这个自动入口对应的出口", { tone: "error" });
+    deleteArchivedInbound(inbound);
     return;
   }
   ask(
     "删除自动出口",
-    `删除 ${exitName(owner)} 及其自动入口？目标数量会自动减少 1，其他出口编号和端口保持不变。`,
+    `删除 ${exitName(owner)}？目标数量会自动减少 1，其他出口编号和端口保持不变。自动入口默认归档保留。`,
     async () => {
-      await post("api/console/slot/delete", { slot: owner.slot });
+      const result = await post<{ ok: boolean; cleanup_error?: string }>("api/console/slot/delete", {
+        slot: owner.slot,
+        cleanup_archive: confirmCleanup.value,
+      });
       if (detail.value?.id === inbound.id) detailOpen.value = false;
-      toast("自动出口已删除", { tone: "success" });
+      if (result.cleanup_error) {
+        toast(`出口已删除，但归档入口清理失败：${result.cleanup_error}`, { tone: "error" });
+      } else {
+        toast(confirmCleanup.value ? "自动出口和归档入口已删除" : "自动出口已删除，归档入口已保留", {
+          tone: "success",
+        });
+      }
       invalidate();
     },
     "删除出口",
+    { cleanup: true },
+  );
+}
+
+function deleteArchivedInbound(inbound: Inbound) {
+  ask(
+    "清理归档入口",
+    `删除 ${rowName(inbound)}？对应出口已不存在，本操作只清理这个归档入口及其客户端凭据。`,
+    async () => {
+      await post(`api/xui/delete${queryString({ ids: inbound.id })}`, {});
+      if (detail.value?.id === inbound.id) detailOpen.value = false;
+      toast("归档入口已清理", { tone: "success" });
+      invalidate();
+    },
+    "清理",
   );
 }
 
@@ -493,8 +535,21 @@ const createSecurityOptions = computed(() =>
                   >
                     {{ inbound.enable ? "停用" : "启用" }}
                   </UiButton>
-                  <UiButton v-if="inbound.managed_slot" size="sm" variant="ghost" @click="deleteManagedExit(inbound)">
+                  <UiButton
+                    v-if="inbound.managed_slot && ownerOf(inbound)"
+                    size="sm"
+                    variant="ghost"
+                    @click="deleteManagedExit(inbound)"
+                  >
                     <Trash2 :size="13" />删除出口
+                  </UiButton>
+                  <UiButton
+                    v-else-if="inbound.managed_slot"
+                    size="sm"
+                    variant="ghost"
+                    @click="deleteArchivedInbound(inbound)"
+                  >
+                    <Trash2 :size="13" />清理入口
                   </UiButton>
                   <UiButton v-else size="sm" variant="ghost" @click="deleteInbound(inbound)">
                     <Trash2 :size="13" />删除
@@ -585,9 +640,19 @@ const createSecurityOptions = computed(() =>
           <UiButton size="sm" :loading="cloneMutation.isPending.value" @click="cloneInbound(detail)">复制到所有就绪出口</UiButton>
           <UiButton v-if="!detail.managed_slot" variant="danger" size="sm" @click="deleteInbound(detail)"><Trash2 :size="13" />删除这个入口</UiButton>
         </div>
-        <div v-if="detail.managed_slot" class="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
-          <p class="text-[11px] text-faint">删除自动出口会同时把控制台目标数量减少 1；其他出口编号不变。</p>
+        <div
+          v-if="detail.managed_slot && ownerOf(detail)"
+          class="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3"
+        >
+          <p class="text-[11px] text-faint">删除自动出口会把控制台目标数量减少 1；自动入口默认归档保留，可在确认框中同时清理。</p>
           <UiButton variant="danger" size="sm" @click="deleteManagedExit(detail)"><Trash2 :size="13" />删除出口</UiButton>
+        </div>
+        <div
+          v-else-if="detail.managed_slot"
+          class="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3"
+        >
+          <p class="text-[11px] text-faint">对应出口已不存在，这个自动入口处于归档阻断状态。</p>
+          <UiButton variant="danger" size="sm" @click="deleteArchivedInbound(detail)"><Trash2 :size="13" />清理归档入口</UiButton>
         </div>
       </div>
     </DialogShell>
@@ -600,6 +665,17 @@ const createSecurityOptions = computed(() =>
       :busy="confirmBusy"
       @update:open="confirmOpen = $event"
       @confirm="runConfirm"
-    />
+    >
+      <label
+        v-if="confirmCleanupVisible"
+        class="flex items-start gap-2 rounded-lg border border-line p-3 text-xs text-muted"
+      >
+        <input v-model="confirmCleanup" type="checkbox" name="cleanup-archive" class="mt-0.5 accent-accent" />
+        <span>
+          同时清理归档入口
+          <span class="mt-0.5 block text-[11px] text-faint">勾选后会删除该出口的自动入口和客户端凭据，无法恢复；不勾选则保留归档，之后重建同一编号时复用。</span>
+        </span>
+      </label>
+    </ConfirmDialog>
   </div>
 </template>

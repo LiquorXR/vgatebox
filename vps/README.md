@@ -115,7 +115,7 @@ python3 scripts/toolbox.py --config config/settings.json --env-file /path/intell
 
 现有管理登录保护下提供 `GET/POST /api/slot/policy?slot=N`（POST 为上述 JSON）、`POST /api/slot/resume?slot=N` 和 `POST /api/slot/delete?slot=N`。新建的 `/api/provision` 可在原 count/region 参数之外提交同样的 JSON 策略。保存策略失败时保留旧策略并阻断当前 Slot；手动恢复上次策略及失败回退见下节。
 
-新控制台删除单个自动出口使用 `POST /api/console/slot/delete`，body 为 `{"slot": N}`。它删除指定 Slot 并把控制台目标数量减 1，不会重排其他编号；旧 `/api/slot/delete` 只删除运行中的 Slot、不同步目标数量，可能被后台对账重新创建，因此不应与 `console target` 混用。
+新控制台删除单个自动出口使用 `POST /api/console/slot/delete`，body 为 `{"slot": N, "cleanup_archive": false}`。它删除指定 Slot 并把控制台目标数量减 1，不会重排其他编号；默认保留该 Slot 的自动入口作为归档，便于以后重建同一编号时复用。`cleanup_archive: true` 会在删除 Slot 后一并清理该编号的自动归档入口，响应中的 `cleanup_error` 报告清理失败原因。旧 `/api/slot/delete` 只删除运行中的 Slot、不同步目标数量，可能被后台对账重新创建，因此不应与 `console target` 混用。
 
 `/api/provision`、`/api/jobs` 和 `/api/jobs/dismiss` 仅保留为旧批量/外部自动化接口；它们不更新控制台目标数量，新控制台不调用。需要由控制台维护目标时使用 `/api/console/target`，不要两套流程同时操作同一批 Slot。
 

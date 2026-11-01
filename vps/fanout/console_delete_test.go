@@ -64,6 +64,89 @@ func TestConsoleDeleteSlotAPIKeepsOtherSlotsAndDoesNotRebuild(t *testing.T) {
 	}
 }
 
+type cleanupPanel struct {
+	*fakePanel
+	deleted []int
+}
+
+func (p *cleanupPanel) DeleteInbounds(ids []int, _ []*Tunnel) error {
+	p.deleted = append(p.deleted, ids...)
+	drop := map[int]bool{}
+	for _, id := range ids {
+		drop[id] = true
+	}
+	kept := p.inbounds[:0]
+	for _, ib := range p.inbounds {
+		if !drop[ib.ID] {
+			kept = append(kept, ib)
+		}
+	}
+	p.inbounds = kept
+	return nil
+}
+
+func deleteSlotFixture(t *testing.T) (*Console, *cleanupPanel) {
+	t.Helper()
+	c := consoleFixture(t)
+	p := &cleanupPanel{fakePanel: &fakePanel{}}
+	usePanel(t, p)
+	c.m.nodes = []Node{
+		{HostName: "cleanup-one", Config: "fixture"},
+		{HostName: "cleanup-two", Config: "fixture"},
+		{HostName: "cleanup-three", Config: "fixture"},
+	}
+	if err := c.applyTarget(ExitPlan{Count: 3, Policy: defaultSlotPolicyForMode("", false)}); err != nil {
+		t.Fatal(err)
+	}
+	return c, p
+}
+
+func TestConsoleDeleteSlotPreservesArchiveByDefault(t *testing.T) {
+	c, p := deleteSlotFixture(t)
+	deleted := c.m.Tunnels()[1].Slot
+	p.inbounds = []Inbound{{ID: 77, ManagedSlot: true, BoundSlot: deleted}}
+	w := httptest.NewRecorder()
+	c.apiDeleteSlot(w, httptest.NewRequest(http.MethodPost, "/api/console/slot/delete", strings.NewReader(fmt.Sprintf(`{"slot":%d}`, deleted))))
+	if w.Code != http.StatusOK {
+		t.Fatalf("delete returned %d: %s", w.Code, w.Body.String())
+	}
+	if len(p.deleted) != 0 || len(p.inbounds) != 1 {
+		t.Fatal("archive entry removed without requesting cleanup")
+	}
+}
+
+func TestConsoleDeleteSlotCleansArchiveWhenRequested(t *testing.T) {
+	c, p := deleteSlotFixture(t)
+	slots := c.m.Tunnels()
+	deleted := slots[1].Slot
+	kept := slots[2].Slot
+	p.inbounds = []Inbound{
+		{ID: 77, ManagedSlot: true, BoundSlot: deleted},
+		{ID: 78, ManagedSlot: true, BoundSlot: kept},
+	}
+	w := httptest.NewRecorder()
+	c.apiDeleteSlot(w, httptest.NewRequest(http.MethodPost, "/api/console/slot/delete", strings.NewReader(fmt.Sprintf(`{"slot":%d,"cleanup_archive":true}`, deleted))))
+	if w.Code != http.StatusOK {
+		t.Fatalf("delete returned %d: %s", w.Code, w.Body.String())
+	}
+	if len(p.deleted) != 1 || p.deleted[0] != 77 {
+		t.Fatalf("deleted inbounds: %v", p.deleted)
+	}
+	if len(p.inbounds) != 1 || p.inbounds[0].ID != 78 {
+		t.Fatalf("cleanup touched another slot: %+v", p.inbounds)
+	}
+	var out struct {
+		OK           bool   `json:"ok"`
+		CleanupError string `json:"cleanup_error"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.OK || out.CleanupError != "" {
+		t.Fatalf("unexpected response: %+v", out)
+	}
+}
+
 func TestConsoleDeleteSlotAPIRejectsInvalidRequests(t *testing.T) {
 	c := defaultTargetFixture(t)
 	for _, tc := range []struct {
