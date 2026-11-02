@@ -117,6 +117,18 @@ func (a *Auth) SetPassword(pw string) error {
 	return nil
 }
 
+// invalidateOtherSessions 删除除 keep 外的全部会话。
+// 改密码后让其他浏览器重新登录，当前浏览器保持登录态。
+func (a *Auth) invalidateOtherSessions(keep string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for tok := range a.sessions {
+		if tok != keep {
+			delete(a.sessions, tok)
+		}
+	}
+}
+
 // issue 发一个会话 token。
 func (a *Auth) issue() (string, error) {
 	tok, err := randomToken(16)
@@ -147,6 +159,13 @@ const sessionCookie = "fanout_session"
 // Wrap 保护一个 handler，未登录时 API 返回 401、页面跳登录。
 func (a *Auth) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// SameSite=Lax 挡不住跨站顶层窗口里的非 GET 导航；浏览器明确标记为
+		// cross-site 的写请求直接拒绝。缺少该头的命令行调用仍然放行。
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions &&
+			strings.EqualFold(r.Header.Get("Sec-Fetch-Site"), "cross-site") {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "拒绝跨站请求"})
+			return
+		}
 		if r.URL.Path == "/login" {
 			if c, err := r.Cookie(sessionCookie); err == nil && a.valid(c.Value) {
 				http.Redirect(w, r, "./", http.StatusSeeOther)
@@ -267,6 +286,8 @@ func (a *Auth) handleLogin(w http.ResponseWriter, r *http.Request) {
 		serveLoginPage(w)
 		return
 	}
+	// 登录表单是公开入口，先限制请求体，避免超大表单消耗内存或临时文件。
+	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 	ip := clientIP(r)
 	if a.blocked(ip) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "登录失败次数过多，请稍后再试"})
@@ -288,6 +309,7 @@ func (a *Auth) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Value:    tok,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   requestIsHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(sessionTTL.Seconds()),
 	})

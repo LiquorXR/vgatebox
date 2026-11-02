@@ -156,8 +156,8 @@ func main() {
 	mux.HandleFunc("/", handleIndex)
 	console.routes(mux)
 	mux.HandleFunc("/api/nodes", apiNodes(mgr))
-	mux.HandleFunc("/api/stop", apiStop(mgr))
-	mux.HandleFunc("/api/swap", apiSwap(mgr))
+	mux.HandleFunc("/api/stop", postOnly(apiStop(mgr)))
+	mux.HandleFunc("/api/swap", postOnly(apiSwap(mgr)))
 	mux.HandleFunc("/api/slot/policy", apiSlotPolicy(mgr))
 	mux.HandleFunc("/api/slot/policy/rollback", apiRollbackSlotPolicy(mgr))
 	mux.HandleFunc("/api/config/rollback", apiRollbackNative(mgr))
@@ -165,24 +165,26 @@ func main() {
 	// Old compatibility route: it deletes the Slot without updating the
 	// console target. The new console uses /api/console/slot/delete instead.
 	mux.HandleFunc("/api/slot/delete", apiSlotLifecycle(mgr, true))
-	mux.HandleFunc("/api/cred", apiCred(mgr))
+	mux.HandleFunc("/api/cred", postOnly(apiCred(mgr)))
 	mux.HandleFunc("/api/regions", apiRegions(mgr))
-	mux.HandleFunc("/api/provision", apiProvision(mgr))
+	mux.HandleFunc("/api/provision", postOnly(apiProvision(mgr)))
 	mux.HandleFunc("/api/jobs", apiJobs(mgr))
-	mux.HandleFunc("/api/jobs/dismiss", apiJobDismiss(mgr))
+	mux.HandleFunc("/api/jobs/dismiss", postOnly(apiJobDismiss(mgr)))
 	mux.HandleFunc("/api/exits", apiExits(mgr))
 	mux.HandleFunc("/api/export/xray", apiExportXray(mgr))
 	mux.HandleFunc("/api/xui/inbounds", apiXUIInbounds(mgr))
-	mux.HandleFunc("/api/xui/bind", apiXUIBind(mgr))
-	mux.HandleFunc("/api/xui/clone", apiXUIClone(mgr))
+	mux.HandleFunc("/api/xui/bind", postOnly(apiXUIBind(mgr)))
+	mux.HandleFunc("/api/xui/clone", postOnly(apiXUIClone(mgr)))
 	mux.HandleFunc("/api/xui/detail", apiXUIDetail)
 	mux.HandleFunc("/api/xui/links", apiXUILinks)
-	mux.HandleFunc("/api/xui/delete", apiXUIDelete(mgr))
-	mux.HandleFunc("/api/panel/inbound/new", apiInboundCreate(mgr))
-	mux.HandleFunc("/api/panel/inbound/update", apiInboundUpdate(mgr))
-	mux.HandleFunc("/api/panel/client/add", apiClientAdd(mgr))
-	mux.HandleFunc("/api/panel/client/del", apiClientDelete(mgr))
-	mux.HandleFunc("/api/panel/client/reset", apiClientReset(mgr))
+	mux.HandleFunc("/api/xui/delete", postOnly(apiXUIDelete(mgr)))
+	mux.HandleFunc("/api/xui/encryption/rotate", postOnly(apiXUIRotateEncryption(mgr)))
+	mux.HandleFunc("/api/xui/encryption/set", postOnly(apiXUISetEncryption(mgr)))
+	mux.HandleFunc("/api/panel/inbound/new", postOnly(apiInboundCreate(mgr)))
+	mux.HandleFunc("/api/panel/inbound/update", postOnly(apiInboundUpdate(mgr)))
+	mux.HandleFunc("/api/panel/client/add", postOnly(apiClientAdd(mgr)))
+	mux.HandleFunc("/api/panel/client/del", postOnly(apiClientDelete(mgr)))
+	mux.HandleFunc("/api/panel/client/reset", postOnly(apiClientReset(mgr)))
 	mux.HandleFunc("/api/sub", apiSub)
 	mux.HandleFunc("/api/sub/reset", apiSubReset)
 	// 订阅本体走免登录（见 auth.go 的放行），口令在 handleSub 里验
@@ -227,6 +229,7 @@ func main() {
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
 }
@@ -298,15 +301,28 @@ func apiRegions(m *Manager) http.HandlerFunc {
 // apiCred 改一个出口的 SOCKS5 用户名口令。两个参数都留空表示随机重置。
 func apiCred(m *Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		slot, err := strconv.Atoi(q.Get("slot"))
-		if err != nil {
+		var in struct {
+			Slot int    `json:"slot"`
+			User string `json:"user"`
+			Pass string `json:"pass"`
+		}
+		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32768))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&in); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求格式无效"})
+			return
+		}
+		if err := dec.Decode(&struct{}{}); err != io.EOF {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求格式无效"})
+			return
+		}
+		if in.Slot <= 0 {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "slot 参数无效"})
 			return
 		}
-		cred, err := m.SetCred(slot, SocksCred{
-			User: strings.TrimSpace(q.Get("user")),
-			Pass: strings.TrimSpace(q.Get("pass")),
+		cred, err := m.SetCred(in.Slot, SocksCred{
+			User: strings.TrimSpace(in.User),
+			Pass: strings.TrimSpace(in.Pass),
 		})
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -335,9 +351,30 @@ func apiSettings(auth *Auth, srv *webServer) http.HandlerFunc {
 				writeJSON(w, 400, map[string]string{"error": "请求格式错误"})
 				return
 			}
+			newPassword := ""
+			if in.Password != nil {
+				newPassword = strings.TrimSpace(*in.Password)
+			}
+			if newPassword != "" {
+				if in.CurrentPassword == nil || strings.TrimSpace(*in.CurrentPassword) == "" {
+					writeJSON(w, 400, map[string]string{"error": "修改密码需要输入当前密码"})
+					return
+				}
+				if !auth.check(*in.CurrentPassword) {
+					writeJSON(w, 400, map[string]string{"error": "当前密码不正确"})
+					return
+				}
+			}
 			if err := applyManagementSettings(auth, srv, in); err != nil {
 				writeJSON(w, 400, map[string]string{"error": err.Error()})
 				return
+			}
+			if newPassword != "" {
+				keep := ""
+				if c, err := r.Cookie(sessionCookie); err == nil {
+					keep = c.Value
+				}
+				auth.invalidateOtherSessions(keep)
 			}
 		}
 
@@ -598,6 +635,75 @@ func apiXUILinks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"links": links})
 }
 
+// apiXUIRotateEncryption 重新生成一个 VLESS 入站的协议内加密参数。
+func apiXUIRotateEncryption(m *Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.Atoi(r.URL.Query().Get("id"))
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id 参数无效"})
+			return
+		}
+		p, err := openPanel()
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			return
+		}
+		n, ok := p.(*Native)
+		if !ok {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "仅支持内置 Xray"})
+			return
+		}
+		enc, err := n.RotateVLESSEncryption(id, m.Tunnels())
+		invalidateInbounds()
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{
+			"client_encryption": enc.ClientEncryption,
+			"key_type":          enc.KeyType,
+		})
+	}
+}
+
+// apiXUISetEncryption 打开或关闭一个 VLESS 入站的协议内加密层。
+func apiXUISetEncryption(m *Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.Atoi(r.URL.Query().Get("id"))
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id 参数无效"})
+			return
+		}
+		enabled := r.URL.Query().Get("enabled") == "1"
+		keyType := r.URL.Query().Get("key_type")
+		p, err := openPanel()
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			return
+		}
+		n, ok := p.(*Native)
+		if !ok {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "仅支持内置 Xray"})
+			return
+		}
+		enc, err := n.SetVLESSEncryption(id, enabled, keyType, m.Tunnels())
+		invalidateInbounds()
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if !enabled || enc == nil {
+			writeJSON(w, http.StatusOK, map[string]bool{"enabled": false})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"enabled":           true,
+			"client_encryption": enc.ClientEncryption,
+			"key_type":          enc.KeyType,
+		})
+	}
+}
+
 // apiXUIDelete 删除入站。停掉出口后它的入站会留下来，用户需要一个清理入口。
 func apiXUIDelete(m *Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -725,6 +831,12 @@ func apiInboundCreate(m *Manager) http.HandlerFunc {
 
 		q := r.URL.Query()
 		port, _ := strconv.Atoi(q.Get("port"))
+		kcpMTU, _ := strconv.Atoi(q.Get("kcp_mtu"))
+		kcpTTI, _ := strconv.Atoi(q.Get("kcp_tti"))
+		kcpUplink, _ := strconv.Atoi(q.Get("kcp_uplink"))
+		kcpDownlink, _ := strconv.Atoi(q.Get("kcp_downlink"))
+		hysteriaHop, _ := strconv.Atoi(q.Get("hysteria_hop"))
+		hysteriaIdle, _ := strconv.Atoi(q.Get("hysteria_idle"))
 		slot := 0
 		if raw := q.Get("slot"); raw != "" {
 			var parseErr error
@@ -754,6 +866,25 @@ func apiInboundCreate(m *Manager) http.HandlerFunc {
 			ServerNames: q.Get("server_names"),
 			ShortID:     q.Get("sid"),
 			Fingerprint: q.Get("fp"),
+
+			KCPMTU:      kcpMTU,
+			KCPTTI:      kcpTTI,
+			KCPUplink:   kcpUplink,
+			KCPDownlink: kcpDownlink,
+
+			HysteriaAuth:       q.Get("hysteria_auth"),
+			HysteriaObfs:       q.Get("hysteria_obfs"),
+			HysteriaPorts:      q.Get("hysteria_ports"),
+			HysteriaHopSeconds: hysteriaHop,
+			HysteriaUp:         q.Get("hysteria_up"),
+			HysteriaDown:       q.Get("hysteria_down"),
+			HysteriaIdle:       hysteriaIdle,
+			MasqueradeType:     q.Get("masquerade_type"),
+			MasqueradeURL:      q.Get("masquerade_url"),
+			MasqueradeContent:  q.Get("masquerade_content"),
+
+			VLESSEncryption:     q.Get("vless_encryption") == "1",
+			VLESSEncryptionType: q.Get("vless_encryption_type"),
 		}, m.Tunnels())
 		invalidateInbounds()
 		if err != nil {

@@ -353,6 +353,17 @@ export interface InboundDetail extends Inbound {
   listen: string;
   network: string;
   tls: string;
+  hysteria?: {
+    obfs_password?: string;
+    ports?: string;
+    hop_interval?: number;
+    up?: string;
+    down?: string;
+    udp_idle_timeout?: number;
+    masquerade_type?: string;
+  };
+  vless_encryption?: boolean;
+  vless_encryption_type?: string;
 }
 
 export interface SocksLink {

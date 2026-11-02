@@ -79,12 +79,21 @@ Vite 默认把 `/api`、`/sub`、`/login` 代理到 `http://127.0.0.1:8899`。�
 
 - 订阅地址和二维码优先使用 `FANOUT_PUBLIC_URL`（只填外部 origin，例如 `https://panel.example.com`）。
 - 未显式设置时，只有在请求来自本机/私有网段或 `FANOUT_TRUSTED_PROXIES` 中配置的代理时，才接受 `Forwarded`、`X-Forwarded-Proto`、`X-Forwarded-Host`、`X-Forwarded-Port`；公网客户端伪造这些头不会改变生成的链接。
+- 反向代理终止 TLS 时必须把 `X-Forwarded-Proto: https` 传给管理服务，并确保代理地址被识别为可信（本机/私有网段或 `FANOUT_TRUSTED_PROXIES`）。否则登录 Cookie 不会带 `Secure`，也不会发送 HSTS；`FANOUT_PUBLIC_URL` 不参与安全判断。
 - 代理额外增加路径前缀时，应把该前缀配置为管理访问路径，而不是写进 `FANOUT_PUBLIC_URL`。
 - 反向代理只代理管理页面时，节点链接优先使用 `FANOUT_PUBLIC_IP` 或自动探测到的公网 IPv4；探测不到时才回退到外部 origin 的主机名。
 
 ## 服务端行为
 
 - 新 UI 的 HTML：`Cache-Control: no-store`，严格 CSP（`script-src 'self'`）。
+- 管理 API 的 JSON 响应统一 `Cache-Control: no-store`，避免凭据、订阅 token 和客户端密钥进入浏览器缓存。
+- 状态变更接口只接受 `POST`；其余方法返回 `405`。`Auth.Wrap` 还会拒绝浏览器标记为 `Sec-Fetch-Site: cross-site` 的写请求。
+- 实际通过 HTTPS 访问（或可信代理转发 `X-Forwarded-Proto: https`）时，登录 Cookie 带 `Secure`，响应带 HSTS。
+- 新建接入入口只支持 VLESS 与 Hysteria2。VLESS 可选 TCP/RAW、XHTTP、gRPC、WebSocket、HTTPUpgrade、mKCP、Hysteria2 传输，并按官方矩阵限制 REALITY 与 TLS；Hysteria2 固定为 hysteria + TLS。
+- VLESS 可单独启用 VLESS Encryption（X25519 或 ML-KEM-768）；启用后链接带 `encryption=`，`security=none` 也可用于公网。旧客户端可能无法解析。
+- Hysteria2 支持自签证书、Salamander、端口跳跃、Brutal 和 masquerade；自签链接带 `insecure=1` 和 `pinSHA256`，Clash 优先使用证书指纹。填写端口范围后，Xray 入站直接监听整个 UDP 范围；范围过大会消耗资源，云防火墙需放行整个范围，也可以用 iptables/nftables 重定向到单端口。
+- VLESS + mKCP 会进入 v2rayN/Base64 订阅，Mihomo 跳过；VLESS over Hysteria2 没有标准 URI，不进入订阅，只在服务端保留 Xray-to-Xray 配置。
+- 升级时旧 VMess/Trojan 入口会从 `native.json` 过滤，不再显示或进入订阅。
 - `/assets/`、`/next/assets/` 和 favicon 在登录前可读，登录页自身的 CSS/JS 不依赖会话；它们不包含管理数据。
 - 带指纹的静态资源：一年 `immutable`；`favicon.svg` 等稳定名称使用 `no-cache`。
 - 文本响应按 `Accept-Encoding` 做 gzip；图片和字体跳过。
@@ -104,11 +113,13 @@ Vite 默认把 `/api`、`/sub`、`/login` 代理到 `http://127.0.0.1:8899`。�
 
 旧面板使用过、新控制台补充或合并的接口：
 
-- `POST /api/cred?slot=N&user=&pass=`: 「接入 → VPS SOCKS5 → 详情」编辑凭据；两项都留空表示随机重置。
+- `POST /api/cred`: body `{"slot": N, "user": "...", "pass": "..."}`；「接入 → VPS SOCKS5 → 详情」编辑凭据，两项都留空表示随机重置。凭据不再放在 URL 查询参数里。
 - `POST /api/console/slot/delete`: body `{"slot": N, "cleanup_archive": false}`，删除指定自动出口并把控制台目标数量减 1，其他 Slot 编号不变。默认保留该出口的自动入口作为归档，之后重建同一编号时可以复用；`cleanup_archive: true` 会一并删除该 Slot 的自动归档入口，并在响应 `cleanup_error` 中报告清理失败。出口详情和「高级接入」的自动入口都使用该接口；旧 `/api/slot/delete` 只保留兼容，新 UI 不再调用。
-- 对应出口已不存在的自动入口会在「高级接入」显示为「归档入口」。它不再有可删除的出口，使用「清理入口」调用 `/api/xui/delete?ids=N` 单独清理；手动入口和本机直出入口仍走各自的删除入口。
+- 对应出口已不存在的自动入口会在「高级接入」显示为「归档入口」。它不再有可删除的出口，使用「清理入口」调用 `POST /api/xui/delete?ids=N` 单独清理；手动入口和本机直出入口仍走各自的删除入口。
 - `GET /api/console` 的 `regions` 字段：合并旧 `/api/regions` 的候选库存统计。出口目标弹窗显示各国家空闲节点数、最佳延迟和最佳速度，并明确标注这是候选库存而不是已验证出口。旧路由保留给外部调用。
 - `POST /api/xui/clone?id=N`: 「高级接入 → 详情」以当前入口为模板，为所有已就绪出口创建入口。
+- `POST /api/xui/encryption/rotate?id=N`: 为已启用 VLESS Encryption 的入口重新生成一对 `decryption`/`encryption` 参数；旧订阅链接立即失效。
+- `POST /api/xui/encryption/set?id=N&enabled=1|0&key_type=x25519|mlkem768`: 打开或关闭一个 VLESS 入站的协议内加密层；打开时可按需生成新参数。
 
 出口数量减少仍通过 `POST /api/console/target`。两个操作的区别：调整数量不指定删除哪个 Slot；删除自动出口会先固定要删除的编号，再减少目标数量。若仍有等待中的出口，删除后目标数仍可能由其他候选补位。
 

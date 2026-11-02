@@ -174,10 +174,10 @@ test("socks credentials can be edited from the access drawer", async ({ page }) 
     (req) => req.url().includes("/api/cred") && req.method() === "POST",
   );
   await page.getByRole("button", { name: "保存凭据" }).click();
-  const url = new URL((await request).url());
-  expect(url.searchParams.get("slot")).toBe("1");
-  expect(url.searchParams.get("user")).toBe("rotated-user");
-  expect(url.searchParams.get("pass")).toBe("rotated-pass");
+  const body = (await request).postDataJSON() as { slot: number; user: string; pass: string };
+  expect(body.slot).toBe(1);
+  expect(body.user).toBe("rotated-user");
+  expect(body.pass).toBe("rotated-pass");
   await expect(page.getByText("SOCKS5 凭据已保存")).toBeVisible();
 });
 

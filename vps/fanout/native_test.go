@@ -83,12 +83,20 @@ func TestShareLinkPerProtocol(t *testing.T) {
 		t.Errorf("vless 需要 encryption=none: %s", vless)
 	}
 
-	tro := shareLink(&nativeInbound{Port: 200, Protocol: "trojan", Network: "ws", Path: "/p"}, c, "h")
-	if !strings.HasPrefix(tro, "trojan://pw-1@h:200?") {
-		t.Errorf("trojan 应当用密码而不是 UUID: %s", tro)
+	hy := shareLink(&nativeInbound{
+		Port: 200, Protocol: "hysteria", Network: "hysteria", Security: "tls", Remark: "hy2",
+		TLS: &tlsConfig{ServerName: "203.0.113.10", SelfSigned: true, CertSha256: "AABB"},
+		Hysteria: &hysteriaConfig{
+			Auth: "pw-1", ObfsPassword: "obfs", Ports: "20000-30000", HopInterval: 30, Up: "30 mbps", Down: "200 mbps",
+		},
+	}, c, "203.0.113.10")
+	if !strings.HasPrefix(hy, "hysteria2://pw-1@203.0.113.10:200?") {
+		t.Errorf("hysteria2 链接格式不对: %s", hy)
 	}
-	if !strings.Contains(tro, "path=%2Fp") {
-		t.Errorf("ws 链接要带 path: %s", tro)
+	for _, want := range []string{"sni=203.0.113.10", "insecure=1", "pinSHA256=AABB", "obfs=salamander", "obfs-password=obfs", "ports=20000-30000", "hop-interval=30", "up=30+mbps", "down=200+mbps"} {
+		if !strings.Contains(hy, want) {
+			t.Errorf("hysteria2 链接缺少 %s: %s", want, hy)
+		}
 	}
 }
 
@@ -156,6 +164,12 @@ func TestVisionCapable(t *testing.T) {
 	if visionCapable("trojan", "tcp", "tls") {
 		t.Error("vision 是 VLESS 专属")
 	}
+	if !visionCapableWith("vless", "xhttp", "none", true) {
+		t.Error("启用 VLESS Encryption 后 Vision 应可跨传输")
+	}
+	if visionCapableWith("vless", "xhttp", "none", false) {
+		t.Error("未启用 VLESS Encryption 时 XHTTP 不该支持 Vision")
+	}
 }
 
 func TestStreamSettingsPerNetwork(t *testing.T) {
@@ -170,6 +184,8 @@ func TestStreamSettingsPerNetwork(t *testing.T) {
 		{nativeInbound{Network: "xhttp", Path: "/x"}, "xhttpSettings", "path", "/x"},
 		// gRPC 没有 path，Path 字段复用为 serviceName，且不带前导斜杠
 		{nativeInbound{Network: "grpc", Path: "/svc"}, "grpcSettings", "serviceName", "svc"},
+		{nativeInbound{Network: "mkcp"}, "kcpSettings", "mtu", 1350},
+		{nativeInbound{Network: "hysteria", Hysteria: &hysteriaConfig{Auth: "a"}}, "hysteriaSettings", "auth", "a"},
 	}
 	for _, c := range cases {
 		st := streamSettingsJSON(&c.ib)
@@ -229,13 +245,13 @@ func TestShareLinkCarriesXHTTPAndHTTPUpgradeParameters(t *testing.T) {
 		}
 	}
 	upgrade := shareLink(&nativeInbound{
-		Port: 443, Protocol: "vmess", Network: "httpupgrade", Path: "/upgrade", Host: "cdn.example",
+		Port: 443, Protocol: "vless", Network: "httpupgrade", Path: "/upgrade", Host: "cdn.example",
 		Security: "tls", Remark: "upgrade",
 		TLS: &tlsConfig{ServerName: "example.com", SelfSigned: true, CertSha256: "AABB"},
 	}, c, "203.0.113.1")
-	for _, want := range []string{"vmess://", "type=httpupgrade", "path=%2Fupgrade", "host=cdn.example", "pcs=AABB"} {
+	for _, want := range []string{"vless://uuid-1@", "type=httpupgrade", "path=%2Fupgrade", "host=cdn.example", "pcs=AABB"} {
 		if !strings.Contains(upgrade, want) {
-			t.Errorf("HTTPUpgrade VMess link missing %s: %s", want, upgrade)
+			t.Errorf("HTTPUpgrade VLESS link missing %s: %s", want, upgrade)
 		}
 	}
 }

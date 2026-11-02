@@ -138,6 +138,9 @@ func TestServeSocksUDPAssociateRelaysPackets(t *testing.T) {
 		t.Fatalf("UDP associate rejected: %v", reply)
 	}
 	bnd := &net.UDPAddr{IP: net.IP(reply[4:8]), Port: int(binary.BigEndian.Uint16(reply[8:10]))}
+	if !bnd.IP.Equal(net.IPv4(127, 0, 0, 1)) {
+		t.Fatalf("UDP relay advertised %s, want loopback", bnd.IP)
+	}
 	relay, err := net.DialUDP("udp4", nil, bnd)
 	if err != nil {
 		t.Fatal(err)

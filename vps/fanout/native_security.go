@@ -128,7 +128,7 @@ func certFingerprint(certFile string) (string, error) {
 
 // 支持的取值。集中在这里，前后端校验共用一份。
 var (
-	nativeNetworks   = map[string]bool{"tcp": true, "ws": true, "grpc": true, "httpupgrade": true, "xhttp": true}
+	nativeNetworks   = map[string]bool{"tcp": true, "ws": true, "grpc": true, "httpupgrade": true, "xhttp": true, "mkcp": true, "hysteria": true}
 	nativeSecurities = map[string]bool{"none": true, "tls": true, "reality": true}
 )
 
@@ -136,5 +136,17 @@ var (
 //
 // Vision 只在 VLESS + 裸 TCP + TLS/REALITY 下有效，其他组合 Xray 会拒绝启动。
 func visionCapable(protocol, network, security string) bool {
-	return protocol == "vless" && network == "tcp" && (security == "tls" || security == "reality")
+	return visionCapableWith(protocol, network, security, false)
+}
+
+// visionCapableWith 在启用 VLESS Encryption 时放宽传输限制：
+// 上游允许任意传输使用 Vision，非 TCP 只能穿透加密层，不能内核 splice。
+func visionCapableWith(protocol, network, security string, encryption bool) bool {
+	if protocol != "vless" {
+		return false
+	}
+	if encryption {
+		return true
+	}
+	return network == "tcp" && (security == "tls" || security == "reality")
 }

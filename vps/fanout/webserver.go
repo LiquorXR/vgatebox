@@ -26,6 +26,18 @@ func newWebServer(h http.Handler) *webServer {
 	return &webServer{handler: h}
 }
 
+// newHTTPServer 给管理监听加上资源上限，避免公网慢连接和超大请求头耗尽资源。
+func newHTTPServer(h http.Handler) *http.Server {
+	return &http.Server{
+		Handler:           h,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
+}
+
 // serve 用当前 WebSettings 起第一个监听并阻塞。返回时说明监听彻底退出。
 func (s *webServer) serve() error {
 	cfg := getWebSettings()
@@ -53,7 +65,7 @@ func (s *webServer) activateListener(ln net.Listener, addr string) {
 	s.mu.Lock()
 	oldSrv := s.srv
 	oldLn := s.ln
-	srv := &http.Server{Handler: s.handler}
+	srv := newHTTPServer(s.handler)
 	s.srv = srv
 	s.ln = ln
 	s.addr = addr

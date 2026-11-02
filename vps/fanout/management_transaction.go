@@ -16,6 +16,7 @@ var managementMu sync.Mutex
 
 type managementSettingsRequest struct {
 	Password        *string `json:"password"`
+	CurrentPassword *string `json:"current_password"`
 	BasePath        *string `json:"base_path"`
 	Port            *int    `json:"port"`
 	ListenAddr      *string `json:"listen_addr"`

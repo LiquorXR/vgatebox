@@ -431,12 +431,13 @@ export async function mockApi(page: Page): Promise<void> {
     }
 
     if (path === "/api/cred") {
+      const body = (route.request().postDataJSON() || {}) as { user?: string; pass?: string };
       return route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          user: url.searchParams.get("user") || "generated-user",
-          pass: url.searchParams.get("pass") || "generated-pass",
+          user: body.user || "generated-user",
+          pass: body.pass || "generated-pass",
         }),
       });
     }

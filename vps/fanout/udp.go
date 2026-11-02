@@ -28,12 +28,19 @@ type udpSession struct {
 // serveUDPAssociate 处理 SOCKS5 UDP ASSOCIATE 请求。
 // client 是已完成认证的 TCP 控制连接；dial 负责在隧道内建连。
 func serveUDPAssociate(client net.Conn, dial func(network, addr string) (net.Conn, error)) {
-	relay, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero})
+	relay, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
 		_ = socksReply(client, repGenFail)
 		return
 	}
 	defer relay.Close()
+
+	// 中继只绑定 loopback；这里再按 TCP 控制连接的对端 IP 过滤来源。
+	// 不校验源端口，RFC 1928 不要求 UDP 源端口与 TCP 控制连接一致。
+	var peerIP net.IP
+	if ta, ok := client.RemoteAddr().(*net.TCPAddr); ok {
+		peerIP = ta.IP
+	}
 
 	// BND 地址：公网客户端连进来时用连接本端 IP，本机客户端就是 127.0.0.1
 	bndIP := net.IPv4zero
@@ -68,6 +75,9 @@ func serveUDPAssociate(client net.Conn, dial func(network, addr string) (net.Con
 		n, src, err := relay.ReadFromUDP(buf)
 		if err != nil {
 			return
+		}
+		if peerIP != nil && !src.IP.Equal(peerIP) {
+			continue
 		}
 		atyp, addrBytes, host, port, payload, ok := parseUDPReqHeader(buf[:n])
 		if !ok {

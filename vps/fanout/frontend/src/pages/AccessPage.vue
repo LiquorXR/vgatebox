@@ -86,14 +86,11 @@ function openSocksDetail(row: { exit: Exit }) {
 const socksCredMutation = useMutation({
   mutationFn: () => {
     if (!socksDetail.value) throw new Error("出口不存在");
-    return post(
-      `api/cred${queryString({
-        slot: socksDetail.value.exit.slot,
-        user: socksUser.value.trim(),
-        pass: socksPass.value.trim(),
-      })}`,
-      {},
-    );
+    return post("api/cred", {
+      slot: socksDetail.value.exit.slot,
+      user: socksUser.value.trim(),
+      pass: socksPass.value.trim(),
+    });
   },
   onSuccess: (value) => {
     const result = value as { user: string; pass: string };

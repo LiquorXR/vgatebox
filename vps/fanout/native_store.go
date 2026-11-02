@@ -27,17 +27,23 @@ type nativeClient struct {
 type nativeInbound struct {
 	ID       int    `json:"id"`
 	Port     int    `json:"port"`
-	Protocol string `json:"protocol"` // vless | vmess | trojan
-	Network  string `json:"network"`  // tcp | ws | grpc | httpupgrade | xhttp
+	Protocol string `json:"protocol"` // vless | hysteria | socks
+	Network  string `json:"network"`  // tcp | ws | grpc | httpupgrade | xhttp | mkcp | hysteria
 	Path     string `json:"path"`     // ws/httpupgrade/xhttp 路径，grpc 用作 serviceName
 	Host     string `json:"host"`     // ws/httpupgrade/xhttp 的 Host 头
 	// Security 是传输层安全：none | tls | reality
 	Security string         `json:"security"`
 	TLS      *tlsConfig     `json:"tls,omitempty"`
 	Reality  *realityConfig `json:"reality,omitempty"`
-	Remark   string         `json:"remark"`
-	Enable   bool           `json:"enable"`
-	Clients  []nativeClient `json:"clients"`
+	// KCP 是 VLESS + mKCP 的传输参数；留空使用 Xray 默认值。
+	KCP *kcpConfig `json:"kcp,omitempty"`
+	// Hysteria 是 Hysteria2 协议或 VLESS over Hysteria2 传输的参数。
+	Hysteria *hysteriaConfig `json:"hysteria,omitempty"`
+	// VLESSEncryption 是 VLESS 协议内加密层；关闭时 decryption 固定为 none。
+	VLESSEncryption *vlessEncryptionConfig `json:"vless_encryption,omitempty"`
+	Remark          string                 `json:"remark"`
+	Enable          bool                   `json:"enable"`
+	Clients         []nativeClient         `json:"clients"`
 	// BoundTo 保留旧版主机名绑定；BoundSlot 存在时以稳定编号为准。空绑定默认阻断
 	BoundTo     string           `json:"bound_to"`
 	BoundSlot   int              `json:"bound_slot,omitempty"`
@@ -47,6 +53,40 @@ type nativeInbound struct {
 	HostDirect  bool             `json:"host_direct,omitempty"` // only explicit direct entries may use the host
 	SocksSlot   int              `json:"socks_slot,omitempty"`  // managed external SOCKS entry, separate from loopback
 	ThirdParty  *ThirdPartyProxy `json:"third_party,omitempty"`
+}
+
+// kcpConfig 是 mKCP 的可选调优参数，零值表示使用 Xray 默认值。
+type kcpConfig struct {
+	MTU      int `json:"mtu,omitempty"`
+	TTI      int `json:"tti,omitempty"`
+	Uplink   int `json:"uplink,omitempty"`
+	Downlink int `json:"downlink,omitempty"`
+}
+
+// hysteriaConfig 同时覆盖两种用法：
+//   - protocol=hysteria：Hysteria2 入站，Auth 与客户端密码一致；
+//   - protocol=vless + network=hysteria：VLESS 跑在 Hysteria2 QUIC 传输上，
+//     Auth 是传输层认证，与 VLESS UUID 分离。
+type hysteriaConfig struct {
+	Auth              string `json:"auth,omitempty"`
+	ObfsPassword      string `json:"obfs_password,omitempty"`
+	Ports             string `json:"ports,omitempty"`
+	HopInterval       int    `json:"hop_interval,omitempty"`
+	Up                string `json:"up,omitempty"`
+	Down              string `json:"down,omitempty"`
+	UDPIdleTimeout    int    `json:"udp_idle_timeout,omitempty"`
+	MasqueradeType    string `json:"masquerade_type,omitempty"`
+	MasqueradeURL     string `json:"masquerade_url,omitempty"`
+	MasqueradeContent string `json:"masquerade_content,omitempty"`
+}
+
+// vlessEncryptionConfig 保存一对 VLESS Encryption 参数。
+// ServerDecryption 只保存在服务端；ClientEncryption 会进入订阅链接。
+type vlessEncryptionConfig struct {
+	Enabled          bool   `json:"enabled"`
+	KeyType          string `json:"key_type,omitempty"` // x25519 | mlkem768
+	ServerDecryption string `json:"server_decryption,omitempty"`
+	ClientEncryption string `json:"client_encryption,omitempty"`
 }
 
 // tlsConfig 是标准 TLS 的配置。证书要么由用户提供路径，要么 fanout 生成自签的。
@@ -97,6 +137,9 @@ func (n *nativeInbound) securityOrNone() string {
 type nativeStore struct {
 	NextID   int              `json:"next_id"`
 	Inbounds []*nativeInbound `json:"inbounds"`
+
+	// droppedLegacy 记录本次加载是否过滤了已不再支持的协议。
+	droppedLegacy bool
 }
 
 func nativeStatePath(dir string) string { return filepath.Join(dir, "native.json") }
@@ -109,7 +152,16 @@ func loadNativeStore(dir string) (*nativeStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	return decodeNativeStore(blob)
+	st, err := decodeNativeStore(blob)
+	if err != nil {
+		return nil, err
+	}
+	if st.droppedLegacy {
+		if err := st.save(dir); err != nil {
+			return nil, err
+		}
+	}
+	return st, nil
 }
 
 func decodeNativeStore(blob []byte) (*nativeStore, error) {
@@ -120,6 +172,16 @@ func decodeNativeStore(blob []byte) (*nativeStore, error) {
 	if st.NextID < 1 {
 		st.NextID = 1
 	}
+	// VMess/Trojan 已从面板移除；旧状态保留文件但不再参与运行。
+	kept := st.Inbounds[:0]
+	for _, ib := range st.Inbounds {
+		if ib != nil && (ib.Protocol == "vmess" || ib.Protocol == "trojan") {
+			st.droppedLegacy = true
+			continue
+		}
+		kept = append(kept, ib)
+	}
+	st.Inbounds = kept
 	if err := validateNativeStore(st); err != nil {
 		return nil, err
 	}
@@ -128,10 +190,24 @@ func decodeNativeStore(blob []byte) (*nativeStore, error) {
 
 func validateNativeStore(st *nativeStore) error {
 	ids, ports := map[int]bool{}, map[int]bool{}
+	type portInterval struct{ start, end int }
+	var intervals []portInterval
 	for _, ib := range st.Inbounds {
 		if ib == nil || ib.ID < 1 || ib.ID >= st.NextID || ib.Port < 1 || ib.Port > 65535 || ids[ib.ID] || ports[ib.Port] {
 			return fmt.Errorf("内置配置的入站标识或端口无效")
 		}
+		start, end := ib.Port, ib.Port
+		if ib.netOrTCP() == "hysteria" && ib.Hysteria != nil && strings.TrimSpace(ib.Hysteria.Ports) != "" {
+			s, e, err := parsePortRange(ib.Hysteria.Ports)
+			if err != nil {
+				return fmt.Errorf("Hysteria2 端口范围无效: %w", err)
+			}
+			if ib.Port < s || ib.Port > e {
+				return fmt.Errorf("Hysteria2 入口端口 %d 不在范围 %d-%d 内", ib.Port, s, e)
+			}
+			start, end = s, e
+		}
+		intervals = append(intervals, portInterval{start: start, end: end})
 		if ib.BoundSlot < 0 || ib.BoundSlot > maximumSlots || (ib.NameMode != "" && ib.NameMode != "auto" && ib.NameMode != "custom") {
 			return fmt.Errorf("内置入站的出口编号或命名模式无效")
 		}
@@ -152,8 +228,35 @@ func validateNativeStore(st *nativeStore) error {
 		if ib.SocksSlot != 0 && (ib.SocksSlot < 1 || ib.SocksSlot > maximumSlots || ib.BoundSlot != ib.SocksSlot || ib.Protocol != "socks" || ib.securityOrNone() != "none" || ib.netOrTCP() != "tcp" || len(ib.Clients) != 1 || validateCred(SocksCred{User: ib.Clients[0].Email, Pass: ib.Clients[0].Password}) != nil) {
 			return fmt.Errorf("外部 SOCKS 配置无效")
 		}
+		if ib.Protocol != "vless" && ib.Protocol != "hysteria" && ib.Protocol != "socks" {
+			return fmt.Errorf("内置入站协议无效")
+		}
+		if ib.Protocol == "hysteria" {
+			if ib.netOrTCP() != "hysteria" || ib.securityOrNone() != "tls" || ib.TLS == nil || ib.Hysteria == nil || len(ib.Clients) < 1 {
+				return fmt.Errorf("Hysteria2 入站配置无效")
+			}
+			for _, c := range ib.Clients {
+				if strings.TrimSpace(c.Password) == "" {
+					return fmt.Errorf("Hysteria2 客户端密码不能为空")
+				}
+			}
+		}
+		if ib.netOrTCP() == "hysteria" && (ib.securityOrNone() != "tls" || ib.TLS == nil || ib.Hysteria == nil || strings.TrimSpace(ib.Hysteria.Auth) == "") {
+			return fmt.Errorf("Hysteria2 传输配置无效")
+		}
+		if ib.VLESSEncryption != nil && ib.VLESSEncryption.Enabled {
+			if ib.Protocol != "vless" || strings.TrimSpace(ib.VLESSEncryption.ServerDecryption) == "" || strings.TrimSpace(ib.VLESSEncryption.ClientEncryption) == "" {
+				return fmt.Errorf("VLESS Encryption 配置无效")
+			}
+		}
 		ids[ib.ID] = true
 		ports[ib.Port] = true
+	}
+	sort.Slice(intervals, func(i, j int) bool { return intervals[i].start < intervals[j].start })
+	for i := 1; i < len(intervals); i++ {
+		if intervals[i].start <= intervals[i-1].end {
+			return fmt.Errorf("内置入站端口范围重叠")
+		}
 	}
 	return nil
 }
@@ -185,6 +288,13 @@ func (s *nativeStore) usedPorts() map[int]bool {
 	used := externalUsedPorts()
 	for _, ib := range s.Inbounds {
 		used[ib.Port] = true
+		if ib.netOrTCP() == "hysteria" && ib.Hysteria != nil && strings.TrimSpace(ib.Hysteria.Ports) != "" {
+			if start, end, err := parsePortRange(ib.Hysteria.Ports); err == nil {
+				for port := start; port <= end; port++ {
+					used[port] = true
+				}
+			}
+		}
 	}
 	return used
 }

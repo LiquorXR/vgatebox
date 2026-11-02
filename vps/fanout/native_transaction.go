@@ -37,6 +37,18 @@ func cloneNativeStore(s *nativeStore) *nativeStore {
 			v.ShortIDs = append([]string(nil), v.ShortIDs...)
 			ib.Reality = &v
 		}
+		if in.KCP != nil {
+			v := *in.KCP
+			ib.KCP = &v
+		}
+		if in.Hysteria != nil {
+			v := *in.Hysteria
+			ib.Hysteria = &v
+		}
+		if in.VLESSEncryption != nil {
+			v := *in.VLESSEncryption
+			ib.VLESSEncryption = &v
+		}
 		copy.Inbounds = append(copy.Inbounds, &ib)
 	}
 	return &copy

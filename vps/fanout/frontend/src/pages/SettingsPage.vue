@@ -25,6 +25,7 @@ const form = reactive({
   listen_addr: "0.0.0.0",
   base_path: "",
   password: "",
+  current_password: "",
   residential_only: true,
 });
 const saving = ref(false);
@@ -39,6 +40,7 @@ watch(
     form.base_path = value.base_path || "";
     form.residential_only = value.residential_only;
     form.password = "";
+    form.current_password = "";
   },
   { immediate: true },
 );
@@ -57,17 +59,22 @@ const saveMutation = useMutation({
     const port = Number(form.port);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("管理端口须为 1–65535");
     if (form.password && form.password.length < 4) throw new Error("新密码至少 4 位");
+    if (form.password && !form.current_password.trim()) throw new Error("修改密码需要输入当前密码");
     const body: Record<string, unknown> = {
       port,
       listen_addr: form.listen_addr.trim(),
       base_path: form.base_path.trim(),
       residential_only: form.residential_only,
     };
-    if (form.password) body.password = form.password;
+    if (form.password) {
+      body.password = form.password;
+      body.current_password = form.current_password;
+    }
     return post("api/settings", body);
   },
   onSuccess: () => {
     form.password = "";
+    form.current_password = "";
     toast("设置已保存；如端口或路径变化，请使用新地址访问", { tone: "success" });
     void queryClient.invalidateQueries({ queryKey: keys.settings });
     void queryClient.invalidateQueries({ queryKey: keys.console });
@@ -204,7 +211,7 @@ const themeOptions: { value: ThemeChoice; label: string }[] = [
           </div>
         </Panel>
 
-        <Panel title="管理入口" description="改端口、路径或密码后，请使用新地址重新登录。">
+        <Panel title="管理入口" description="改端口或路径后请使用新地址访问；改密码会使其他会话退出。">
           <div v-if="isLoading && !settings" class="py-3"><SkeletonBlock :lines="4" /></div>
           <form v-else class="space-y-4" @submit.prevent="saveMutation.mutate()">
             <div class="grid gap-3 sm:grid-cols-2">
@@ -224,9 +231,13 @@ const themeOptions: { value: ThemeChoice; label: string }[] = [
               <span class="mt-1 block text-[11px] text-faint">随机路径可降低被扫描的概率；留空表示不加前缀。</span>
             </label>
             <label class="block">
+              <span class="mb-1 block text-xs font-medium">当前密码（修改密码时必填）</span>
+              <input v-model="form.current_password" name="current-password" type="password" autocomplete="current-password" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
+            </label>
+            <label class="block">
               <span class="mb-1 block text-xs font-medium">新密码（留空保留原密码）</span>
               <input v-model="form.password" name="new-password" type="password" autocomplete="new-password" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
-              <span class="mt-1 block text-[11px] text-faint">至少 4 位；修改后当前会话不会被踢出，新登录使用新密码。</span>
+              <span class="mt-1 block text-[11px] text-faint">至少 4 位；修改后其他已登录会话会退出，当前会话保留。</span>
             </label>
             <label class="flex items-start justify-between gap-4 rounded-lg border border-line p-3">
               <span>

@@ -41,6 +41,22 @@ func publicOrigin(r *http.Request) (string, string) {
 	return scheme, ""
 }
 
+// requestIsHTTPS reports whether the browser reached this instance over TLS.
+// It looks at the actual connection or trusted proxy metadata only: an
+// FANOUT_PUBLIC_URL override must not make a plain-HTTP request look secure,
+// because that would set Secure cookies the browser would then ignore.
+func requestIsHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	if trustedProxyRequest(r) {
+		if scheme, _, ok := forwardedOrigin(r); ok {
+			return scheme == "https"
+		}
+	}
+	return false
+}
+
 // publicHostWithoutPort returns the host used in share links, which carry the
 // inbound port separately. The caller has already checked hostPublicIP.
 func publicHostWithoutPort(r *http.Request) string {

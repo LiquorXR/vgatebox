@@ -130,22 +130,22 @@ func buildXrayConfig(inbounds []*nativeInbound, tunnels []*Tunnel) map[string]an
 // nativeInboundJSON 把一个入站转成 Xray 的 inbound 配置。
 func nativeInboundJSON(ib *nativeInbound) map[string]any {
 	settings := map[string]any{}
-	clients := make([]any, 0, len(ib.Clients))
-	for _, c := range ib.Clients {
-		if !c.Enable {
-			continue
+	switch ib.Protocol {
+	case "hysteria":
+		users := []any{}
+		for _, c := range ib.Clients {
+			if !c.Enable {
+				continue
+			}
+			auth := c.Password
+			if auth == "" && ib.Hysteria != nil {
+				auth = ib.Hysteria.Auth
+			}
+			users = append(users, map[string]any{"auth": auth, "email": c.Email})
 		}
-		switch ib.Protocol {
-		case "trojan":
-			clients = append(clients, map[string]any{"password": c.Password, "email": c.Email})
-		case "vmess":
-			clients = append(clients, map[string]any{"id": c.ID, "email": c.Email})
-		default: // vless
-			clients = append(clients, map[string]any{"id": c.ID, "email": c.Email, "flow": c.Flow})
-		}
-	}
-	settings["clients"] = clients
-	if ib.Protocol == "socks" {
+		settings["version"] = 2
+		settings["users"] = users
+	case "socks":
 		accounts := []any{}
 		for _, c := range ib.Clients {
 			if c.Enable {
@@ -153,20 +153,38 @@ func nativeInboundJSON(ib *nativeInbound) map[string]any {
 			}
 		}
 		settings = map[string]any{"auth": "password", "accounts": accounts, "udp": true}
-	}
-	if ib.Protocol == "vless" {
-		settings["decryption"] = "none"
+	default: // vless
+		clients := make([]any, 0, len(ib.Clients))
+		for _, c := range ib.Clients {
+			if c.Enable {
+				clients = append(clients, map[string]any{"id": c.ID, "email": c.Email, "flow": c.Flow})
+			}
+		}
+		settings["clients"] = clients
+		decryption := "none"
+		if ib.VLESSEncryption != nil && ib.VLESSEncryption.Enabled && ib.VLESSEncryption.ServerDecryption != "" {
+			decryption = ib.VLESSEncryption.ServerDecryption
+		}
+		settings["decryption"] = decryption
 	}
 
 	return map[string]any{
 		"tag":            ib.tag(),
 		"listen":         "0.0.0.0",
-		"port":           ib.Port,
+		"port":           inboundPortValue(ib),
 		"protocol":       ib.Protocol,
 		"settings":       settings,
 		"streamSettings": streamSettingsJSON(ib),
 		"sniffing":       map[string]any{"enabled": true, "destOverride": []any{"http", "tls"}},
 	}
+}
+
+// inboundPortValue 对 Hysteria2 服务端端口跳跃返回范围字符串；其他情况返回单端口。
+func inboundPortValue(ib *nativeInbound) any {
+	if ib.netOrTCP() == "hysteria" && ib.Hysteria != nil && strings.TrimSpace(ib.Hysteria.Ports) != "" {
+		return strings.TrimSpace(ib.Hysteria.Ports)
+	}
+	return ib.Port
 }
 
 // streamSettingsJSON 生成传输层配置：网络类型 + 安全层。
@@ -201,6 +219,10 @@ func streamSettingsJSON(ib *nativeInbound) map[string]any {
 		// gRPC 没有 path，用 serviceName 区分；沿用 Path 字段少一个概念
 		name := strings.TrimPrefix(ib.Path, "/")
 		stream["grpcSettings"] = map[string]any{"serviceName": name}
+	case "mkcp":
+		stream["kcpSettings"] = kcpSettingsJSON(ib.KCP)
+	case "hysteria":
+		stream["hysteriaSettings"] = hysteriaSettingsJSON(ib)
 	}
 
 	switch ib.securityOrNone() {
@@ -228,7 +250,106 @@ func streamSettingsJSON(ib *nativeInbound) map[string]any {
 			stream["realitySettings"] = r
 		}
 	}
+	if fm := finalMaskJSON(ib); fm != nil {
+		stream["finalmask"] = fm
+	}
 	return stream
+}
+
+func kcpSettingsJSON(k *kcpConfig) map[string]any {
+	out := map[string]any{
+		"mtu":              1350,
+		"tti":              50,
+		"uplinkCapacity":   5,
+		"downlinkCapacity": 20,
+		"cwndMultiplier":   1,
+		"maxSendingWindow": 2097152,
+	}
+	if k != nil {
+		if k.MTU > 0 {
+			out["mtu"] = k.MTU
+		}
+		if k.TTI > 0 {
+			out["tti"] = k.TTI
+		}
+		if k.Uplink > 0 {
+			out["uplinkCapacity"] = k.Uplink
+		}
+		if k.Downlink > 0 {
+			out["downlinkCapacity"] = k.Downlink
+		}
+	}
+	return out
+}
+
+func hysteriaSettingsJSON(ib *nativeInbound) map[string]any {
+	h := ib.Hysteria
+	out := map[string]any{"version": 2}
+	auth := ""
+	if ib.Protocol == "hysteria" {
+		for _, c := range ib.Clients {
+			if c.Enable && c.Password != "" {
+				auth = c.Password
+				break
+			}
+		}
+	}
+	if auth == "" && h != nil {
+		auth = h.Auth
+	}
+	if auth != "" {
+		out["auth"] = auth
+	}
+	if h == nil {
+		return out
+	}
+	if h.UDPIdleTimeout > 0 {
+		out["udpIdleTimeout"] = h.UDPIdleTimeout
+	}
+	if h.MasqueradeType != "" {
+		m := map[string]any{"type": h.MasqueradeType}
+		switch h.MasqueradeType {
+		case "file":
+			m["dir"] = h.MasqueradeURL
+		case "proxy":
+			m["url"] = h.MasqueradeURL
+		case "string":
+			m["content"] = h.MasqueradeContent
+		}
+		out["masquerade"] = m
+	}
+	return out
+}
+
+func finalMaskJSON(ib *nativeInbound) map[string]any {
+	h := ib.Hysteria
+	if h == nil {
+		return nil
+	}
+	fm := map[string]any{}
+	if h.ObfsPassword != "" {
+		fm["udp"] = []any{map[string]any{
+			"type":     "salamander",
+			"settings": map[string]any{"password": h.ObfsPassword},
+		}}
+	}
+	qp := map[string]any{}
+	if h.Up != "" || h.Down != "" {
+		qp["congestion"] = "brutal"
+		if h.Up != "" {
+			qp["brutalUp"] = h.Up
+		}
+		if h.Down != "" {
+			qp["brutalDown"] = h.Down
+		}
+	}
+	if len(qp) > 0 {
+		fm["quicParams"] = qp
+	}
+	if len(fm) == 0 {
+		return nil
+	}
+	return fm
 }
 
 func toAnySlice(in []string) []any {

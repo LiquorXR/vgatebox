@@ -31,13 +31,13 @@ curl -fsSL https://github.com/LiquorXR/vgatebox/releases/latest/download/install
 
 **DNS 解析**：每个出口收到的域名都在该 Slot 的 network namespace 内解析，查询从 `tun0` 经 VPN Gate 节点发出，返回地址按出口地区选择。解析失败时 SOCKS 直接返回 host unreachable，不会回退到 VPS 本机解析。默认解析器为 `1.1.1.1` 和 `8.8.8.8`，可在环境文件里用 `FANOUT_DNS_SERVERS`（逗号分隔，支持 `IP` 或 `IP:端口`）与 `FANOUT_DNS_TTL`（缓存秒数，默认 60，`0` 关闭缓存）调整；换节点会清空该 Slot 的解析缓存。
 
-**反向代理**：管理页由 Nginx/Caddy 终止 TLS 时，订阅地址和二维码需要外部 origin。最稳妥是在环境文件设置 `FANOUT_PUBLIC_URL=https://panel.example.com`；未设置时，只有来自本机/私有网段或 `FANOUT_TRUSTED_PROXIES` 的请求才会接受 `Forwarded`、`X-Forwarded-Proto`、`X-Forwarded-Host` 和 `X-Forwarded-Port`，公网伪造这些头不会改变链接。代理额外增加路径前缀时，应把该前缀配置为管理访问路径；只代理管理页时，节点链接优先使用 `FANOUT_PUBLIC_IP` 或自动探测到的公网 IPv4，探测不到时才回退到外部 origin 的主机名。
+**反向代理**：管理页由 Nginx/Caddy 终止 TLS 时，订阅地址和二维码需要外部 origin。最稳妥是在环境文件设置 `FANOUT_PUBLIC_URL=https://panel.example.com`；未设置时，只有来自本机/私有网段或 `FANOUT_TRUSTED_PROXIES` 的请求才会接受 `Forwarded`、`X-Forwarded-Proto`、`X-Forwarded-Host` 和 `X-Forwarded-Port`，公网伪造这些头不会改变链接。代理还必须把 `X-Forwarded-Proto: https` 传给管理服务，否则登录 Cookie 不会带 `Secure`、响应也不会带 HSTS。代理额外增加路径前缀时，应把该前缀配置为管理访问路径；只代理管理页时，节点链接优先使用 `FANOUT_PUBLIC_IP` 或自动探测到的公网 IPv4，探测不到时才回退到外部 origin 的主机名。
 
 ## 首次管理和订阅
 
 1. 执行 `vgatebox access`，使用打印的私有地址与密码登录。总览提供四步状态化操作提示。
 2. 建议在「总览」或「出口」启用「VPS 本机直出」，先使用服务器公网 IP 验证接入；这一步可选，已有就绪的 VPN Gate 出口也可直接使用。
-3. 在「订阅」复制订阅链接，在 v2rayN 等支持 VLESS / XHTTP / REALITY 的客户端新建订阅分组、粘贴地址并更新；选择直出或已就绪出口，开启客户端代理模式后测试网页。防火墙需允许实际接入端口（TCP；公开 SOCKS5 还需 UDP），只开放管理端口不足以连接代理。
+3. 在「订阅」复制订阅链接，在 v2rayN 等支持 VLESS / XHTTP / REALITY 或 Hysteria2 的客户端新建订阅分组、粘贴地址并更新；选择直出或已就绪出口，开启客户端代理模式后测试网页。防火墙需允许实际接入端口（TCP；Hysteria2 与公开 SOCKS5 还需 UDP），只开放管理端口不足以连接代理。
 4. 需要 VPN Gate 时，在「出口」设置目标数量，国家可留空。程序自动建连、创建并绑定入站，等待「已就绪」后更新原客户端订阅并手动选择。无需预先检测全部候选，也无需手动新增入站。数量和检测并发由使用者设置，真实资源或上游供给不足如实提示等待，不静默降低目标。
 5. 有固定代理时，在「接入 → 第三方 SOCKS5」填写地址、端口、账号密码及可选国家/城市/备注；保存并检测，确认启用和加入订阅后再更新客户端。
 6. 「节点池」用于按需诊断。「接入 → VPS SOCKS5」供其他电脑或程序通过本 VPS 接入，外部端口需显式开启；「原始 SSTP」导出给支持 SSTP 的客户端，自身不是 VLESS 订阅。普通使用不需另外新增入口；自行新建入口须绑定出口，未绑定会阻断。
@@ -117,13 +117,25 @@ python3 scripts/toolbox.py --config config/settings.json --env-file /path/intell
 
 “停止”只停运行态，保留 Slot、端口、策略、凭据和原绑定；“启动”在同一 Slot 重新验活，重启后已停止的 Slot 也不会自动启动。“删除”才释放 Slot，其他编号不重排；导出保留该编号的显式 blackhole 映射，直至明确重新创建该 Slot。内置 Xray 未绑定或失效的绑定继续阻断。端口被占用时报告失败，不随机换端口。
 
-现有管理登录保护下提供 `GET/POST /api/slot/policy?slot=N`（POST 为上述 JSON）、`POST /api/slot/resume?slot=N` 和 `POST /api/slot/delete?slot=N`。新建的 `/api/provision` 可在原 count/region 参数之外提交同样的 JSON 策略。保存策略失败时保留旧策略并阻断当前 Slot；手动恢复上次策略及失败回退见下节。
+现有管理登录保护下提供 `GET/POST /api/slot/policy?slot=N`（POST 为上述 JSON）、`POST /api/slot/resume?slot=N` 和 `POST /api/slot/delete?slot=N`。新建的 `/api/provision` 只接受 POST，可在原 count/region 参数之外提交同样的 JSON 策略。保存策略失败时保留旧策略并阻断当前 Slot；手动恢复上次策略及失败回退见下节。
 
 新控制台删除单个自动出口使用 `POST /api/console/slot/delete`，body 为 `{"slot": N, "cleanup_archive": false}`。它删除指定 Slot 并把控制台目标数量减 1，不会重排其他编号；默认保留该 Slot 的自动入口作为归档，便于以后重建同一编号时复用。`cleanup_archive: true` 会在删除 Slot 后一并清理该编号的自动归档入口，响应中的 `cleanup_error` 报告清理失败原因。旧 `/api/slot/delete` 只删除运行中的 Slot、不同步目标数量，可能被后台对账重新创建，因此不应与 `console target` 混用。
 
-`/api/provision`、`/api/jobs` 和 `/api/jobs/dismiss` 仅保留为旧批量/外部自动化接口；它们不更新控制台目标数量，新控制台不调用。需要由控制台维护目标时使用 `/api/console/target`，不要两套流程同时操作同一批 Slot。
+`/api/provision`、`/api/jobs` 和 `/api/jobs/dismiss` 仅保留为旧批量/外部自动化接口；其中 `/api/provision` 和 `/api/jobs/dismiss` 只接受 POST。它们不更新控制台目标数量，新控制台不调用。需要由控制台维护目标时使用 `/api/console/target`，不要两套流程同时操作同一批 Slot。
 
 旧状态没有 policy 字段时，从原国家代码及已加载的“只用家宽”配置生成默认策略，并重新验活；不会继承旧健康状态或住宅结论。国家画像缺失时会等待合格证据，不能将历史来源国家当作实际出口国家。无效策略、重复 Slot 或端口会拒绝恢复，不启动另一套默认 Slot 来替代。
+
+## 支持的接入协议
+
+内置 Xray 只保留 VLESS 和 Hysteria2，VMess/Trojan 已移除。升级后加载 `native.json` 时会过滤旧 VMess/Trojan 入口并重写状态文件：它们不再运行、不再显示，也不再进入订阅；需要保留的旧配置请提前备份。
+
+- **VLESS 16 组**：TCP/RAW、XHTTP、gRPC 配 none/TLS/REALITY；WebSocket、HTTPUpgrade、mKCP 配 none/TLS；Hysteria2 传输配 TLS。
+- **VLESS Encryption**：每个 VLESS 入口可选启用，支持 X25519 或 ML-KEM-768；启用后 `security=none` 可用于公网，链接带 `encryption=`。Mihomo/v2rayN 需要较新版本。
+- **Hysteria2**：`hysteria` 协议 + `hysteria` 传输 + TLS，必须 version 2。支持自签证书、Salamander 混淆、端口跳跃、Brutal 上下行和 masquerade。
+- 自签证书的 VLESS 链接使用 `pcs` 指纹；Hysteria2 链接同时带 `insecure=1` 与 `pinSHA256`，Clash 优先使用证书指纹。
+- 端口跳跃只写入订阅参数；服务端仍需用 iptables/nftables 把整个 UDP 范围重定向到监听端口，并放行防火墙/安全组。
+- Mihomo 无法表示 VLESS + mKCP 或 VLESS + Hysteria2 传输；VLESS + mKCP 仍进入 Base64/v2rayN 订阅，VLESS + Hysteria2 没有标准 URI，不进入订阅。Clash 会跳过这些入口。
+- Hysteria2 的 UDP 端口分配会同时检查 UDP 占用；端口跳跃范围会直接作为 Xray 入站监听范围，范围过大会消耗文件描述符和内存，云防火墙需放行整个范围。也可以只监听单端口，用 iptables/nftables 把范围重定向过去。
 
 ## 验收与限制
 

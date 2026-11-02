@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -117,9 +118,18 @@ func (n *Native) InboundDetail(id int, publicHost string) (*InboundDetail, error
 		Network: ib.netOrTCP(),
 		TLS:     ib.securityOrNone(),
 	}
+	if ib.Hysteria != nil {
+		h := *ib.Hysteria
+		h.Auth = ""
+		detail.Hysteria = &h
+	}
+	if ib.VLESSEncryption != nil && ib.VLESSEncryption.Enabled {
+		detail.VLESSEncryption = true
+		detail.VLESSEncryptionType = ib.VLESSEncryption.KeyType
+	}
 	for _, c := range ib.Clients {
 		id := c.ID
-		if ib.Protocol == "trojan" {
+		if ib.Protocol == "hysteria" {
 			id = c.Password
 		}
 		detail.Clients = append(detail.Clients, ClientInfo{Email: c.Email, ID: id, Enable: c.Enable})
@@ -145,7 +155,9 @@ func (n *Native) InboundLinks(ids []int, publicHost string) ([]string, error) {
 			if !c.Enable {
 				continue
 			}
-			out = append(out, shareLink(ib, c, publicHost))
+			if link := shareLink(ib, c, publicHost); link != "" {
+				out = append(out, link)
+			}
 		}
 	}
 	return out, nil
@@ -264,7 +276,7 @@ func (n *Native) CloneToTunnels(templateID int, hosts []string, tunnels []*Tunne
 		if t == nil || t.Status != "up" {
 			continue
 		}
-		port, err := freeRandomPort(used)
+		port, err := freeRandomPortFor(tpl.netOrTCP(), used)
 		if err != nil {
 			return nil, err
 		}
@@ -282,15 +294,24 @@ func (n *Native) CloneToTunnels(templateID int, hosts []string, tunnels []*Tunne
 			Host:     tpl.Host,
 			// 安全层必须跟着复制：漏掉的话从 REALITY/TLS 模板复制出来的
 			// 入站会变成明文，而分享链接照样标着模板的协议，很难发现
-			Security:  tpl.Security,
-			TLS:       tpl.TLS,
-			Reality:   tpl.Reality,
-			Remark:    remark,
-			Enable:    true,
-			Manual:    true,
-			Clients:   append([]nativeClient(nil), tpl.Clients...),
-			BoundTo:   sanitizeTag(t.Node.HostName),
-			BoundSlot: t.Slot, NameMode: "auto",
+			Security:        tpl.Security,
+			TLS:             tpl.TLS,
+			Reality:         tpl.Reality,
+			KCP:             tpl.KCP,
+			Hysteria:        tpl.Hysteria,
+			VLESSEncryption: tpl.VLESSEncryption,
+			Remark:          remark,
+			Enable:          true,
+			Manual:          true,
+			Clients:         append([]nativeClient(nil), tpl.Clients...),
+			BoundTo:         sanitizeTag(t.Node.HostName),
+			BoundSlot:       t.Slot, NameMode: "auto",
+		}
+		if clone.Hysteria != nil {
+			h := *clone.Hysteria
+			// 克隆入口不能与模板监听同一个端口范围，退回单端口。
+			h.Ports = ""
+			clone.Hysteria = &h
 		}
 		n.store.NextID++
 		n.store.Inbounds = append(n.store.Inbounds, clone)
@@ -355,10 +376,22 @@ func (n *Native) UpdateInbound(id int, patch InboundPatch, tunnels []*Tunnel) er
 		if port < 1 || port > 65535 {
 			return fmt.Errorf("端口 %d 不在合法范围", port)
 		}
+		if ib.netOrTCP() == "hysteria" && ib.Hysteria != nil && strings.TrimSpace(ib.Hysteria.Ports) != "" {
+			if !portInRange(ib.Hysteria.Ports, port) {
+				return fmt.Errorf("端口 %d 不在服务端范围 %s 内", port, ib.Hysteria.Ports)
+			}
+		}
 		for _, other := range n.store.Inbounds {
-			if other.ID != id && other.Port == port {
+			if other.ID == id {
+				continue
+			}
+			if other.Port == port || (other.netOrTCP() == "hysteria" && other.Hysteria != nil && portInRange(other.Hysteria.Ports, port)) {
 				return fmt.Errorf("端口 %d 已被入站 %q 占用", port, other.Remark)
 			}
+		}
+		if (ib.Hysteria == nil || strings.TrimSpace(ib.Hysteria.Ports) == "") &&
+			(ib.netOrTCP() == "hysteria" || ib.netOrTCP() == "mkcp") && !portAvailableUDP(port) {
+			return fmt.Errorf("UDP 端口 %d 已被占用", port)
 		}
 		ib.Port = port
 	}
@@ -464,6 +497,78 @@ func (n *Native) ResetClient(id int, email string, tunnels []*Tunnel) error {
 	return fmt.Errorf("客户端 %q 不存在", email)
 }
 
+// RotateVLESSEncryption 重新生成一对 VLESS Encryption 参数并应用配置。
+func (n *Native) RotateVLESSEncryption(id int, tunnels []*Tunnel) (*vlessEncryptionConfig, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	finish := n.beginChange()
+	defer finish()
+
+	ib := n.store.byID(id)
+	if ib == nil {
+		return nil, fmt.Errorf("入站 %d 不存在", id)
+	}
+	if ib.Protocol != "vless" || ib.VLESSEncryption == nil || !ib.VLESSEncryption.Enabled {
+		return nil, fmt.Errorf("该入站未启用 VLESS Encryption")
+	}
+	if n.proc == nil {
+		return nil, fmt.Errorf("Xray 运行时未就绪")
+	}
+	enc, err := newVLESSEncryption(n.proc.bin, ib.VLESSEncryption.KeyType)
+	if err != nil {
+		return nil, err
+	}
+	ib.VLESSEncryption = enc
+	if err := n.apply(tunnels); err != nil {
+		return nil, err
+	}
+	return enc, nil
+}
+
+// SetVLESSEncryption 打开或关闭一个 VLESS 入站的协议内加密层。
+// 打开时如果还没有参数，或切换了密钥类型，会生成新的一对参数。
+func (n *Native) SetVLESSEncryption(id int, enabled bool, keyType string, tunnels []*Tunnel) (*vlessEncryptionConfig, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	finish := n.beginChange()
+	defer finish()
+
+	ib := n.store.byID(id)
+	if ib == nil || ib.Protocol != "vless" {
+		return nil, fmt.Errorf("只有 VLESS 入站支持 VLESS Encryption")
+	}
+	if !enabled {
+		ib.VLESSEncryption = nil
+		if err := n.apply(tunnels); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	kt := strings.ToLower(strings.TrimSpace(keyType))
+	if kt == "" && ib.VLESSEncryption != nil {
+		kt = ib.VLESSEncryption.KeyType
+	}
+	if kt == "" {
+		kt = "x25519"
+	}
+	if ib.VLESSEncryption != nil && ib.VLESSEncryption.Enabled && ib.VLESSEncryption.KeyType == kt && ib.VLESSEncryption.ServerDecryption != "" {
+		return ib.VLESSEncryption, nil
+	}
+	if n.proc == nil {
+		return nil, fmt.Errorf("Xray 运行时未就绪")
+	}
+	enc, err := newVLESSEncryption(n.proc.bin, kt)
+	if err != nil {
+		return nil, err
+	}
+	ib.VLESSEncryption = enc
+	if err := n.apply(tunnels); err != nil {
+		return nil, err
+	}
+	return enc, nil
+}
+
 // visionFlow 沿用入站已有客户端的 flow，让新加的客户端与其余保持一致。
 func visionFlow(ib *nativeInbound) string {
 	for _, c := range ib.Clients {
@@ -503,10 +608,32 @@ type NewInboundSpec struct {
 	ServerNames string // 逗号分隔，留空则从 Dest 推出来
 	ShortID     string
 	Fingerprint string
+
+	// mKCP（VLESS + mkcp）
+	KCPMTU      int
+	KCPTTI      int
+	KCPUplink   int
+	KCPDownlink int
+
+	// Hysteria2（protocol=hysteria 或 VLESS + network=hysteria）
+	HysteriaAuth       string
+	HysteriaObfs       string
+	HysteriaPorts      string
+	HysteriaHopSeconds int
+	HysteriaUp         string
+	HysteriaDown       string
+	HysteriaIdle       int
+	MasqueradeType     string
+	MasqueradeURL      string
+	MasqueradeContent  string
+
+	// VLESS Encryption（可选）
+	VLESSEncryption     bool
+	VLESSEncryptionType string // x25519 | mlkem768
 }
 
 // nativeProtocols 是自建模式支持的协议，与前端下拉保持一致。
-var nativeProtocols = map[string]bool{"vless": true, "vmess": true, "trojan": true}
+var nativeProtocols = map[string]bool{"vless": true, "hysteria": true}
 
 // defaultEncryptedInboundSpec is the shared default for automatically created
 // entry nodes. XHTTP+REALITY is supported by both current v2rayN and Mihomo;
@@ -574,7 +701,11 @@ func shareLink(ib *nativeInbound, c nativeClient, host string) string {
 	sec := ib.securityOrNone()
 
 	q := url.Values{}
-	q.Set("type", net)
+	linkType := net
+	if linkType == "mkcp" {
+		linkType = "kcp"
+	}
+	q.Set("type", linkType)
 	q.Set("security", sec)
 
 	switch net {
@@ -623,17 +754,102 @@ func shareLink(ib *nativeInbound, c nativeClient, host string) string {
 
 	frag := url.PathEscape(ib.Remark)
 
-	switch ib.Protocol {
-	case "trojan":
-		return fmt.Sprintf("trojan://%s@%s:%d?%s#%s", url.User(c.Password).String(), host, ib.Port, q.Encode(), frag)
-	case "vmess":
-		// vmess 的 base64 形式各家客户端解析不一，用通用的 URI 形式
-		q.Set("encryption", "auto")
-		return fmt.Sprintf("vmess://%s@%s:%d?%s#%s", c.ID, host, ib.Port, q.Encode(), frag)
-	default:
-		q.Set("encryption", "none")
-		return fmt.Sprintf("vless://%s@%s:%d?%s#%s", c.ID, host, ib.Port, q.Encode(), frag)
+	if ib.Protocol == "hysteria" {
+		return hysteria2Link(ib, c, host, frag)
 	}
+	// VLESS over Hysteria2 没有 v2rayN/Mihomo 标准 URI；不生成会误导客户端的
+	// 链接，服务端仍保留该入口供 Xray-to-Xray 使用。
+	if net == "hysteria" {
+		return ""
+	}
+
+	// VLESS Encryption 是协议层参数，所有传输都可以叠加。
+	if ib.VLESSEncryption != nil && ib.VLESSEncryption.Enabled && ib.VLESSEncryption.ClientEncryption != "" {
+		q.Set("encryption", ib.VLESSEncryption.ClientEncryption)
+	} else {
+		q.Set("encryption", "none")
+	}
+	return fmt.Sprintf("vless://%s@%s:%d?%s#%s", c.ID, host, ib.Port, q.Encode(), frag)
+}
+
+// hysteria2Link 生成标准 Hysteria2 URI。自签证书使用 insecure=1 以兼容
+// v2rayN/Mihomo；Clash 输出仍可通过 fingerprint 做证书固定。
+func hysteria2Link(ib *nativeInbound, c nativeClient, host, frag string) string {
+	q := url.Values{}
+	if ib.TLS != nil {
+		if ib.TLS.ServerName != "" {
+			q.Set("sni", ib.TLS.ServerName)
+		}
+		if ib.TLS.SelfSigned {
+			q.Set("insecure", "1")
+			if ib.TLS.CertSha256 != "" {
+				q.Set("pinSHA256", ib.TLS.CertSha256)
+			}
+		}
+	}
+	if ib.Hysteria != nil {
+		if ib.Hysteria.ObfsPassword != "" {
+			q.Set("obfs", "salamander")
+			q.Set("obfs-password", ib.Hysteria.ObfsPassword)
+		}
+		if ib.Hysteria.Ports != "" {
+			q.Set("ports", ib.Hysteria.Ports)
+			if ib.Hysteria.HopInterval > 0 {
+				q.Set("hop-interval", strconv.Itoa(ib.Hysteria.HopInterval))
+				// v2rayN 的部分版本使用下划线参数名。
+				q.Set("hop_interval", strconv.Itoa(ib.Hysteria.HopInterval))
+			}
+		}
+		if ib.Hysteria.Up != "" {
+			q.Set("up", ib.Hysteria.Up)
+			if mbps := hysteriaMbps(ib.Hysteria.Up); mbps != "" {
+				q.Set("up_mbps", mbps)
+			}
+		}
+		if ib.Hysteria.Down != "" {
+			q.Set("down", ib.Hysteria.Down)
+			if mbps := hysteriaMbps(ib.Hysteria.Down); mbps != "" {
+				q.Set("down_mbps", mbps)
+			}
+		}
+	}
+	auth := url.User(c.Password).String()
+	return fmt.Sprintf("hysteria2://%s@%s:%d/?%s#%s", auth, host, ib.Port, q.Encode(), frag)
+}
+
+// hysteriaMbps 把 "30 mbps" / "1 gbps" / "500 kbps" 转成 Mbps 数字字符串，
+// 供部分只认 up_mbps/down_mbps 的客户端使用。无法解析时返回空。
+func hysteriaMbps(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	if s == "" {
+		return ""
+	}
+	unit := 1.0
+	switch {
+	case strings.HasSuffix(s, "gbps"):
+		unit, s = 1000, strings.TrimSpace(strings.TrimSuffix(s, "gbps"))
+	case strings.HasSuffix(s, "mbps"):
+		s = strings.TrimSpace(strings.TrimSuffix(s, "mbps"))
+	case strings.HasSuffix(s, "kbps"):
+		unit, s = 0.001, strings.TrimSpace(strings.TrimSuffix(s, "kbps"))
+	case strings.HasSuffix(s, "gb/s"):
+		unit, s = 8000, strings.TrimSpace(strings.TrimSuffix(s, "gb/s"))
+	case strings.HasSuffix(s, "mb/s"):
+		unit, s = 8, strings.TrimSpace(strings.TrimSuffix(s, "mb/s"))
+	case strings.HasSuffix(s, "kb/s"):
+		unit, s = 0.008, strings.TrimSpace(strings.TrimSuffix(s, "kb/s"))
+	case strings.HasSuffix(s, "g"):
+		unit, s = 1000, strings.TrimSpace(strings.TrimSuffix(s, "g"))
+	case strings.HasSuffix(s, "m"):
+		s = strings.TrimSpace(strings.TrimSuffix(s, "m"))
+	case strings.HasSuffix(s, "k"):
+		unit, s = 0.001, strings.TrimSpace(strings.TrimSuffix(s, "k"))
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || f <= 0 {
+		return ""
+	}
+	return strconv.FormatFloat(f*unit, 'f', -1, 64)
 }
 
 // buildTLS 组装 TLS 配置。没给证书路径就生成一张自签的，落在 dir/certs 下。
@@ -748,6 +964,8 @@ func (n *Native) prepareInbound(spec NewInboundSpec, used map[int]bool) (*native
 		Security: security,
 		Remark:   ns.Remark,
 		Enable:   true,
+		KCP:      ns.KCP,
+		Hysteria: ns.Hysteria,
 	}
 
 	switch security {
@@ -765,13 +983,33 @@ func (n *Native) prepareInbound(spec NewInboundSpec, used map[int]bool) (*native
 		ib.Reality = conf
 	}
 
-	ib.Clients = []nativeClient{{
-		Email:    fmt.Sprintf("%s-%d", proto, port),
+	if ns.VLESSEncryption != nil {
+		enc, err := newVLESSEncryption(n.proc.bin, ns.VLESSEncryption.KeyType)
+		if err != nil {
+			return nil, err
+		}
+		ib.VLESSEncryption = enc
+	}
+
+	if ib.Hysteria != nil && ib.Hysteria.Auth == "" {
+		ib.Hysteria.Auth = randomHex(16)
+	}
+
+	client := nativeClient{
 		ID:       newUUID(),
 		Password: randomHex(8),
 		Flow:     ns.Flow,
 		Enable:   true,
-	}}
+	}
+	switch proto {
+	case "hysteria":
+		client.Email = fmt.Sprintf("hysteria-%d", port)
+		client.Password = ib.Hysteria.Auth
+		client.Flow = ""
+	default:
+		client.Email = fmt.Sprintf("%s-%d", proto, port)
+	}
+	ib.Clients = []nativeClient{client}
 
 	return ib, nil
 }
