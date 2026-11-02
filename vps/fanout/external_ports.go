@@ -8,8 +8,8 @@ import (
 // externalXrayConfigs 是其它工具装的系统级 Xray 配置，fanout 自己不写，
 // 但要避开它们占用的入站端口，免得两边端口撞车、Xray 起不来。
 //
-// 目前覆盖 byJoey/xray-cf-lite：它把 Xray 装成系统服务，
-// 配置固定落在 /usr/local/etc/xray/config.json。
+// 目前只读 /usr/local/etc/xray/config.json，避免与机器上其他 Xray
+// 实例的入站端口冲突；这不是受支持的外部入口后端。
 var externalXrayConfigs = []string{
 	"/usr/local/etc/xray/config.json",
 }

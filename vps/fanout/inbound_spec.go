@@ -6,7 +6,6 @@ import (
 )
 
 // normalizedSpec 是 NewInboundSpec 过完校验、补完默认值之后的样子。
-// 两种后端都从这里出发：自建模式落成 nativeInbound，3x-ui 模式转成面板的 add 载荷。
 type normalizedSpec struct {
 	Protocol string
 	Network  string
@@ -21,8 +20,7 @@ type normalizedSpec struct {
 // normalizeInboundSpec 校验协议组合并补上默认值。
 //
 // used 是已被占用的端口集合；端口留空时从中避开随机挑一个。
-// 这段逻辑对两种后端完全一致，所以从 Native.CreateInbound 里抽出来共用，
-// 免得 3x-ui 那边再写一份走样的校验。
+// 这段逻辑从 Native.CreateInbound 里抽出来，便于其他调用方复用同一套校验。
 func normalizeInboundSpec(spec NewInboundSpec, used map[int]bool) (*normalizedSpec, error) {
 	proto := strings.ToLower(strings.TrimSpace(spec.Protocol))
 	if proto == "" {

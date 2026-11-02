@@ -1,6 +1,8 @@
 # vgatebox VPS Standalone
 
-管理进程、内置 Xray、共享候选池都在 VPS 本地运行，无需额外安装 3x-ui。要求 Linux amd64、root 和 systemd；统一安装入口支持 Debian 12/13、Ubuntu 22.04/24.04 与 CentOS Stream 9/10。各系统自动测试与真实 VPS 验收范围见 [系统兼容性](../docs/LINUX_SUPPORT.md)。
+管理进程、内置 Xray、共享候选池都在 VPS 本地运行。节点链接后端固定为内置 Xray，不再支持 3x-ui / xray-cf-lite 等外部面板。要求 Linux amd64、root 和 systemd；统一安装入口支持 Debian 12/13、Ubuntu 22.04/24.04 与 CentOS Stream 9/10。各系统自动测试与真实 VPS 验收范围见 [系统兼容性](../docs/LINUX_SUPPORT.md)。
+
+如果工作目录里还留有 `panel_mode`，内容必须是 `native` 或为空；旧的 `3x-ui` / `xray-cf-lite` 值会让服务启动失败。迁移时先备份并停止外部面板，删除或重命名该文件，再重新创建内置 Xray 入站并更新订阅；本项目不会自动导入或删除外部面板数据。
 
 ## 安装与升级
 
@@ -21,11 +23,11 @@ curl -fsSL https://github.com/LiquorXR/vgatebox/releases/latest/download/install
 
 更新入口为“设置 → 版本与更新”或 `vgatebox update`；`vgatebox check-update` 检查最新正式版，`vgatebox update-status` 查看结果。需要固定版本时使用 `vgatebox update --version vX.Y.Z`。网页任务独立于管理服务，更新后重新登录查看结果。
 
-备份仅覆盖本项目受管文件，不是整机或 3x-ui 备份；重装前请另存到本机。见 [重装准备](../docs/BACKUP_REINSTALL.md)。
+备份仅覆盖本项目受管文件，不是整机备份，也不包含外部面板的数据；重装前请另存到本机。见 [重装准备](../docs/BACKUP_REINSTALL.md)。
 
 离线包：`bash vps/install.sh --mode vps --package /path/vgatebox-linux-amd64.tar.gz`，相邻目录须有 `checksums.txt`。完整包包含管理器、Xray、Python 源码、脚本和服务，不只替换一个二进制。
 
-更新停止本项目服务后备份 `/var/lib/vgatebox`、`/usr/local/lib/vgatebox`、`/etc/vgatebox`、本项目两个命令、环境文件和三个 systemd 单元至 `/var/backups/vgatebox/install-<任务编号>/project.tar.gz`，均为私有文件。配置预检后替换完整程序，通过本地登录检查实际运行版本和内置后端。失败恢复原文件及服务启停/开机状态；恢复未完成保留 `/var/lib/vgatebox-deploy/transaction.json`，下次安装先恢复。状态与恢复工具独立保存于该目录，不随程序替换丢失。系统依赖包不在回滚范围内，3x-ui 不在受管路径内。
+更新停止本项目服务后备份 `/var/lib/vgatebox`、`/usr/local/lib/vgatebox`、`/etc/vgatebox`、本项目两个命令、环境文件和三个 systemd 单元至 `/var/backups/vgatebox/install-<任务编号>/project.tar.gz`，均为私有文件。配置预检后替换完整程序，通过本地登录检查实际运行版本和内置后端。失败恢复原文件及服务启停/开机状态；恢复未完成保留 `/var/lib/vgatebox-deploy/transaction.json`，下次安装先恢复。状态与恢复工具独立保存于该目录，不随程序替换丢失。系统依赖包不在回滚范围内；外部面板及其数据也不在受管路径内，本项目不会修改或删除它们。
 
 **DNS 解析**：每个出口收到的域名都在该 Slot 的 network namespace 内解析，查询从 `tun0` 经 VPN Gate 节点发出，返回地址按出口地区选择。解析失败时 SOCKS 直接返回 host unreachable，不会回退到 VPS 本机解析。默认解析器为 `1.1.1.1` 和 `8.8.8.8`，可在环境文件里用 `FANOUT_DNS_SERVERS`（逗号分隔，支持 `IP` 或 `IP:端口`）与 `FANOUT_DNS_TTL`（缓存秒数，默认 60，`0` 关闭缓存）调整；换节点会清空该 Slot 的解析缓存。
 
@@ -133,10 +135,10 @@ python3 scripts/toolbox.py --config config/settings.json --env-file /path/intell
 - 内置 Xray 入站、客户端及绑定变更使用副本生成 `0600` 候选 JSON，先调用 Xray 静态校验，再替换进程和提交配置。校验失败不停止旧进程；后续失败恢复旧文件并用**当前 Slot 状态**重建路由。恢复失败则停止 Xray、拒绝生成可用链接，并保留恢复记录。
 - 受管文件通过临时文件、fsync、rename 和私有 undo 记录提交。`.native-transaction.json` 管理 `native.json`、`xray.json`、`native.previous.json`；`.state-transaction.json` 管理 `state.json`；`.management-transaction.json` 管理 `settings.json`、`password`、`basepath`。启动加载相应配置前恢复未完成事务；损坏或不匹配的恢复记录导致报错，不回退到默认配置。这些文件含凭据，不能公开或加入源码。
 - 管理设置先验证整份请求；改变监听地址或端口时，先预留新监听，文件全部提交后切换。失败保留旧入口、内存密码/订阅 token，取消候选监听。写入回滚未完成时保留日志、拒绝覆盖，重启继续恢复。
-- 内置模式管理页提供“回滚内置配置”，对应受登录保护的 `GET /api/config/rollback`（是否可回滚）及 `POST /api/config/rollback`。只保留上一次成功修改的内置配置，Slot 健康变化不覆盖历史；成功回滚后可切回前一份。恢复会影响入站和客户端凭据，可能让旧链接重新有效，且会重启整个 Xray、中断其他连接。它不回滚 Slot 策略，也不写 3x-ui。
+- 内置模式管理页提供“回滚内置配置”，对应受登录保护的 `GET /api/config/rollback`（是否可回滚）及 `POST /api/config/rollback`。只保留上一次成功修改的内置配置，Slot 健康变化不覆盖历史；成功回滚后可切回前一份。恢复会影响入站和客户端凭据，可能让旧链接重新有效，且会重启整个 Xray、中断其他连接。它不回滚 Slot 策略，也不写任何外部面板。
 - Slot 策略编辑提供“恢复上次策略”，对应 `POST /api/slot/policy/rollback?slot=N`。每 Slot 保留上一次策略到 `state.json`，重启后仍可恢复。恢复策略和保存新策略走同一路径：先阻断、重新选点并验活；停止状态继续停止。不会恢复旧画像或历史 healthy，无合格节点仍等待。SOCKS 凭据变更失败也会尝试补偿旧运行配置，补偿失败保持阻断。
 
-事务按上述文件组划分，不是跨运行进程、全部文件和外部系统的一次性原子提交；不提供任意历史版本、安装包、CF 或 3x-ui 回滚。进程启动后短暂存活加静态解析只用于发现启动错误，不能替代真实客户端链路验收。普通回归保留合成故障测试；显式启用的 Linux 实测还验证了真实 Xray 拒绝、监听冲突、文件提交/回滚失败及 SIGKILL 恢复，使用一次性副本，不修改安装服务。结果及运行方法见迁移验证文档。
+事务按上述文件组划分，不是跨运行进程、全部文件和外部系统的一次性原子提交；不提供任意历史版本、安装包、CF 或外部面板回滚。进程启动后短暂存活加静态解析只用于发现启动错误，不能替代真实客户端链路验收。普通回归保留合成故障测试；显式启用的 Linux 实测还验证了真实 Xray 拒绝、监听冲突、文件提交/回滚失败及 SIGKILL 恢复，使用一次性副本，不修改安装服务。结果及运行方法见迁移验证文档。
 
 ## 升级前离线检查
 

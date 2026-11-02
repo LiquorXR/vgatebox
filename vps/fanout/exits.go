@@ -51,8 +51,7 @@ type ExitsView struct {
 	// Direct 是没绑到任何出口的入站，仍然要能看见，否则用户会以为它们不见了
 	Direct []ExitInbound `json:"direct"`
 	Panel  string        `json:"panel"` // 面板不可用时的原因，空表示正常
-	// Backend 是 "3x-ui" 或 "native"。界面据此决定是否提供新建入站入口：
-	// 接管面板时入站归面板管，自建模式才由 fanout 自己建。
+	// Backend is kept for API compatibility and is always "native".
 	Backend string `json:"backend"`
 	// PanelInfo 是后端的一行说明，显示在标题旁
 	PanelInfo string `json:"panel_info"`

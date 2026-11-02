@@ -20,12 +20,9 @@ import { toast, toastError } from "@/lib/toast";
 
 const props = defineProps<{
   exits: Exit[];
-  backend: string;
 }>();
 
 const queryClient = useQueryClient();
-const native = computed(() => props.backend === "native");
-const xcl = computed(() => props.backend === "xray-cf-lite");
 const { data: inbounds, isLoading, isError, error, refetch } = useInboundsQuery(true);
 
 const rows = computed<Inbound[]>(() => inbounds.value || []);
@@ -63,8 +60,7 @@ function rowState(inbound: Inbound): { label: string; tone: "ok" | "warn" | "bad
 }
 
 function bindValue(inbound: Inbound): string {
-  if (native.value) return `slot:${inbound.bound_slot || 0}`;
-  return inbound.bound_to || "";
+  return `slot:${inbound.bound_slot || 0}`;
 }
 
 function bindLabel(inbound: Inbound): string {
@@ -86,11 +82,8 @@ function invalidate(): void {
 
 const bindMutation = useMutation({
   mutationFn: ({ inbound, value }: { inbound: Inbound; value: string }) => {
-    if (native.value) {
-      const slot = Number(value.replace("slot:", ""));
-      return post(`api/xui/bind${queryString({ tag: inbound.tag, slot })}`, {});
-    }
-    return post(`api/xui/bind${queryString({ tag: inbound.tag, host: value })}`, {});
+    const slot = Number(value.replace("slot:", ""));
+    return post(`api/xui/bind${queryString({ tag: inbound.tag, slot })}`, {});
   },
   onSuccess: () => {
     toast("绑定已更新", { tone: "success" });
@@ -175,7 +168,7 @@ const createMutation = useMutation({
       key: createForm.key.trim(),
       dest: createForm.dest.trim(),
     };
-    if (native.value) params.slot = createForm.slot;
+    params.slot = createForm.slot;
     if (createForm.vision) params.vision = 1;
     return post(`api/panel/inbound/new${queryString(params)}`, {});
   },
@@ -464,10 +457,10 @@ const createSecurityOptions = computed(() =>
     </div>
 
     <div class="flex flex-wrap items-center gap-2">
-      <UiButton :disabled="xcl" @click="openCreate"><Plus :size="14" />新增接入入口</UiButton>
+      <UiButton @click="openCreate"><Plus :size="14" />新增接入入口</UiButton>
       <UiButton :loading="exporting" :disabled="!rows.length" @click="copyAllLinks"><Link2 :size="14" />复制全部节点链接</UiButton>
-      <UiButton :disabled="xcl" @click="exportXray"><Download :size="14" />导出 Xray 配置</UiButton>
-      <UiButton v-if="native" variant="ghost" @click="rollbackConfig"><RotateCcw :size="14" />恢复上次配置</UiButton>
+      <UiButton @click="exportXray"><Download :size="14" />导出 Xray 配置</UiButton>
+      <UiButton variant="ghost" @click="rollbackConfig"><RotateCcw :size="14" />恢复上次配置</UiButton>
       <UiButton variant="ghost" :loading="isLoading" @click="refetch()"><RefreshCw :size="14" />刷新</UiButton>
     </div>
 
@@ -481,7 +474,7 @@ const createSecurityOptions = computed(() =>
       <div v-else-if="!rows.length" class="p-4">
         <EmptyState title="还没有接入入口" description="先在出口页创建出口，或手动新增一个接入入口。">
           <template #icon><Link2 :size="26" /></template>
-          <template #action><UiButton size="sm" variant="primary" :disabled="xcl" @click="openCreate"><Plus :size="14" />新增入口</UiButton></template>
+          <template #action><UiButton size="sm" variant="primary" @click="openCreate"><Plus :size="14" />新增入口</UiButton></template>
         </EmptyState>
       </div>
       <div v-else class="overflow-x-auto">
@@ -514,9 +507,8 @@ const createSecurityOptions = computed(() =>
                   :disabled="bindMutation.isPending.value"
                   @change="bindTo(inbound, ($event.target as HTMLSelectElement).value)"
                 >
-                  <option v-if="native" value="slot:0">未绑定（阻断）</option>
-                  <option v-else value="">未绑定（外部路由）</option>
-                  <option v-for="exit in exits" :key="exit.slot" :value="native ? `slot:${exit.slot}` : exit.host">
+                  <option value="slot:0">未绑定（阻断）</option>
+                  <option v-for="exit in exits" :key="exit.slot" :value="`slot:${exit.slot}`">
                     {{ exitName(exit) }} · {{ exitStatusLabel(exit.status) }}
                   </option>
                 </select>
@@ -564,7 +556,7 @@ const createSecurityOptions = computed(() =>
 
     <DialogShell :open="createOpen" title="新增接入入口" description="等待中的出口也可以预先绑定；未绑定时流量阻断。" size="lg" @update:open="createOpen = $event">
       <form class="space-y-4" @submit.prevent="createMutation.mutate()">
-        <label v-if="native" class="block">
+        <label class="block">
           <span class="mb-1 block text-xs font-medium">绑定出口</span>
           <select v-model.number="createForm.slot" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent">
             <option :value="0">未绑定（阻断流量）</option>

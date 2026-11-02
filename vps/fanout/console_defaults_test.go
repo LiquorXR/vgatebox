@@ -13,9 +13,6 @@ func defaultTargetFixture(t *testing.T) *Console {
 	t.Helper()
 	c := consoleFixture(t)
 	usePanel(t, &fakePanel{})
-	panelState.mu.Lock()
-	panelState.forced = "native"
-	panelState.mu.Unlock()
 	t.Cleanup(c.cancel)
 	return c
 }
@@ -58,14 +55,11 @@ func TestConsoleDefaultTargetPreservesZeroCustomAndLegacySlots(t *testing.T) {
 	if err := c.reconcile(); err != nil || c.plan == nil || c.plan.Count != 0 || len(c.m.Tunnels()) != 0 { t.Fatal("last explicit deletion recreated default exits", err) }
 }
 
-func TestConsoleDefaultTargetCapacityAndNonNativeDoNotMutate(t *testing.T) {
+func TestConsoleDefaultTargetCapacityDoesNotMutate(t *testing.T) {
 	c := defaultTargetFixture(t)
 	c.m.nodes = []Node{{HostName: "candidate"}}
 	c.m.maxSlots = 4
 	if c.reconcile() == nil || c.plan != nil || len(c.m.Tunnels()) != 0 { t.Fatal("capacity silently reduced or overrun") }
-	panelState.mu.Lock(); panelState.forced = "3x-ui"; panelState.mu.Unlock()
-	c.m.maxSlots = maximumSlots
-	if err := c.reconcile(); err != nil || c.plan != nil || len(c.m.Tunnels()) != 0 { t.Fatal("non-native backend changed", err) }
 }
 
 func TestConsoleDefaultTargetPoolRefreshWakesWatch(t *testing.T) {

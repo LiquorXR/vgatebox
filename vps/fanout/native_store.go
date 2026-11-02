@@ -23,9 +23,7 @@ type nativeClient struct {
 	Flow string `json:"flow,omitempty"`
 }
 
-// nativeInbound 是自建模式下的一个入站。
-//
-// 字段刻意贴着 3x-ui 的入站语义，这样两种后端在界面上表现一致。
+// nativeInbound 是内置 Xray 的一个入站。
 type nativeInbound struct {
 	ID       int    `json:"id"`
 	Port     int    `json:"port"`
@@ -76,7 +74,7 @@ type realityConfig struct {
 	Fingerprint string   `json:"fingerprint"` // 客户端指纹，如 chrome
 }
 
-// tag 复原这个入站在 Xray 里的 inboundTag，格式与 3x-ui 保持一致。
+// tag 复原这个入站在 Xray 里的 inboundTag；历史状态使用同一格式。
 func (n *nativeInbound) tag() string {
 	return fmt.Sprintf("in-%d-%s", n.Port, n.netOrTCP())
 }
@@ -182,7 +180,7 @@ func (s *nativeStore) byID(id int) *nativeInbound {
 }
 
 func (s *nativeStore) usedPorts() map[int]bool {
-	// 先并入外部工具（如 xray-cf-lite）占用的端口，再叠加自己的入站，
+	// 先并入机器上其他 Xray 实例占用的端口，再叠加自己的入站，
 	// 这样随机分配和手填校验都会避开它们，避免端口撞车。
 	used := externalUsedPorts()
 	for _, ib := range s.Inbounds {

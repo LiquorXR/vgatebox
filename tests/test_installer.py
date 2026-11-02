@@ -170,6 +170,13 @@ class InstallerTests(unittest.TestCase):
             for name in d.OWNED: self.assertIn(name, t.getnames())
         self.assertEqual(self.r.states[d.UNITS[0]], {'active': True, 'enabled': True})
 
+    def test_external_panel_mode_aborts_upgrade_before_stopping_services(self):
+        self.existing()
+        put(self.l.work / 'panel_mode', '3x-ui')
+        with self.assertRaises(RuntimeError): self.i.install()
+        self.assertTrue(self.r.active(d.UNITS[0]))
+        self.assertFalse(self.l.path('var/backups/vgatebox').exists())
+
     def test_source_outage_installs_without_fake_pool_with_default_direct(self):
         self.i.install()
         self.assertTrue(self.r.active(d.UNITS[0]))

@@ -324,8 +324,8 @@ func (t *Tunnel) serve() error {
 		if err := t.workContext().Err(); err != nil {
 			return err
 		}
-		// SOCKS is an internal hand-off to Xray/3x-ui.  Never expose it on the
-		// VPS public interface; the panel's own inbound ports remain separate.
+		// SOCKS is an internal hand-off to the built-in Xray. Never expose it
+		// on the VPS public interface; Xray's inbound ports remain separate.
 		ln, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", t.Port))
 		if err == nil {
 			break

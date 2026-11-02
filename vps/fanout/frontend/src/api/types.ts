@@ -355,13 +355,6 @@ export interface InboundDetail extends Inbound {
   tls: string;
 }
 
-export interface PanelModeView {
-  mode: string;
-  kind?: string;
-  describe?: string;
-  modes?: { mode: string; label: string; available: boolean; reason?: string }[];
-}
-
 export interface SocksLink {
   slot: number;
   name: string;

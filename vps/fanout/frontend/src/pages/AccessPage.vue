@@ -29,7 +29,6 @@ import { toast, toastError } from "@/lib/toast";
 const queryClient = useQueryClient();
 const { data: exitsView, isLoading: exitsLoading } = useExitsQuery(true);
 const tab = ref("socks");
-const native = computed(() => exitsView.value?.backend === "native");
 const exits = computed(() => exitsView.value?.exits || []);
 const hostDirect = computed(() => exitsView.value?.host_direct || []);
 const direct = computed(() => exitsView.value?.direct || []);
@@ -42,9 +41,7 @@ const inboundCount = computed(
 
 const { data: socksData } = useSocksLinksQuery(computed(() => tab.value === "socks"));
 const { data: sstpData, isLoading: sstpLoading } = useSstpQuery(computed(() => tab.value === "sstp"));
-const { data: thirdData, isLoading: thirdLoading } = useThirdPartyQuery(
-  computed(() => tab.value === "third" && native.value),
-);
+const { data: thirdData, isLoading: thirdLoading } = useThirdPartyQuery(computed(() => tab.value === "third"));
 
 const tabs = computed(() => [
   { key: "socks", label: "VPS SOCKS5", count: exits.value.filter((exit) => exit.public_socks?.enable).length },
@@ -401,10 +398,6 @@ const deleteMutation = useMutation({
       <SectionTabs v-model="tab" :items="tabs" />
     </div>
 
-    <div v-if="!native && exitsView" class="rounded-xl border border-warn/25 bg-warn-soft px-4 py-3 text-xs leading-relaxed text-warn">
-      当前为 {{ exitsView.panel_info || exitsView.backend }} 模式。VPS SOCKS5 与第三方代理只在内置 Xray 模式可用；原始 SSTP 检测仍可查看。
-    </div>
-
     <div v-if="exitsLoading && !exitsView" class="rounded-xl border border-line bg-surface p-4"><SkeletonBlock :lines="5" /></div>
 
     <template v-else-if="tab === 'socks'">
@@ -442,7 +435,7 @@ const deleteMutation = useMutation({
                     <UiButton size="sm" variant="ghost" @click="openSocksDetail(row)">详情</UiButton>
                     <CopyButton v-if="row.link?.url" :text="row.link.url" label="复制" size="sm" variant="ghost" />
                     <UiButton
-                      v-if="native && row.exit.status === 'up'"
+                      v-if="row.exit.status === 'up'"
                       size="sm"
                       variant="ghost"
                       :loading="socksMutation.isPending.value"
@@ -570,7 +563,7 @@ const deleteMutation = useMutation({
     </template>
 
     <template v-else-if="tab === 'advanced'">
-      <AdvancedAccessPanel :exits="exits" :backend="exitsView?.backend || ''" />
+      <AdvancedAccessPanel :exits="exits" />
     </template>
 
     <template v-else-if="tab === 'third'">
@@ -748,7 +741,6 @@ const deleteMutation = useMutation({
         <div class="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
           <p class="text-[11px] text-faint">外部端口需在防火墙放行；SOCKS5 连接本身不加密。</p>
           <UiButton
-            v-if="native"
             size="sm"
             :loading="socksMutation.isPending.value"
             @click="socksMutation.mutate({ slot: socksDetail.exit.slot, enabled: !socksDetail.enabled })"

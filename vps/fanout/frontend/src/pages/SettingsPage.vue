@@ -3,7 +3,7 @@ import { Check, RefreshCw, ShieldCheck, SlidersHorizontal } from "@lucide/vue";
 import { useMutation, useQueryClient } from "@tanstack/vue-query";
 import { computed, reactive, ref, watch } from "vue";
 import { api, post } from "@/api/client";
-import { keys, usePanelModeQuery, useSettingsQuery, useUpdateStatusQuery } from "@/api/queries";
+import { keys, useSettingsQuery, useUpdateStatusQuery } from "@/api/queries";
 import type { UpdateStatus } from "@/api/types";
 import PageHeader from "@/components/PageHeader.vue";
 import Panel from "@/components/Panel.vue";
@@ -19,28 +19,6 @@ import { toast, toastError } from "@/lib/toast";
 const queryClient = useQueryClient();
 const { data: settings, isLoading } = useSettingsQuery(true);
 const { data: job } = useUpdateStatusQuery(true);
-const { data: panelMode } = usePanelModeQuery(true);
-const panelModeValue = ref("");
-
-watch(
-  panelMode,
-  (value) => {
-    if (value) panelModeValue.value = value.mode || "";
-  },
-  { immediate: true },
-);
-
-const panelModeMutation = useMutation({
-  mutationFn: () => post("api/panel/mode", { mode: panelModeValue.value }),
-  onSuccess: () => {
-    toast("接入后端已切换", { tone: "success" });
-    void queryClient.invalidateQueries({ queryKey: keys.panelMode });
-    void queryClient.invalidateQueries({ queryKey: keys.exits });
-    void queryClient.invalidateQueries({ queryKey: keys.inbounds });
-    void queryClient.invalidateQueries({ queryKey: keys.console });
-  },
-  onError: (error) => toastError(error, "切换接入后端失败"),
-});
 
 const form = reactive({
   port: 8899,
@@ -282,25 +260,6 @@ const themeOptions: { value: ThemeChoice; label: string }[] = [
               <Check v-if="themeChoice === option.value" :size="12" class="text-accent" />
               {{ option.label }}
             </button>
-          </div>
-        </Panel>
-
-        <Panel title="接入后端">
-          <p class="text-xs leading-relaxed text-muted">
-            选择节点链接由谁管理。自动模式按本机安装情况选择；切换后可能短暂中断客户端连接。
-          </p>
-          <div class="mt-3 space-y-3">
-            <label class="block">
-              <span class="mb-1 block text-[11px] text-faint">当前后端</span>
-              <select v-model="panelModeValue" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent">
-                <option value="">自动（按本机安装选择）</option>
-                <option v-for="mode in panelMode?.modes || []" :key="mode.mode" :value="mode.mode" :disabled="!mode.available">
-                  {{ mode.label }}{{ mode.available ? "" : "（未安装）" }}
-                </option>
-              </select>
-            </label>
-            <p v-if="panelMode?.describe" class="text-[11px] text-faint">当前：{{ panelMode.describe }}</p>
-            <UiButton size="sm" :loading="panelModeMutation.isPending.value" @click="panelModeMutation.mutate()">切换后端</UiButton>
           </div>
         </Panel>
 

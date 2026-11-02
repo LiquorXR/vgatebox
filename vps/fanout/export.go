@@ -24,7 +24,7 @@ func slotOutbounds(tunnels []*Tunnel) []any {
 	return outs
 }
 
-// Export a standard fragment for manual integration without writing 3x-ui's DB.
+// Export a standard fragment for manual integration without touching panel data.
 func apiExportXray(m *Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

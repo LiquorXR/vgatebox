@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-func TestNativeInboundTagMatchesXUIFormat(t *testing.T) {
-	// tag 格式必须和 3x-ui 一致，否则两种后端的绑定语义会对不上
+func TestNativeInboundTagFormat(t *testing.T) {
+	// The historical in-<port>-<network> shape is kept for state compatibility.
 	cases := []struct {
 		ib   nativeInbound
 		want string

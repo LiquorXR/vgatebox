@@ -8,7 +8,7 @@ import (
 	"sync"
 )
 
-// Native 是 fanout 自己跑 Xray 的后端，用在本机没装 3x-ui 的场合。
+// Native 是 fanout 自己运行 Xray 的唯一入口后端。
 //
 // 入站数据存在 native.json，Xray 的运行配置每次改动后整份重新生成。
 // 全量重写比增量改省心：配置是纯函数产物，不会出现改了一半的中间态。

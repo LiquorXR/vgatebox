@@ -82,6 +82,7 @@ Vite 默认把 `/api`、`/sub`、`/login` 代理到 `http://127.0.0.1:8899`。�
 - 带指纹的静态资源：一年 `immutable`；`favicon.svg` 等稳定名称使用 `no-cache`。
 - 文本响应按 `Accept-Encoding` 做 gzip；图片和字体跳过。
 - `/advanced` 仅做 302 跳转到 `/#/access`，不再提供独立 HTML；所有页面都使用新控制台。
+- 节点链接后端固定为内置 Xray。`3x-ui` 和 `xray-cf-lite` 不再作为外部入口后端；设置页没有后端切换，`/api/panel/mode` 已移除。`/api/xui/*` 保留为内置 Xray 的入站管理接口，名称只是历史兼容。
 - 登录页支持无 JS 的原生表单提交：成功时 303 回到来源页面；XHR/fetch 仍返回 JSON。
 
 ## API 使用
@@ -104,9 +105,15 @@ Vite 默认把 `/api`、`/sub`、`/login` 代理到 `http://127.0.0.1:8899`。�
 
 出口数量减少仍通过 `POST /api/console/target`。两个操作的区别：调整数量不指定删除哪个 Slot；删除自动出口会先固定要删除的编号，再减少目标数量。若仍有等待中的出口，删除后目标数仍可能由其他候选补位。
 
-已移除与新入口重叠的旧路由：`/api/tunnels`（改用 `/api/exits`）、`/api/start` 和 `/api/replace`（改用 `/api/console/target` 与 `/api/swap`）、`/api/refresh`（改用 `/api/console/refresh`）、`/api/xui` 状态（改用 `/api/panel/mode`）。底层 Manager 方法仍保留给控制台内部使用。
+已移除与新入口重叠的旧路由：`/api/tunnels`（改用 `/api/exits`）、`/api/start` 和 `/api/replace`（改用 `/api/console/target` 与 `/api/swap`）、`/api/refresh`（改用 `/api/console/refresh`）、`/api/xui` 状态（后端固定为内置 Xray，不再提供模式切换）、`/api/panel/mode`（不再支持外部后端切换）。底层 Manager 方法仍保留给控制台内部使用。
 
 后续可把 `console` 改为 ETag 或 SSE；当前先保持接口兼容。
+
+## 外部后端迁移
+
+- 旧 `panel_mode` 为 `3x-ui` 或 `xray-cf-lite` 时，服务启动会直接失败并给出提示；不会静默切到 native，避免外部面板仍占用端口。
+- 迁移前备份外部面板数据，停止外部面板服务，删除或重命名工作目录下的 `panel_mode`，然后重新创建内置 Xray 入站并更新订阅。
+- 本项目不导入 3x-ui 数据库或 xray-cf-lite 配置，也不会删除这些外部数据。
 
 ## 测试
 

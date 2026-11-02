@@ -6,7 +6,6 @@ import type {
   ExitsView,
   Inbound,
   NodesView,
-  PanelModeView,
   SettingsInfo,
   SocksLinksView,
   SstpView,
@@ -26,7 +25,6 @@ export const keys = {
   sstp: ["sstp"] as const,
   socks: ["socks-links"] as const,
   inbounds: ["inbounds"] as const,
-  panelMode: ["panel-mode"] as const,
 };
 
 const enabledRef = (value: MaybeRefOrGetter<boolean>) => computed(() => toValue(value));
@@ -121,15 +119,6 @@ export function useInboundsQuery(enabled: MaybeRefOrGetter<boolean> = true) {
     enabled: enabledRef(enabled),
     refetchInterval: 5000,
     refetchIntervalInBackground: false,
-  });
-}
-
-export function usePanelModeQuery(enabled: MaybeRefOrGetter<boolean> = true) {
-  return useQuery({
-    queryKey: keys.panelMode,
-    queryFn: () => api<PanelModeView>("api/panel/mode"),
-    enabled: enabledRef(enabled),
-    staleTime: 30_000,
   });
 }
 

@@ -12,7 +12,7 @@ import (
 type ProvisionRequest struct {
 	Region     string // 国家码，空表示不限
 	Count      int
-	TemplateID int // 3x-ui 入站模板；0 表示只开隧道不建入站
+	TemplateID int // 内置 Xray 入站模板；0 表示只开隧道不建入站
 	// EveryRegion 表示每个有节点的国家都来 Count 个，此时 Region 被忽略。
 	EveryRegion bool
 	Policy      *SlotPolicy

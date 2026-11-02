@@ -303,9 +303,22 @@ class Installer:
                 raise RuntimeError('initial_direct_failed')
         finally:
             conn.close()
+    def reject_external_panel_mode(self):
+        path=self.l.work / 'panel_mode'
+        try:
+            mode=path.read_text().strip()
+        except FileNotFoundError:
+            return
+        except OSError:
+            raise RuntimeError('panel_mode_unreadable')
+        if mode and mode != 'native':
+            print('检测到旧的外部面板后端，已停止升级；请先迁移到内置 Xray。',file=sys.stderr)
+            raise RuntimeError('external_panel_mode_removed')
+
     def install(self):
         init_job(self.l, self.id)
         if self.l.journal.exists():self.recover()
+        self.reject_external_panel_mode()
         self.progress('preparing',target=(self.stage/'VERSION').read_text().strip())
         pool=self.prepare_pool()  # Local validation only; never wait for the upstream.
         before=self.service_snapshot()

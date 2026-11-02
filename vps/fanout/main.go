@@ -24,7 +24,7 @@ func main() {
 		maxSlots = flag.Int("max", maximumSlots, "管理员设置的出口容量（默认使用实例地址容量）")
 		workDir  = flag.String("dir", "/var/lib/vgatebox/fanout", "工作目录")
 	)
-	panelMode := flag.String("panel", "", "节点链接后端: 留空按界面设置/自动探测, 3x-ui, native, xray-cf-lite")
+	panelMode := flag.String("panel", "", "节点链接后端：仅支持 native（内置 Xray）；空值等同 native")
 	publicIP := flag.String("ip", "", "母机公网 IPv4，用于分享链接/SOCKS5 地址；留空则自动探测")
 	showVersion := flag.Bool("version", false, "显示版本后退出")
 	checkState := flag.Bool("check-state", false, "只读检查内置模式状态副本的迁移配置，不启动服务")
@@ -83,7 +83,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	configurePanel(*workDir, *panelMode)
+	if err := configurePanel(*workDir, *panelMode); err != nil {
+		log.Fatalf("节点链接后端配置失败: %v", err)
+	}
 	if p, err := openPanel(); err != nil {
 		log.Printf("节点链接后端暂不可用（可在 Web 界面查看原因）: %v", err)
 	} else {
@@ -121,14 +123,11 @@ func main() {
 		log.Fatalf("恢复上次状态失败，拒绝忽略已保存策略: %v", err)
 	} else if n > 0 {
 		log.Printf("正在恢复上次的 %d 条隧道", n)
-		// 3x-ui 模式重启不会自动重写面板出站，旧版本升上来时面板里的 socks
-		// 出站没有认证字段，端口一旦要认证就连不上，这里恢复后对账一次
-		go mgr.ReconcileOutbounds()
 	}
 	startConfiguredSlot(mgr)
 	// Direct and third-party entries must restart even when there are no VPN
 	// Gate Slots to trigger an outbound reconciliation after process restart.
-	if p, err := openPanel(); err == nil && p.Kind() == "native" {
+	if p, err := openPanel(); err == nil {
 		if err := p.OnTunnelsChanged(mgr.Tunnels()); err != nil {
 			log.Fatalf("恢复内置接入失败: %v", err)
 		}
@@ -184,7 +183,6 @@ func main() {
 	mux.HandleFunc("/api/panel/client/add", apiClientAdd(mgr))
 	mux.HandleFunc("/api/panel/client/del", apiClientDelete(mgr))
 	mux.HandleFunc("/api/panel/client/reset", apiClientReset(mgr))
-	mux.HandleFunc("/api/panel/mode", apiPanelMode(*workDir))
 	mux.HandleFunc("/api/sub", apiSub)
 	mux.HandleFunc("/api/sub/reset", apiSubReset)
 	// 订阅本体走免登录（见 auth.go 的放行），口令在 handleSub 里验
@@ -417,44 +415,7 @@ func apiJobDismiss(m *Manager) http.HandlerFunc {
 	}
 }
 
-// apiPanelMode 读取/切换节点链接后端。
-// GET 返回当前模式与本机可选模式；POST {"mode":"..."} 运行时切换，空 mode = 恢复自动探测。
-func apiPanelMode(workDir string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			var in struct {
-				Mode string `json:"mode"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求格式错误"})
-				return
-			}
-			p, err := switchPanelMode(in.Mode)
-			if err != nil {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-				return
-			}
-			invalidateInbounds()
-			writeJSON(w, http.StatusOK, map[string]any{
-				"mode":     currentPanelMode(),
-				"kind":     p.Kind(),
-				"describe": p.Describe(),
-			})
-			return
-		}
-		resp := map[string]any{
-			"mode":  currentPanelMode(),
-			"modes": availablePanelModes(workDir),
-		}
-		if p, err := openPanel(); err == nil {
-			resp["kind"] = p.Kind()
-			resp["describe"] = p.Describe()
-		}
-		writeJSON(w, http.StatusOK, resp)
-	}
-}
-
-// apiXUIInbounds 列出面板里已有的入站及其绑定状态。
+// apiXUIInbounds 列出内置 Xray 中已有的入站及其绑定状态。
 func apiXUIInbounds(m *Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		list, err := cachedInbounds(liveHosts(m))
@@ -668,9 +629,7 @@ func apiXUIDelete(m *Manager) http.HandlerFunc {
 	}
 }
 
-// apiInboundCreate 新建一个入站。两种后端都支持：自建模式写自己的库，
-// 接管 3x-ui 时走面板的 inbounds/add API。
-// apiInboundUpdate 改入站的端口、备注与启停。两种后端都支持。
+// apiInboundUpdate 修改内置 Xray 入站的端口、备注与启停。
 func apiInboundUpdate(m *Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		p, err := openPanel()

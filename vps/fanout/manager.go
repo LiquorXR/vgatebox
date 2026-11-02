@@ -712,51 +712,7 @@ func (m *Manager) SetCred(slot int, cred SocksCred) (SocksCred, error) {
 	return cred, nil
 }
 
-// ReconcileOutbounds 在启动恢复隧道后跑一次，把后端出站对齐到当前隧道（含 SOCKS5 凭据）。
-//
-// 只为 3x-ui 模式而生：它的 OnTunnelsChanged 是空操作，重启不会重写面板出站，
-// 而从旧版本升上来时面板里持久化的 socks 出站没有认证字段，端口一旦要认证就连不上。
-// 自建模式恢复时每条隧道 up 都会重建配置，本就自洽，这里跳过免得多重启一次 Xray。
-func (m *Manager) ReconcileOutbounds() {
-	p, err := openPanel()
-	if err != nil || p.Kind() != "3x-ui" {
-		return
-	}
-
-	// 等隧道尽量都起完再重写一次，避免只覆盖到先 up 的那几条
-	deadline := time.Now().Add(90 * time.Second)
-	for {
-		tunnels := m.Tunnels()
-		if len(tunnels) == 0 {
-			return
-		}
-		var up *Tunnel
-		settled := true
-		for _, t := range tunnels {
-			if t.Status == "up" && up == nil {
-				up = t
-			}
-			if t.Status == "starting" {
-				settled = false
-			}
-		}
-		if (settled || time.Now().After(deadline)) && up != nil {
-			if err := m.resync(up); err != nil {
-				log.Printf("启动对账面板出站失败: %v", err)
-			}
-			return
-		}
-		if settled || time.Now().After(deadline) {
-			return // 全 failed，没有可写的出站
-		}
-		time.Sleep(2 * time.Second)
-	}
-}
-
 // syncCred 把新凭据写进后端的 socks 出站。
-//
-// 两种后端的做法不同：自建模式整份重建配置，3x-ui 模式只改出站那一段。
-// 都走 ResyncOutbound，接口语义正好是"重写这条隧道对应的出站"。
 func (m *Manager) syncCred(t *Tunnel) {
 	if err := m.resync(t); err != nil {
 		log.Printf("同步 SOCKS5 凭据到节点链接后端失败: %v", err)
@@ -809,8 +765,8 @@ func (m *Manager) ownsTunnel(t *Tunnel) bool {
 	return m.tunnels[t.Slot] == t
 }
 
-// rebind 在隧道换节点后，把原先指向旧节点的 3x-ui 入站改绑到新节点。
-// 面板不可用时静默跳过，健康检查本身不应因此失败。
+// rebind 在隧道换节点后，把原先指向旧节点的内置 Xray 入站改绑到新节点。
+// 后端不可用时静默跳过，健康检查本身不应因此失败。
 func (m *Manager) rebind(oldHost string, t *Tunnel) error {
 	x, err := openPanel()
 	if err != nil {
@@ -819,8 +775,8 @@ func (m *Manager) rebind(oldHost string, t *Tunnel) error {
 	return x.Rebind(oldHost, t, m.Tunnels())
 }
 
-// resync 在节点没换但重连过之后，把 3x-ui 的出站配置刷新一遍。
-// 面板不可用时静默跳过，健康检查本身不应因此失败。
+// resync 在节点没换但重连过之后，把内置 Xray 的出站配置刷新一遍。
+// 后端不可用时静默跳过，健康检查本身不应因此失败。
 func (m *Manager) resync(t *Tunnel) error {
 	x, err := openPanel()
 	if err != nil {
@@ -831,9 +787,9 @@ func (m *Manager) resync(t *Tunnel) error {
 
 // notifyPanel 告诉后端隧道集合变了。
 //
-// 自建模式下出站是由隧道列表现算出来的，不通知的话新开的出口在 Xray 里
-// 没有对应的 socks 出站，绑定会指向一个不存在的 tag。接管 3x-ui 时是空操作。
-// 后端不可用不该让开关出口失败，所以只记日志。
+// 出站是由隧道列表现算出来的，不通知的话新开的出口在 Xray 里没有对应的
+// socks 出站，绑定会指向一个不存在的 tag。后端不可用不该让开关出口失败，
+// 所以只记日志。
 func (m *Manager) notifyPanel() {
 	p, err := openPanel()
 	if err != nil {

@@ -353,7 +353,7 @@ def main(argv=None):
             if input('确认卸载请输入 yes：').strip().lower() != 'yes':
                 print('已取消。'); return 0
         u.execute()
-        print('卸载完成。3x-ui、共享系统依赖和全局 IP 转发设置保留。')
+        print('卸载完成。外部面板、共享系统依赖和全局 IP 转发设置保留。')
         print('系统运行日志及部署协调锁保留，由系统管理。')
         return 0
     except (Refuse, OSError, ValueError, KeyError, TypeError) as exc:

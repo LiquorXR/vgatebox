@@ -22,7 +22,7 @@ import { exitName, exitStatusLabel, exitStatusTone } from "@/lib/status";
 const queryClient = useQueryClient();
 const { data: sub, isLoading: subLoading, isError: subError, error: subErrorValue, refetch: refetchSub } = useSubQuery(true);
 const { data: view, isLoading: exitsLoading } = useExitsQuery(true);
-const { data: thirdData } = useThirdPartyQuery(computed(() => view.value?.backend === "native"));
+const { data: thirdData } = useThirdPartyQuery(true);
 
 const format = ref<SubFormat>("base64");
 const vpnAll = ref(true);

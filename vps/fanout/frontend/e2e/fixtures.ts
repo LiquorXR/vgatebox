@@ -419,7 +419,6 @@ const payloads: Record<string, unknown> = {
     network: "tcp",
     tls: "reality",
   },
-  "/api/panel/mode": { mode: "", kind: "native", describe: "内置 Xray", modes: [{ mode: "native", label: "内置 Xray", available: true }] },
 };
 
 export async function mockApi(page: Page): Promise<void> {
