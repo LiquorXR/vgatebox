@@ -103,6 +103,16 @@ class VpsAcceptanceTests(unittest.TestCase):
         self.assertEqual([o["protocol"] for o in config["outbounds"]], ["vless", "blackhole"])
         self.assertNotIn("allowInsecure", json.dumps(config))
 
+    def test_vless_encryption_link_reaches_the_xray_client(self):
+        for key in (b"\x01" * 32, b"\x02" * 1184):
+            enc = "mlkem768x25519plus.native.0rtt." + base64.urlsafe_b64encode(key).decode().rstrip("=")
+            with self.subTest(key_bytes=len(key)):
+                profile = a.connection_from_native_link(link(encryption=enc))
+                self.assertEqual(profile.encryption, enc)
+                user = profile.xray_config(19001)["outbounds"][0]["settings"]["vnext"][0]["users"][0]
+                self.assertEqual(user["encryption"], enc)
+                self.assertEqual(user["flow"], "xtls-rprx-vision")
+
     def test_xhttp_and_grpc_configs(self):
         xhttp = a.connection_from_native_link(xhttp_link()).xray_config(19001)["outbounds"][0]["streamSettings"]
         self.assertEqual(xhttp["network"], "xhttp")
@@ -113,7 +123,13 @@ class VpsAcceptanceTests(unittest.TestCase):
         self.assertEqual(grpc["grpcSettings"], {"serviceName": "svc"})
 
     def test_unsupported_or_ambiguous_profiles_are_not_silently_rewritten(self):
-        for overrides in [{"security": "none"}, {"encryption": "auto"}, {"pbk": "invalid"},
+        bad_encryption = [
+            "auto",
+            "mlkem768x25519plus.bad.0rtt." + "A" * 43,
+            "mlkem768x25519plus.native.600s." + "A" * 43,
+            "mlkem768x25519plus.native.0rtt." + base64.urlsafe_b64encode(b"\x01" * 40).decode().rstrip("="),
+        ]
+        for overrides in [{"security": "none"}, *({"encryption": e} for e in bad_encryption), {"pbk": "invalid"},
                           {"sid": "123"}, {"sid": "gh"}, {"sni": ""}, {"fp": ""}, {"flow": "unsupported"},
                           {"type": "unsupported"}, {"type": "ws"}, {"type": "httpupgrade"},
                           {"type": "xhttp", "path": "no-slash"},
@@ -271,12 +287,15 @@ class VpsAcceptanceTests(unittest.TestCase):
         binary = ROOT/"tools/bin/xray"
         if not binary.exists():
             self.skipTest("pinned Xray absent")
+        enc = "mlkem768x25519plus.native.0rtt." + base64.urlsafe_b64encode(b"\x01" * 32).decode().rstrip("=")
         with tempfile.TemporaryDirectory() as tmp:
-            cfg = Path(tmp)/"client.json"
-            cfg.write_text(json.dumps(a.connection_from_native_link(link()).xray_config(19001)))
-            result = subprocess.run([str(binary), "run", "-test", "-c", str(cfg)], stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL, timeout=10)
-            self.assertEqual(result.returncode, 0)
+            for name, candidate in (("plain", link()), ("encrypted", link(encryption=enc))):
+                with self.subTest(profile=name):
+                    cfg = Path(tmp)/f"{name}.json"
+                    cfg.write_text(json.dumps(a.connection_from_native_link(candidate).xray_config(19001)))
+                    result = subprocess.run([str(binary), "run", "-test", "-c", str(cfg)],
+                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                    self.assertEqual(result.returncode, 0)
 
 
 class PackageTests(unittest.TestCase):
