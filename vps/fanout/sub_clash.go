@@ -64,9 +64,6 @@ func clashProxy(link string) (map[string]any, error) {
 		return nil, fmt.Errorf("invalid_share_link")
 	}
 	protoName := strings.ToLower(u.Scheme)
-	if protoName == "hysteria2" || protoName == "hy2" {
-		return clashHysteria2(u)
-	}
 	port, err := strconv.Atoi(u.Port())
 	if err != nil || port < 1 || port > 65535 {
 		return nil, fmt.Errorf("invalid_share_port")
@@ -123,8 +120,6 @@ func clashProxy(link string) (map[string]any, error) {
 		p["xhttp-opts"] = clashXHTTPOpts(q)
 	case "mkcp", "kcp":
 		return nil, &clashUnsupportedError{reason: "Mihomo cannot represent the mKCP transport"}
-	case "hysteria":
-		return nil, &clashUnsupportedError{reason: "Mihomo cannot use the Hysteria2 transport for this protocol"}
 	default:
 		return nil, fmt.Errorf("unsupported_clash_transport")
 	}
@@ -210,68 +205,6 @@ func clashProxy(link string) (map[string]any, error) {
 		p["packet-encoding"] = "xudp"
 	}
 	return p, nil
-}
-
-// clashHysteria2 把 hysteria2:// 链接转换成 Mihomo 的 hysteria2 代理。
-func clashHysteria2(u *url.URL) (map[string]any, error) {
-	port := 443
-	if p := u.Port(); p != "" {
-		n, e := strconv.Atoi(p)
-		if e != nil || n < 1 || n > 65535 {
-			return nil, fmt.Errorf("invalid_share_port")
-		}
-		port = n
-	}
-	auth := u.User.Username()
-	if pass, ok := u.User.Password(); ok {
-		auth += ":" + pass
-	}
-	if auth == "" {
-		return nil, fmt.Errorf("missing_share_credential")
-	}
-	q := u.Query()
-	proxy := map[string]any{"name": u.Fragment, "type": "hysteria2", "server": u.Hostname(), "port": port, "password": auth, "udp": true}
-	if sni := strings.TrimSpace(q.Get("sni")); sni != "" {
-		proxy["sni"] = sni
-	}
-	if pin := strings.TrimSpace(q.Get("pinSHA256")); pin != "" {
-		normalized, e := normalizeCertificatePin(pin)
-		if e != nil {
-			return nil, e
-		}
-		proxy["fingerprint"] = normalized
-	}
-	if strings.EqualFold(q.Get("insecure"), "1") || strings.EqualFold(q.Get("insecure"), "true") {
-		// 自签证书场景：fingerprint 负责 pin，skip-cert-verify 负责跳过 CA 校验，
-		// 两者需要同时保留。
-		proxy["skip-cert-verify"] = true
-	}
-	if obfs := strings.TrimSpace(q.Get("obfs")); obfs != "" {
-		proxy["obfs"] = obfs
-		if pass := q.Get("obfs-password"); pass != "" {
-			proxy["obfs-password"] = pass
-		}
-	}
-	if ports := strings.TrimSpace(q.Get("ports")); ports != "" {
-		proxy["ports"] = ports
-	}
-	if hop := strings.TrimSpace(q.Get("hop-interval")); hop != "" {
-		n, e := strconv.Atoi(hop)
-		if e != nil || n < 5 {
-			return nil, fmt.Errorf("invalid_hop_interval")
-		}
-		proxy["hop-interval"] = n
-	}
-	if up := strings.TrimSpace(q.Get("up")); up != "" {
-		proxy["up"] = up
-	}
-	if down := strings.TrimSpace(q.Get("down")); down != "" {
-		proxy["down"] = down
-	}
-	if alpn := strings.TrimSpace(q.Get("alpn")); alpn != "" {
-		proxy["alpn"] = strings.Split(alpn, ",")
-	}
-	return proxy, nil
 }
 
 func clashWSOpts(q url.Values, upgrade bool) map[string]any {

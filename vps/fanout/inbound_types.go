@@ -31,8 +31,6 @@ type InboundDetail struct {
 	Listen  string       `json:"listen"`
 	Network string       `json:"network"`
 	TLS     string       `json:"tls"`
-	// Hysteria 只暴露非敏感参数；客户端密码仍从 clients[].id 读取。
-	Hysteria *hysteriaConfig `json:"hysteria,omitempty"`
 	// VLESS Encryption 只暴露开关和密钥类型，服务端 decryption 不外发。
 	VLESSEncryption     bool   `json:"vless_encryption,omitempty"`
 	VLESSEncryptionType string `json:"vless_encryption_type,omitempty"`

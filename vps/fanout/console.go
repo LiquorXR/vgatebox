@@ -134,7 +134,7 @@ func validateExitPlan(p *ExitPlan, limit int) error {
 	p.Policy = policy
 	p.ServerName = strings.ToLower(strings.TrimSpace(p.ServerName))
 	if p.ServerName == "" {
-		p.ServerName = "www.apple.com"
+		p.ServerName = "www.tesla.com"
 	}
 	if len(p.ServerName) > 253 || !strings.Contains(p.ServerName, ".") || !regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$`).MatchString(p.ServerName) {
 		return fmt.Errorf("REALITY 目标须为有效域名")
@@ -526,7 +526,7 @@ func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {
 	if blob, err := os.ReadFile(envOr("FANOUT_VALIDATED_POOL_FILE", "/var/lib/vgatebox/pool/node_pool.json")); err == nil && json.Unmarshal(blob, &pool) == nil {
 		generated = pool.GeneratedAt
 	}
-	serverName := "www.apple.com"
+	serverName := "www.tesla.com"
 	if panel, err := openPanel(); err == nil {
 		if n, ok := panel.(*Native); ok {
 			n.mu.Lock()

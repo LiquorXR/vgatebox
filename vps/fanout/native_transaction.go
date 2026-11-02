@@ -41,10 +41,6 @@ func cloneNativeStore(s *nativeStore) *nativeStore {
 			v := *in.KCP
 			ib.KCP = &v
 		}
-		if in.Hysteria != nil {
-			v := *in.Hysteria
-			ib.Hysteria = &v
-		}
 		if in.VLESSEncryption != nil {
 			v := *in.VLESSEncryption
 			ib.VLESSEncryption = &v

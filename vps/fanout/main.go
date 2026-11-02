@@ -835,8 +835,6 @@ func apiInboundCreate(m *Manager) http.HandlerFunc {
 		kcpTTI, _ := strconv.Atoi(q.Get("kcp_tti"))
 		kcpUplink, _ := strconv.Atoi(q.Get("kcp_uplink"))
 		kcpDownlink, _ := strconv.Atoi(q.Get("kcp_downlink"))
-		hysteriaHop, _ := strconv.Atoi(q.Get("hysteria_hop"))
-		hysteriaIdle, _ := strconv.Atoi(q.Get("hysteria_idle"))
 		slot := 0
 		if raw := q.Get("slot"); raw != "" {
 			var parseErr error
@@ -871,17 +869,6 @@ func apiInboundCreate(m *Manager) http.HandlerFunc {
 			KCPTTI:      kcpTTI,
 			KCPUplink:   kcpUplink,
 			KCPDownlink: kcpDownlink,
-
-			HysteriaAuth:       q.Get("hysteria_auth"),
-			HysteriaObfs:       q.Get("hysteria_obfs"),
-			HysteriaPorts:      q.Get("hysteria_ports"),
-			HysteriaHopSeconds: hysteriaHop,
-			HysteriaUp:         q.Get("hysteria_up"),
-			HysteriaDown:       q.Get("hysteria_down"),
-			HysteriaIdle:       hysteriaIdle,
-			MasqueradeType:     q.Get("masquerade_type"),
-			MasqueradeURL:      q.Get("masquerade_url"),
-			MasqueradeContent:  q.Get("masquerade_content"),
 
 			VLESSEncryption:     q.Get("vless_encryption") == "1",
 			VLESSEncryptionType: q.Get("vless_encryption_type"),

@@ -16,7 +16,6 @@ type normalizedSpec struct {
 	Remark   string
 	Flow     string
 	KCP      *kcpConfig
-	Hysteria *hysteriaConfig
 	// VLESSEncryption 为 nil 表示关闭。启用时由 prepareInbound 补齐密钥对。
 	VLESSEncryption *vlessEncryptionConfig
 }
@@ -35,79 +34,28 @@ func normalizeInboundSpec(spec NewInboundSpec, used map[int]bool) (*normalizedSp
 	}
 	network := strings.ToLower(strings.TrimSpace(spec.Network))
 	if network == "" {
-		if proto == "hysteria" {
-			network = "hysteria"
-		} else {
-			network = "tcp"
-		}
+		network = "tcp"
 	}
 	if !nativeNetworks[network] {
 		return nil, fmt.Errorf("不支持的传输方式 %q", spec.Network)
 	}
 	security := strings.ToLower(strings.TrimSpace(spec.Security))
 	if security == "" {
-		if proto == "hysteria" || network == "hysteria" {
-			security = "tls"
-		} else {
-			security = "none"
-		}
+		security = "none"
 	}
 	if !nativeSecurities[security] {
 		return nil, fmt.Errorf("不支持的安全层 %q", spec.Security)
 	}
 
-	switch proto {
-	case "hysteria":
-		// Hysteria2 是协议 + 传输 + TLS 的固定组合。
-		if network != "hysteria" {
-			return nil, fmt.Errorf("Hysteria2 只能使用 hysteria 传输")
-		}
-		if security != "tls" {
-			return nil, fmt.Errorf("Hysteria2 必须使用 TLS")
-		}
-	case "vless":
+	if proto == "vless" {
 		// REALITY 靠模仿 TLS 握手工作，套在 ws/grpc 等已有自己头部的传输上没有意义。
 		if security == "reality" && network != "tcp" && network != "xhttp" && network != "grpc" {
 			return nil, fmt.Errorf("REALITY 不支持 %s 传输", network)
 		}
-		// hysteria 传输本身强制 TLS；mkcp 不支持 REALITY（上面的规则已拦）。
-		if network == "hysteria" && security != "tls" {
-			return nil, fmt.Errorf("Hysteria2 传输必须使用 TLS")
-		}
-	}
-
-	hyStart, hyEnd := 0, 0
-	if network == "hysteria" && strings.TrimSpace(spec.HysteriaPorts) != "" {
-		var err error
-		hyStart, hyEnd, err = parsePortRange(spec.HysteriaPorts)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	port := spec.Port
-	if hyStart > 0 {
-		if port == 0 {
-			p, err := freeUDPPortInRange(hyStart, hyEnd, used)
-			if err != nil {
-				return nil, err
-			}
-			port = p
-		} else if used[port] {
-			return nil, fmt.Errorf("端口 %d 已被别的入站占用", port)
-		}
-		if port < hyStart || port > hyEnd {
-			return nil, fmt.Errorf("入口端口 %d 不在服务端范围 %d-%d 内", port, hyStart, hyEnd)
-		}
-		for p := hyStart; p <= hyEnd; p++ {
-			if used[p] {
-				return nil, fmt.Errorf("端口范围 %d-%d 与已有入站冲突（端口 %d）", hyStart, hyEnd, p)
-			}
-		}
-		if !udpRangeAvailable(hyStart, hyEnd) {
-			return nil, fmt.Errorf("UDP 端口范围 %d-%d 内有端口已被占用", hyStart, hyEnd)
-		}
-	} else if port == 0 {
+	if port == 0 {
 		p, err := freeRandomPortFor(network, used)
 		if err != nil {
 			return nil, err
@@ -115,7 +63,7 @@ func normalizeInboundSpec(spec NewInboundSpec, used map[int]bool) (*normalizedSp
 		port = p
 	} else if used[port] {
 		return nil, fmt.Errorf("端口 %d 已被别的入站占用", port)
-	} else if (network == "hysteria" || network == "mkcp") && !portAvailableUDP(port) {
+	} else if network == "mkcp" && !portAvailableUDP(port) {
 		return nil, fmt.Errorf("UDP 端口 %d 已被占用", port)
 	}
 
@@ -179,28 +127,6 @@ func normalizeInboundSpec(spec NewInboundSpec, used map[int]bool) (*normalizedSp
 			TTI:      clampIntDefault(spec.KCPTTI, 50, 10, 100),
 			Uplink:   clampIntDefault(spec.KCPUplink, 5, 0, 100000),
 			Downlink: clampIntDefault(spec.KCPDownlink, 20, 0, 100000),
-		}
-	case "hysteria":
-		ns.Hysteria = &hysteriaConfig{
-			Auth:              strings.TrimSpace(spec.HysteriaAuth),
-			ObfsPassword:      strings.TrimSpace(spec.HysteriaObfs),
-			Ports:             strings.TrimSpace(spec.HysteriaPorts),
-			HopInterval:       spec.HysteriaHopSeconds,
-			Up:                strings.TrimSpace(spec.HysteriaUp),
-			Down:              strings.TrimSpace(spec.HysteriaDown),
-			UDPIdleTimeout:    spec.HysteriaIdle,
-			MasqueradeType:    strings.TrimSpace(spec.MasqueradeType),
-			MasqueradeURL:     strings.TrimSpace(spec.MasqueradeURL),
-			MasqueradeContent: strings.TrimSpace(spec.MasqueradeContent),
-		}
-		if ns.Hysteria.HopInterval <= 0 {
-			ns.Hysteria.HopInterval = 30
-		}
-		if ns.Hysteria.HopInterval < 5 {
-			return nil, fmt.Errorf("端口跳跃间隔不能小于 5 秒")
-		}
-		if ns.Hysteria.UDPIdleTimeout <= 0 {
-			ns.Hysteria.UDPIdleTimeout = 60
 		}
 	}
 

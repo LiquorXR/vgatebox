@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -118,21 +117,12 @@ func (n *Native) InboundDetail(id int, publicHost string) (*InboundDetail, error
 		Network: ib.netOrTCP(),
 		TLS:     ib.securityOrNone(),
 	}
-	if ib.Hysteria != nil {
-		h := *ib.Hysteria
-		h.Auth = ""
-		detail.Hysteria = &h
-	}
 	if ib.VLESSEncryption != nil && ib.VLESSEncryption.Enabled {
 		detail.VLESSEncryption = true
 		detail.VLESSEncryptionType = ib.VLESSEncryption.KeyType
 	}
 	for _, c := range ib.Clients {
-		id := c.ID
-		if ib.Protocol == "hysteria" {
-			id = c.Password
-		}
-		detail.Clients = append(detail.Clients, ClientInfo{Email: c.Email, ID: id, Enable: c.Enable})
+		detail.Clients = append(detail.Clients, ClientInfo{Email: c.Email, ID: c.ID, Enable: c.Enable})
 		detail.Links = append(detail.Links, shareLink(ib, c, publicHost))
 	}
 	return detail, nil
@@ -298,7 +288,6 @@ func (n *Native) CloneToTunnels(templateID int, hosts []string, tunnels []*Tunne
 			TLS:             tpl.TLS,
 			Reality:         tpl.Reality,
 			KCP:             tpl.KCP,
-			Hysteria:        tpl.Hysteria,
 			VLESSEncryption: tpl.VLESSEncryption,
 			Remark:          remark,
 			Enable:          true,
@@ -306,12 +295,6 @@ func (n *Native) CloneToTunnels(templateID int, hosts []string, tunnels []*Tunne
 			Clients:         append([]nativeClient(nil), tpl.Clients...),
 			BoundTo:         sanitizeTag(t.Node.HostName),
 			BoundSlot:       t.Slot, NameMode: "auto",
-		}
-		if clone.Hysteria != nil {
-			h := *clone.Hysteria
-			// 克隆入口不能与模板监听同一个端口范围，退回单端口。
-			h.Ports = ""
-			clone.Hysteria = &h
 		}
 		n.store.NextID++
 		n.store.Inbounds = append(n.store.Inbounds, clone)
@@ -376,21 +359,15 @@ func (n *Native) UpdateInbound(id int, patch InboundPatch, tunnels []*Tunnel) er
 		if port < 1 || port > 65535 {
 			return fmt.Errorf("端口 %d 不在合法范围", port)
 		}
-		if ib.netOrTCP() == "hysteria" && ib.Hysteria != nil && strings.TrimSpace(ib.Hysteria.Ports) != "" {
-			if !portInRange(ib.Hysteria.Ports, port) {
-				return fmt.Errorf("端口 %d 不在服务端范围 %s 内", port, ib.Hysteria.Ports)
-			}
-		}
 		for _, other := range n.store.Inbounds {
 			if other.ID == id {
 				continue
 			}
-			if other.Port == port || (other.netOrTCP() == "hysteria" && other.Hysteria != nil && portInRange(other.Hysteria.Ports, port)) {
+			if other.Port == port {
 				return fmt.Errorf("端口 %d 已被入站 %q 占用", port, other.Remark)
 			}
 		}
-		if (ib.Hysteria == nil || strings.TrimSpace(ib.Hysteria.Ports) == "") &&
-			(ib.netOrTCP() == "hysteria" || ib.netOrTCP() == "mkcp") && !portAvailableUDP(port) {
+		if ib.netOrTCP() == "mkcp" && !portAvailableUDP(port) {
 			return fmt.Errorf("UDP 端口 %d 已被占用", port)
 		}
 		ib.Port = port
@@ -615,25 +592,13 @@ type NewInboundSpec struct {
 	KCPUplink   int
 	KCPDownlink int
 
-	// Hysteria2（protocol=hysteria 或 VLESS + network=hysteria）
-	HysteriaAuth       string
-	HysteriaObfs       string
-	HysteriaPorts      string
-	HysteriaHopSeconds int
-	HysteriaUp         string
-	HysteriaDown       string
-	HysteriaIdle       int
-	MasqueradeType     string
-	MasqueradeURL      string
-	MasqueradeContent  string
-
 	// VLESS Encryption（可选）
 	VLESSEncryption     bool
 	VLESSEncryptionType string // x25519 | mlkem768
 }
 
 // nativeProtocols 是自建模式支持的协议，与前端下拉保持一致。
-var nativeProtocols = map[string]bool{"vless": true, "hysteria": true}
+var nativeProtocols = map[string]bool{"vless": true}
 
 // defaultEncryptedInboundSpec is the shared default for automatically created
 // entry nodes: VLESS + VLESS Encryption + RAW/TCP + REALITY + Vision.
@@ -759,15 +724,6 @@ func shareLink(ib *nativeInbound, c nativeClient, host string) string {
 
 	frag := url.PathEscape(ib.Remark)
 
-	if ib.Protocol == "hysteria" {
-		return hysteria2Link(ib, c, host, frag)
-	}
-	// VLESS over Hysteria2 没有 v2rayN/Mihomo 标准 URI；不生成会误导客户端的
-	// 链接，服务端仍保留该入口供 Xray-to-Xray 使用。
-	if net == "hysteria" {
-		return ""
-	}
-
 	// VLESS Encryption 是协议层参数，所有传输都可以叠加。
 	if ib.VLESSEncryption != nil && ib.VLESSEncryption.Enabled && ib.VLESSEncryption.ClientEncryption != "" {
 		q.Set("encryption", ib.VLESSEncryption.ClientEncryption)
@@ -775,86 +731,6 @@ func shareLink(ib *nativeInbound, c nativeClient, host string) string {
 		q.Set("encryption", "none")
 	}
 	return fmt.Sprintf("vless://%s@%s:%d?%s#%s", c.ID, host, ib.Port, q.Encode(), frag)
-}
-
-// hysteria2Link 生成标准 Hysteria2 URI。自签证书使用 insecure=1 以兼容
-// v2rayN/Mihomo；Clash 输出仍可通过 fingerprint 做证书固定。
-func hysteria2Link(ib *nativeInbound, c nativeClient, host, frag string) string {
-	q := url.Values{}
-	if ib.TLS != nil {
-		if ib.TLS.ServerName != "" {
-			q.Set("sni", ib.TLS.ServerName)
-		}
-		if ib.TLS.SelfSigned {
-			q.Set("insecure", "1")
-			if ib.TLS.CertSha256 != "" {
-				q.Set("pinSHA256", ib.TLS.CertSha256)
-			}
-		}
-	}
-	if ib.Hysteria != nil {
-		if ib.Hysteria.ObfsPassword != "" {
-			q.Set("obfs", "salamander")
-			q.Set("obfs-password", ib.Hysteria.ObfsPassword)
-		}
-		if ib.Hysteria.Ports != "" {
-			q.Set("ports", ib.Hysteria.Ports)
-			if ib.Hysteria.HopInterval > 0 {
-				q.Set("hop-interval", strconv.Itoa(ib.Hysteria.HopInterval))
-				// v2rayN 的部分版本使用下划线参数名。
-				q.Set("hop_interval", strconv.Itoa(ib.Hysteria.HopInterval))
-			}
-		}
-		if ib.Hysteria.Up != "" {
-			q.Set("up", ib.Hysteria.Up)
-			if mbps := hysteriaMbps(ib.Hysteria.Up); mbps != "" {
-				q.Set("up_mbps", mbps)
-			}
-		}
-		if ib.Hysteria.Down != "" {
-			q.Set("down", ib.Hysteria.Down)
-			if mbps := hysteriaMbps(ib.Hysteria.Down); mbps != "" {
-				q.Set("down_mbps", mbps)
-			}
-		}
-	}
-	auth := url.User(c.Password).String()
-	return fmt.Sprintf("hysteria2://%s@%s:%d/?%s#%s", auth, host, ib.Port, q.Encode(), frag)
-}
-
-// hysteriaMbps 把 "30 mbps" / "1 gbps" / "500 kbps" 转成 Mbps 数字字符串，
-// 供部分只认 up_mbps/down_mbps 的客户端使用。无法解析时返回空。
-func hysteriaMbps(raw string) string {
-	s := strings.ToLower(strings.TrimSpace(raw))
-	if s == "" {
-		return ""
-	}
-	unit := 1.0
-	switch {
-	case strings.HasSuffix(s, "gbps"):
-		unit, s = 1000, strings.TrimSpace(strings.TrimSuffix(s, "gbps"))
-	case strings.HasSuffix(s, "mbps"):
-		s = strings.TrimSpace(strings.TrimSuffix(s, "mbps"))
-	case strings.HasSuffix(s, "kbps"):
-		unit, s = 0.001, strings.TrimSpace(strings.TrimSuffix(s, "kbps"))
-	case strings.HasSuffix(s, "gb/s"):
-		unit, s = 8000, strings.TrimSpace(strings.TrimSuffix(s, "gb/s"))
-	case strings.HasSuffix(s, "mb/s"):
-		unit, s = 8, strings.TrimSpace(strings.TrimSuffix(s, "mb/s"))
-	case strings.HasSuffix(s, "kb/s"):
-		unit, s = 0.008, strings.TrimSpace(strings.TrimSuffix(s, "kb/s"))
-	case strings.HasSuffix(s, "g"):
-		unit, s = 1000, strings.TrimSpace(strings.TrimSuffix(s, "g"))
-	case strings.HasSuffix(s, "m"):
-		s = strings.TrimSpace(strings.TrimSuffix(s, "m"))
-	case strings.HasSuffix(s, "k"):
-		unit, s = 0.001, strings.TrimSpace(strings.TrimSuffix(s, "k"))
-	}
-	f, err := strconv.ParseFloat(s, 64)
-	if err != nil || f <= 0 {
-		return ""
-	}
-	return strconv.FormatFloat(f*unit, 'f', -1, 64)
 }
 
 // buildTLS 组装 TLS 配置。没给证书路径就生成一张自签的，落在 dir/certs 下。
@@ -904,8 +780,8 @@ func buildReality(xrayBin string, spec NewInboundSpec) (*realityConfig, error) {
 	dest := strings.TrimSpace(spec.Dest)
 	if dest == "" {
 		// REALITY 要跟 dest 完成一次真实 TLS1.3 握手，dest 不稳会让所有连接
-		// 静默回落。默认使用 Apple 站点。
-		dest = "www.apple.com:443"
+		// 静默回落。默认使用 Tesla 站点。
+		dest = "www.tesla.com:443"
 	}
 	if !strings.Contains(dest, ":") {
 		dest += ":443"
@@ -970,7 +846,6 @@ func (n *Native) prepareInbound(spec NewInboundSpec, used map[int]bool) (*native
 		Remark:   ns.Remark,
 		Enable:   true,
 		KCP:      ns.KCP,
-		Hysteria: ns.Hysteria,
 	}
 
 	switch security {
@@ -996,24 +871,13 @@ func (n *Native) prepareInbound(spec NewInboundSpec, used map[int]bool) (*native
 		ib.VLESSEncryption = enc
 	}
 
-	if ib.Hysteria != nil && ib.Hysteria.Auth == "" {
-		ib.Hysteria.Auth = randomHex(16)
-	}
-
 	client := nativeClient{
 		ID:       newUUID(),
 		Password: randomHex(8),
 		Flow:     ns.Flow,
 		Enable:   true,
 	}
-	switch proto {
-	case "hysteria":
-		client.Email = fmt.Sprintf("hysteria-%d", port)
-		client.Password = ib.Hysteria.Auth
-		client.Flow = ""
-	default:
-		client.Email = fmt.Sprintf("%s-%d", proto, port)
-	}
+	client.Email = fmt.Sprintf("%s-%d", proto, port)
 	ib.Clients = []nativeClient{client}
 
 	return ib, nil

@@ -131,22 +131,6 @@ func buildXrayConfig(inbounds []*nativeInbound, tunnels []*Tunnel) map[string]an
 func nativeInboundJSON(ib *nativeInbound) map[string]any {
 	settings := map[string]any{}
 	switch ib.Protocol {
-	case "hysteria":
-		clients := []any{}
-		for _, c := range ib.Clients {
-			if !c.Enable {
-				continue
-			}
-			auth := c.Password
-			if auth == "" && ib.Hysteria != nil {
-				auth = ib.Hysteria.Auth
-			}
-			clients = append(clients, map[string]any{"auth": auth, "email": c.Email})
-		}
-		settings["version"] = 2
-		// Hysteria2 服务端的用户字段是 clients；新版本也接受 users，
-		// 但 clients 对旧版本同样有效，统一输出这一种。
-		settings["clients"] = clients
 	case "socks":
 		accounts := []any{}
 		for _, c := range ib.Clients {
@@ -173,20 +157,12 @@ func nativeInboundJSON(ib *nativeInbound) map[string]any {
 	return map[string]any{
 		"tag":            ib.tag(),
 		"listen":         "0.0.0.0",
-		"port":           inboundPortValue(ib),
+		"port":           ib.Port,
 		"protocol":       ib.Protocol,
 		"settings":       settings,
 		"streamSettings": streamSettingsJSON(ib),
 		"sniffing":       map[string]any{"enabled": true, "destOverride": []any{"http", "tls"}},
 	}
-}
-
-// inboundPortValue 对 Hysteria2 服务端端口跳跃返回范围字符串；其他情况返回单端口。
-func inboundPortValue(ib *nativeInbound) any {
-	if ib.netOrTCP() == "hysteria" && ib.Hysteria != nil && strings.TrimSpace(ib.Hysteria.Ports) != "" {
-		return strings.TrimSpace(ib.Hysteria.Ports)
-	}
-	return ib.Port
 }
 
 // streamSettingsJSON 生成传输层配置：网络类型 + 安全层。
@@ -223,8 +199,6 @@ func streamSettingsJSON(ib *nativeInbound) map[string]any {
 		stream["grpcSettings"] = map[string]any{"serviceName": name}
 	case "mkcp":
 		stream["kcpSettings"] = kcpSettingsJSON(ib.KCP)
-	case "hysteria":
-		stream["hysteriaSettings"] = hysteriaSettingsJSON(ib)
 	}
 
 	switch ib.securityOrNone() {
@@ -239,11 +213,6 @@ func streamSettingsJSON(ib *nativeInbound) map[string]any {
 			if ib.TLS.ServerName != "" {
 				t["serverName"] = ib.TLS.ServerName
 			}
-			// Hysteria2 跑在 QUIC 上，服务端必须显式协商 h3。
-			if network == "hysteria" {
-				t["alpn"] = []any{"h3"}
-				t["minVersion"] = "1.3"
-			}
 			stream["tlsSettings"] = t
 		}
 	case "reality":
@@ -256,9 +225,6 @@ func streamSettingsJSON(ib *nativeInbound) map[string]any {
 			}
 			stream["realitySettings"] = r
 		}
-	}
-	if fm := finalMaskJSON(ib); fm != nil {
-		stream["finalmask"] = fm
 	}
 	return stream
 }
@@ -287,76 +253,6 @@ func kcpSettingsJSON(k *kcpConfig) map[string]any {
 		}
 	}
 	return out
-}
-
-func hysteriaSettingsJSON(ib *nativeInbound) map[string]any {
-	h := ib.Hysteria
-	out := map[string]any{"version": 2}
-	auth := ""
-	if ib.Protocol == "hysteria" {
-		for _, c := range ib.Clients {
-			if c.Enable && c.Password != "" {
-				auth = c.Password
-				break
-			}
-		}
-	}
-	if auth == "" && h != nil {
-		auth = h.Auth
-	}
-	if auth != "" {
-		out["auth"] = auth
-	}
-	if h == nil {
-		return out
-	}
-	if h.UDPIdleTimeout > 0 {
-		out["udpIdleTimeout"] = h.UDPIdleTimeout
-	}
-	if h.MasqueradeType != "" {
-		m := map[string]any{"type": h.MasqueradeType}
-		switch h.MasqueradeType {
-		case "file":
-			m["dir"] = h.MasqueradeURL
-		case "proxy":
-			m["url"] = h.MasqueradeURL
-		case "string":
-			m["content"] = h.MasqueradeContent
-		}
-		out["masquerade"] = m
-	}
-	return out
-}
-
-func finalMaskJSON(ib *nativeInbound) map[string]any {
-	h := ib.Hysteria
-	if h == nil {
-		return nil
-	}
-	fm := map[string]any{}
-	if h.ObfsPassword != "" {
-		fm["udp"] = []any{map[string]any{
-			"type":     "salamander",
-			"settings": map[string]any{"password": h.ObfsPassword},
-		}}
-	}
-	qp := map[string]any{}
-	if h.Up != "" || h.Down != "" {
-		qp["congestion"] = "brutal"
-		if h.Up != "" {
-			qp["brutalUp"] = h.Up
-		}
-		if h.Down != "" {
-			qp["brutalDown"] = h.Down
-		}
-	}
-	if len(qp) > 0 {
-		fm["quicParams"] = qp
-	}
-	if len(fm) == 0 {
-		return nil
-	}
-	return fm
 }
 
 func toAnySlice(in []string) []any {

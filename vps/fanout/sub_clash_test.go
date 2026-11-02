@@ -168,25 +168,9 @@ func TestClashXHTTPAndHTTPUpgradeMappings(t *testing.T) {
 	}
 }
 
-func TestClashHysteria2AndVLESSEncryption(t *testing.T) {
-	pin := strings.Repeat("ab", 32)
-	hy := "hysteria2://pw@203.0.113.10:443/?sni=203.0.113.10&insecure=1&pinSHA256=" + pin + "&obfs=salamander&obfs-password=o&ports=20000-30000&hop-interval=30&up=30+mbps&down=200+mbps#HY2"
-	p, err := clashProxy(hy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p["type"] != "hysteria2" || p["password"] != "pw" || p["obfs"] != "salamander" || p["obfs-password"] != "o" {
-		t.Fatalf("hysteria2 mapping lost: %v", p)
-	}
-	if p["skip-cert-verify"] != true || p["fingerprint"] != pin || p["ports"] != "20000-30000" || p["hop-interval"] != 30 {
-		t.Fatalf("hysteria2 transport options lost: %v", p)
-	}
-	if p["up"] != "30 mbps" || p["down"] != "200 mbps" {
-		t.Fatalf("hysteria2 brutal options lost: %v", p)
-	}
-
+func TestClashVLESSEncryption(t *testing.T) {
 	enc := "vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=tcp&security=tls&sni=host.example&encryption=mlkem768x25519plus.native.0rtt.KEY#ENC"
-	p, err = clashProxy(enc)
+	p, err := clashProxy(enc)
 	if err != nil {
 		t.Fatal(err)
 	}

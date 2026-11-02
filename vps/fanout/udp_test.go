@@ -8,6 +8,18 @@ import (
 	"time"
 )
 
+func TestUDPPortAvailability(t *testing.T) {
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	port := conn.LocalAddr().(*net.UDPAddr).Port
+	if portAvailableUDP(port) {
+		t.Fatalf("UDP port %d reported free while bound", port)
+	}
+}
+
 func TestParseUDPReqHeaderIPv4(t *testing.T) {
 	b := []byte{0, 0, 0, atypIPv4, 8, 8, 8, 8, 0, 53, 1, 2, 3}
 	atyp, addr, host, port, payload, ok := parseUDPReqHeader(b)

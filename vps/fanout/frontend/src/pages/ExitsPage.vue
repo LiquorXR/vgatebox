@@ -129,7 +129,7 @@ function checkItemState(exit: Exit): { label: string; running: boolean } | null 
 const targetOpen = ref(false);
 const targetCount = ref(6);
 const targetCountry = ref("");
-const targetServer = ref("www.apple.com");
+const targetServer = ref("www.tesla.com");
 const confirmTargetOpen = ref(false);
 const pendingSave = ref<(() => Promise<void>) | null>(null);
 
@@ -141,7 +141,7 @@ function openTarget() {
   }
   targetCount.value = initialTarget(s);
   targetCountry.value = s.plan?.policy?.country || "";
-  targetServer.value = s.plan?.server_name || s.default_server_name || "www.apple.com";
+  targetServer.value = s.plan?.server_name || s.default_server_name || "www.tesla.com";
   targetOpen.value = true;
 }
 
@@ -610,7 +610,7 @@ const statusOptions = [
           <label class="block">
             <span class="mb-1 block text-xs font-medium text-ink">REALITY 目标域名</span>
             <input v-model="targetServer" name="target-server" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
-            <span class="mt-1 block text-[11px] text-faint">默认 {{ summary?.default_server_name || "www.apple.com" }}。</span>
+            <span class="mt-1 block text-[11px] text-faint">默认 {{ summary?.default_server_name || "www.tesla.com" }}。</span>
           </label>
         </div>
         <div v-if="targetCount < allocated" class="rounded-lg border border-warn/25 bg-warn-soft px-3 py-2 text-xs leading-relaxed text-warn">

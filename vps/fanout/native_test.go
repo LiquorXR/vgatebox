@@ -72,7 +72,7 @@ func TestSlotOutboundSurvivesNodeReplacement(t *testing.T) {
 	}
 }
 
-func TestShareLinkPerProtocol(t *testing.T) {
+func TestShareLinkVLESS(t *testing.T) {
 	c := nativeClient{ID: "uuid-1", Password: "pw-1", Email: "e", Enable: true}
 
 	vless := shareLink(&nativeInbound{Port: 100, Protocol: "vless", Remark: "r"}, c, "1.2.3.4")
@@ -81,22 +81,6 @@ func TestShareLinkPerProtocol(t *testing.T) {
 	}
 	if !strings.Contains(vless, "encryption=none") {
 		t.Errorf("vless 需要 encryption=none: %s", vless)
-	}
-
-	hy := shareLink(&nativeInbound{
-		Port: 200, Protocol: "hysteria", Network: "hysteria", Security: "tls", Remark: "hy2",
-		TLS: &tlsConfig{ServerName: "203.0.113.10", SelfSigned: true, CertSha256: "AABB"},
-		Hysteria: &hysteriaConfig{
-			Auth: "pw-1", ObfsPassword: "obfs", Ports: "20000-30000", HopInterval: 30, Up: "30 mbps", Down: "200 mbps",
-		},
-	}, c, "203.0.113.10")
-	if !strings.HasPrefix(hy, "hysteria2://pw-1@203.0.113.10:200/?") {
-		t.Errorf("hysteria2 链接格式不对: %s", hy)
-	}
-	for _, want := range []string{"sni=203.0.113.10", "insecure=1", "pinSHA256=AABB", "obfs=salamander", "obfs-password=obfs", "ports=20000-30000", "hop-interval=30", "up=30+mbps", "down=200+mbps"} {
-		if !strings.Contains(hy, want) {
-			t.Errorf("hysteria2 链接缺少 %s: %s", want, hy)
-		}
 	}
 }
 
@@ -185,7 +169,6 @@ func TestStreamSettingsPerNetwork(t *testing.T) {
 		// gRPC 没有 path，Path 字段复用为 serviceName，且不带前导斜杠
 		{nativeInbound{Network: "grpc", Path: "/svc"}, "grpcSettings", "serviceName", "svc"},
 		{nativeInbound{Network: "mkcp"}, "kcpSettings", "mtu", 1350},
-		{nativeInbound{Network: "hysteria", Hysteria: &hysteriaConfig{Auth: "a"}}, "hysteriaSettings", "auth", "a"},
 	}
 	for _, c := range cases {
 		st := streamSettingsJSON(&c.ib)
@@ -226,10 +209,10 @@ func TestStreamSettingsReality(t *testing.T) {
 }
 
 func TestDefaultEncryptedInboundSpec(t *testing.T) {
-	spec := defaultEncryptedInboundSpec("默认", "www.apple.com:443", "www.apple.com")
+	spec := defaultEncryptedInboundSpec("默认", "www.tesla.com:443", "www.tesla.com")
 	if spec.Protocol != "vless" || spec.Network != "tcp" || spec.Security != "reality" ||
 		!spec.Vision || !spec.VLESSEncryption || spec.VLESSEncryptionType != "x25519" ||
-		spec.Dest != "www.apple.com:443" || spec.ServerNames != "www.apple.com" || spec.Fingerprint != "chrome" {
+		spec.Dest != "www.tesla.com:443" || spec.ServerNames != "www.tesla.com" || spec.Fingerprint != "chrome" {
 		t.Fatalf("unexpected default inbound spec: %+v", spec)
 	}
 }

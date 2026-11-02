@@ -1,10 +1,6 @@
 package main
 
-import (
-	"fmt"
-	"net"
-	"testing"
-)
+import "testing"
 
 func TestNormalizeInboundSpecDefaults(t *testing.T) {
 	ns, err := normalizeInboundSpec(NewInboundSpec{Port: 12345}, map[int]bool{})
@@ -68,61 +64,14 @@ func TestNormalizeInboundSpecVision(t *testing.T) {
 	}
 }
 
-func TestNormalizeHysteria2(t *testing.T) {
-	ns, err := normalizeInboundSpec(NewInboundSpec{
-		Protocol: "hysteria", HysteriaAuth: "secret",
-	}, nil)
-	if err != nil {
-		t.Fatalf("意外报错: %v", err)
-	}
-	if ns.Protocol != "hysteria" || ns.Network != "hysteria" || ns.Security != "tls" {
-		t.Fatalf("Hysteria2 默认组合不对: %+v", ns)
-	}
-	if ns.Hysteria == nil || ns.Hysteria.Auth != "secret" {
-		t.Fatalf("Hysteria2 配置丢失: %+v", ns.Hysteria)
-	}
-}
-
-func TestNormalizeHysteriaPortRange(t *testing.T) {
-	probe, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero})
-	if err != nil {
-		t.Fatal(err)
-	}
-	base := probe.LocalAddr().(*net.UDPAddr).Port
-	probe.Close()
-	if base > 65530 {
-		base -= 10
-	}
-	rawRange := fmt.Sprintf("%d-%d", base, base+2)
-	ns, err := normalizeInboundSpec(NewInboundSpec{
-		Protocol: "hysteria", HysteriaPorts: rawRange,
-	}, nil)
-	if err != nil {
-		t.Fatalf("意外报错: %v", err)
-	}
-	if ns.Port < base || ns.Port > base+2 || ns.Hysteria.Ports != rawRange {
-		t.Fatalf("端口范围未生效: %+v", ns)
-	}
+func TestNormalizeRejectsHysteria2(t *testing.T) {
 	for _, spec := range []NewInboundSpec{
-		{Protocol: "hysteria", Port: base + 10, HysteriaPorts: rawRange},
-		{Protocol: "hysteria", HysteriaPorts: "20000,20001"},
-		{Protocol: "hysteria", HysteriaPorts: "30000-20000"},
-	} {
-		if _, err := normalizeInboundSpec(spec, nil); err == nil {
-			t.Fatalf("应拒绝端口范围: %+v", spec)
-		}
-	}
-}
-
-func TestNormalizeHysteria2Rejects(t *testing.T) {
-	for _, spec := range []NewInboundSpec{
+		{Protocol: "hysteria", Network: "hysteria", Security: "tls", Port: 1},
 		{Protocol: "hysteria", Network: "xhttp", Security: "tls", Port: 1},
-		{Protocol: "hysteria", Network: "hysteria", Security: "none", Port: 1},
-		{Protocol: "hysteria", Network: "hysteria", Security: "reality", Port: 1},
 		{Protocol: "vless", Network: "hysteria", Security: "none", Port: 1},
 	} {
 		if _, err := normalizeInboundSpec(spec, nil); err == nil {
-			t.Fatalf("应当拒绝: %+v", spec)
+			t.Fatalf("应当拒绝 Hysteria2: %+v", spec)
 		}
 	}
 }

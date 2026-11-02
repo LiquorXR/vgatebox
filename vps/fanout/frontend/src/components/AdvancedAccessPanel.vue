@@ -127,19 +127,8 @@ const createForm = reactive({
   kcp_tti: "",
   kcp_uplink: "",
   kcp_downlink: "",
-  hysteria_auth: "",
-  hysteria_obfs: "",
-  hysteria_ports: "",
-  hysteria_hop: "",
-  hysteria_up: "",
-  hysteria_down: "",
-  hysteria_idle: "",
-  masquerade_type: "",
-  masquerade_url: "",
-  masquerade_content: "",
 });
-const isHysteria = computed(() => createForm.protocol === "hysteria");
-const realityAllowed = computed(() => !isHysteria.value && ["tcp", "xhttp", "grpc"].includes(createForm.network));
+const realityAllowed = computed(() => ["tcp", "xhttp", "grpc"].includes(createForm.network));
 const visionAllowed = computed(
   () =>
     createForm.protocol === "vless" &&
@@ -147,18 +136,10 @@ const visionAllowed = computed(
       (createForm.network === "tcp" && createForm.security !== "none")),
 );
 const needPath = computed(() => ["ws", "httpupgrade", "xhttp", "grpc"].includes(createForm.network));
-const hysteriaTransport = computed(() => createForm.network === "hysteria");
 
 watch(
-  () => [createForm.network, createForm.protocol, createForm.security, createForm.vless_encryption],
+  () => [createForm.network, createForm.security, createForm.vless_encryption],
   () => {
-    if (isHysteria.value) {
-      createForm.network = "hysteria";
-      createForm.security = "tls";
-      createForm.vless_encryption = false;
-    } else if (createForm.network === "hysteria") {
-      createForm.security = "tls";
-    }
     if (!realityAllowed.value && createForm.security === "reality") createForm.security = "none";
     if (!visionAllowed.value) createForm.vision = false;
   },
@@ -184,16 +165,6 @@ function openCreate() {
     kcp_tti: "",
     kcp_uplink: "",
     kcp_downlink: "",
-    hysteria_auth: "",
-    hysteria_obfs: "",
-    hysteria_ports: "",
-    hysteria_hop: "",
-    hysteria_up: "",
-    hysteria_down: "",
-    hysteria_idle: "",
-    masquerade_type: "",
-    masquerade_url: "",
-    masquerade_content: "",
   });
   createOpen.value = true;
 }
@@ -215,16 +186,6 @@ const createMutation = useMutation({
       kcp_tti: createForm.kcp_tti,
       kcp_uplink: createForm.kcp_uplink,
       kcp_downlink: createForm.kcp_downlink,
-      hysteria_auth: createForm.hysteria_auth.trim(),
-      hysteria_obfs: createForm.hysteria_obfs.trim(),
-      hysteria_ports: createForm.hysteria_ports.trim(),
-      hysteria_hop: createForm.hysteria_hop,
-      hysteria_up: createForm.hysteria_up.trim(),
-      hysteria_down: createForm.hysteria_down.trim(),
-      hysteria_idle: createForm.hysteria_idle,
-      masquerade_type: createForm.masquerade_type.trim(),
-      masquerade_url: createForm.masquerade_url.trim(),
-      masquerade_content: createForm.masquerade_content.trim(),
       vless_encryption_type: createForm.vless_encryption_type,
     };
     params.slot = createForm.slot;
@@ -536,7 +497,7 @@ function exportXray() {
 
 const createSecurityOptions = computed(() =>
   [
-    { value: "none", label: "无", disabled: isHysteria.value || hysteriaTransport.value },
+    { value: "none", label: "无" },
     { value: "tls", label: "TLS" },
     { value: "reality", label: "REALITY", disabled: !realityAllowed.value },
   ],
@@ -657,18 +618,15 @@ const createSecurityOptions = computed(() =>
           </select>
         </label>
         <div class="grid gap-3 sm:grid-cols-3">
-          <label class="block"><span class="mb-1 block text-xs font-medium">协议</span><select v-model="createForm.protocol" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-2 text-sm"><option value="vless">VLESS</option><option value="hysteria">Hysteria2</option></select></label>
-          <label class="block"><span class="mb-1 block text-xs font-medium">传输</span><select v-model="createForm.network" :disabled="isHysteria" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-2 text-sm disabled:opacity-60"><option value="tcp">TCP / RAW</option><option value="ws">WebSocket</option><option value="grpc">gRPC</option><option value="httpupgrade">HTTPUpgrade</option><option value="xhttp">XHTTP</option><option value="mkcp">mKCP</option><option value="hysteria">Hysteria2</option></select></label>
-          <label class="block"><span class="mb-1 block text-xs font-medium">安全</span><select v-model="createForm.security" :disabled="isHysteria || hysteriaTransport" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-2 text-sm disabled:opacity-60"><option v-for="option in createSecurityOptions" :key="option.value" :value="option.value" :disabled="option.disabled">{{ option.label }}</option></select></label>
+          <label class="block"><span class="mb-1 block text-xs font-medium">协议</span><select v-model="createForm.protocol" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-2 text-sm"><option value="vless">VLESS</option></select></label>
+          <label class="block"><span class="mb-1 block text-xs font-medium">传输</span><select v-model="createForm.network" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-2 text-sm"><option value="tcp">TCP / RAW</option><option value="ws">WebSocket</option><option value="grpc">gRPC</option><option value="httpupgrade">HTTPUpgrade</option><option value="xhttp">XHTTP</option><option value="mkcp">mKCP</option></select></label>
+          <label class="block"><span class="mb-1 block text-xs font-medium">安全</span><select v-model="createForm.security" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-2 text-sm"><option v-for="option in createSecurityOptions" :key="option.value" :value="option.value" :disabled="option.disabled">{{ option.label }}</option></select></label>
         </div>
         <p v-if="createForm.protocol === 'vless' && createForm.security === 'none' && !createForm.vless_encryption" class="rounded-lg border border-warn/25 bg-warn-soft px-3 py-2 text-[11px] leading-relaxed text-warn">
           VLESS + 无传输安全层按官方要求只用于私网；公网请改用 TLS/REALITY，或启用 VLESS Encryption。
         </p>
         <p v-if="createForm.network === 'mkcp'" class="rounded-lg border border-warn/25 bg-warn-soft px-3 py-2 text-[11px] leading-relaxed text-warn">
           v2rayN 可导入 VLESS + mKCP；Mihomo 无法表示 mKCP，Clash 订阅会跳过该入口。
-        </p>
-        <p v-if="createForm.network === 'hysteria' && createForm.protocol === 'vless'" class="rounded-lg border border-warn/25 bg-warn-soft px-3 py-2 text-[11px] leading-relaxed text-warn">
-          该入口没有 v2rayN/Mihomo 标准分享格式；服务端配置可用，但订阅不会输出该节点。
         </p>
         <label v-if="createForm.protocol === 'vless'" class="flex flex-wrap items-center gap-3 rounded-lg border border-line p-3 text-xs text-muted">
           <span class="flex items-center gap-2"><input v-model="createForm.vless_encryption" type="checkbox" class="accent-accent" />启用 VLESS Encryption</span>
@@ -683,37 +641,16 @@ const createSecurityOptions = computed(() =>
           <label class="block"><span class="mb-1 block text-[11px] text-faint">证书路径</span><input v-model="createForm.cert" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="留空生成自签证书" /></label>
           <label class="block"><span class="mb-1 block text-[11px] text-faint">私钥路径</span><input v-model="createForm.key" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" /></label>
         </div>
-        <label v-if="createForm.security === 'reality'" class="block"><span class="mb-1 block text-[11px] text-faint">借用站点（留空使用默认）</span><input v-model="createForm.dest" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="www.apple.com:443" /></label>
+        <label v-if="createForm.security === 'reality'" class="block"><span class="mb-1 block text-[11px] text-faint">借用站点（留空使用默认）</span><input v-model="createForm.dest" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="www.tesla.com:443" /></label>
         <div v-if="createForm.network === 'mkcp'" class="grid gap-3 sm:grid-cols-4">
           <label class="block"><span class="mb-1 block text-[11px] text-faint">MTU</span><input v-model="createForm.kcp_mtu" inputmode="numeric" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="1350" /></label>
           <label class="block"><span class="mb-1 block text-[11px] text-faint">TTI</span><input v-model="createForm.kcp_tti" inputmode="numeric" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="50" /></label>
           <label class="block"><span class="mb-1 block text-[11px] text-faint">上行 MB/s</span><input v-model="createForm.kcp_uplink" inputmode="numeric" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="5" /></label>
           <label class="block"><span class="mb-1 block text-[11px] text-faint">下行 MB/s</span><input v-model="createForm.kcp_downlink" inputmode="numeric" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="20" /></label>
         </div>
-        <div v-if="createForm.network === 'hysteria'" class="space-y-3 rounded-lg border border-line p-3">
-          <div class="grid gap-3 sm:grid-cols-3">
-            <label class="block"><span class="mb-1 block text-[11px] text-faint">{{ createForm.protocol === "hysteria" ? "客户端认证密码（留空自动生成）" : "Hysteria2 传输认证（留空自动生成）" }}</span><input v-model="createForm.hysteria_auth" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" /></label>
-            <label class="block"><span class="mb-1 block text-[11px] text-faint">Salamander 混淆密码（留空关闭）</span><input v-model="createForm.hysteria_obfs" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" /></label>
-            <label class="block"><span class="mb-1 block text-[11px] text-faint">服务端监听/跳跃 UDP 范围（如 20000-30000）</span><input v-model="createForm.hysteria_ports" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="留空则只监听单端口" /></label>
-          </div>
-          <div class="grid gap-3 sm:grid-cols-4">
-            <label class="block"><span class="mb-1 block text-[11px] text-faint">跳跃间隔（秒）</span><input v-model="createForm.hysteria_hop" inputmode="numeric" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="30" /></label>
-            <label class="block"><span class="mb-1 block text-[11px] text-faint">上行（Brutal）</span><input v-model="createForm.hysteria_up" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="30 mbps" /></label>
-            <label class="block"><span class="mb-1 block text-[11px] text-faint">下行（Brutal）</span><input v-model="createForm.hysteria_down" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="200 mbps" /></label>
-            <label class="block"><span class="mb-1 block text-[11px] text-faint">UDP 空闲超时（秒）</span><input v-model="createForm.hysteria_idle" inputmode="numeric" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="60" /></label>
-          </div>
-          <div class="grid gap-3 sm:grid-cols-3">
-            <label class="block"><span class="mb-1 block text-[11px] text-faint">Masquerade 类型</span><select v-model="createForm.masquerade_type" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-2 text-sm"><option value="">关闭</option><option value="string">字符串</option><option value="file">本地目录</option><option value="proxy">反代 URL</option></select></label>
-            <label v-if="createForm.masquerade_type === 'file' || createForm.masquerade_type === 'proxy'" class="block"><span class="mb-1 block text-[11px] text-faint">{{ createForm.masquerade_type === "file" ? "目录路径" : "目标 URL" }}</span><input v-model="createForm.masquerade_url" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" /></label>
-            <label v-if="createForm.masquerade_type === 'string'" class="block"><span class="mb-1 block text-[11px] text-faint">页面内容</span><input v-model="createForm.masquerade_content" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="<h1>Hello</h1>" /></label>
-          </div>
-          <p v-if="createForm.hysteria_ports" class="rounded-lg border border-warn/25 bg-warn-soft px-3 py-2 text-[11px] leading-relaxed text-warn">
-            Xray 会监听整个 UDP 范围；范围越大会消耗文件描述符和内存。云防火墙/安全组需放行整个范围，或改用 iptables/nftables 重定向到单端口。
-          </p>
-        </div>
         <label v-if="needPath" class="block"><span class="mb-1 block text-[11px] text-faint">{{ createForm.network === "grpc" ? "服务名" : "路径" }}</span><input v-model="createForm.path" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 font-mono text-sm" placeholder="留空自动生成" /></label>
         <div class="grid gap-3 sm:grid-cols-2">
-          <label class="block"><span class="mb-1 block text-[11px] text-faint">{{ createForm.hysteria_ports ? "入口主端口（留空取范围内空闲端口）" : "端口（留空随机分配）" }}</span><input v-model="createForm.port" inputmode="numeric" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" /></label>
+          <label class="block"><span class="mb-1 block text-[11px] text-faint">端口（留空随机分配）</span><input v-model="createForm.port" inputmode="numeric" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" /></label>
           <label class="block"><span class="mb-1 block text-[11px] text-faint">备注</span><input v-model="createForm.remark" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="留空自动命名" /></label>
         </div>
         <div class="flex justify-end gap-2 pt-1">
@@ -733,13 +670,7 @@ const createSecurityOptions = computed(() =>
           <div><dt class="text-faint">监听</dt><dd class="mt-0.5">{{ detail.listen || "0.0.0.0" }}</dd></div>
           <div><dt class="text-faint">绑定出口</dt><dd class="mt-0.5">{{ bindLabel(detail) }}</dd></div>
           <div v-if="detail.vless_encryption"><dt class="text-faint">VLESS Encryption</dt><dd class="mt-0.5">已启用 · {{ detail.vless_encryption_type === "mlkem768" ? "ML-KEM-768" : "X25519" }}</dd></div>
-          <div v-if="detail.hysteria?.obfs_password"><dt class="text-faint">Salamander</dt><dd class="mt-0.5">已启用</dd></div>
-          <div v-if="detail.hysteria?.ports"><dt class="text-faint">服务端端口范围</dt><dd class="mt-0.5">{{ detail.hysteria.ports }} · {{ detail.hysteria.hop_interval || 30 }}s</dd></div>
-          <div v-if="detail.hysteria?.up || detail.hysteria?.down"><dt class="text-faint">Brutal</dt><dd class="mt-0.5">{{ detail.hysteria?.up || "-" }} / {{ detail.hysteria?.down || "-" }}</dd></div>
         </dl>
-        <p v-if="detail.protocol === 'vless' && detail.network === 'hysteria'" class="rounded-lg border border-warn/25 bg-warn-soft px-3 py-2 text-[11px] leading-relaxed text-warn">
-          该入口使用 VLESS over Hysteria2，没有 v2rayN/Mihomo 标准订阅格式；服务端配置可用，订阅不会输出该节点。
-        </p>
 
         <form class="space-y-3" @submit.prevent="detailSaveMutation.mutate()">
           <div class="grid gap-3 sm:grid-cols-2">
