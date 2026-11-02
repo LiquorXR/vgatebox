@@ -85,7 +85,7 @@ vgatebox uninstall --purge --legacy
 - 国家与住宅类型分别判断。`unknown` 表示类型未知，不能视为已验证住宅 IP；手填国家、城市和备注不是检测证据。
 - VPS 转发的订阅和 SOCKS5 需要 VPS 持续运行；原始 SSTP 导出需消费端自行支持相应协议。
 - 管理地址、订阅和备份含私密信息，请妥善保存。公网管理建议使用 HTTPS 反向代理或 SSH 转发。
-- 当前代理链路面向 TCP / IPv4；内置 Xray 只支持 VLESS 与 Hysteria2。VLESS 覆盖 TCP/RAW、XHTTP、gRPC、WebSocket、HTTPUpgrade、mKCP、Hysteria2 传输，以及 none/TLS/REALITY 的有效组合；默认新建入口为 VLESS + XHTTP + REALITY。VLESS Encryption 可按入口启用，支持 X25519 或 ML-KEM-768。Hysteria2 使用 hysteria + TLS，可选自签证书、Salamander、端口跳跃、Brutal 和 masquerade。UDP 在 IPv4 下全链路启用（v2rayN 需在客户端启用 UDP）；Mihomo 无法表示 VLESS + mKCP 或 VLESS + Hysteria2 传输，VLESS + mKCP 仍进入 v2rayN 订阅，VLESS + Hysteria2 没有标准 URI 不进入订阅。第三方 SOCKS5 的 UDP 能力取决于上游。
+- 当前代理链路面向 TCP / IPv4；内置 Xray 只支持 VLESS 与 Hysteria2。VLESS 覆盖 TCP/RAW、XHTTP、gRPC、WebSocket、HTTPUpgrade、mKCP、Hysteria2 传输，以及 none/TLS/REALITY 的有效组合；自动新建入口默认为 VLESS + VLESS Encryption + RAW/TCP + REALITY + xtls-rprx-vision，REALITY 目标默认 `www.apple.com`。VLESS Encryption 支持 X25519 或 ML-KEM-768。Hysteria2 使用 hysteria + TLS，可选自签证书、Salamander、端口跳跃、Brutal 和 masquerade。UDP 在 IPv4 下全链路启用（v2rayN 需在客户端启用 UDP）；Mihomo 无法表示 VLESS + mKCP 或 VLESS + Hysteria2 传输，VLESS + mKCP 仍进入 v2rayN 订阅，VLESS + Hysteria2 没有标准 URI 不进入订阅。第三方 SOCKS5 的 UDP 能力取决于上游。
 
 ## 文档
 

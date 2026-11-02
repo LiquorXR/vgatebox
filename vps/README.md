@@ -130,9 +130,10 @@ python3 scripts/toolbox.py --config config/settings.json --env-file /path/intell
 内置 Xray 只保留 VLESS 和 Hysteria2，VMess/Trojan 已移除。升级后加载 `native.json` 时会过滤旧 VMess/Trojan 入口并重写状态文件：它们不再运行、不再显示，也不再进入订阅；需要保留的旧配置请提前备份。
 
 - **VLESS 16 组**：TCP/RAW、XHTTP、gRPC 配 none/TLS/REALITY；WebSocket、HTTPUpgrade、mKCP 配 none/TLS；Hysteria2 传输配 TLS。
+- **自动入口默认值**：VLESS + VLESS Encryption（X25519）+ RAW/TCP + REALITY + `xtls-rprx-vision`；REALITY 目标默认 `www.apple.com`。
 - **VLESS Encryption**：每个 VLESS 入口可选启用，支持 X25519 或 ML-KEM-768；启用后 `security=none` 可用于公网，链接带 `encryption=`。Mihomo/v2rayN 需要较新版本。
 - **Hysteria2**：`hysteria` 协议 + `hysteria` 传输 + TLS，必须 version 2。支持自签证书、Salamander 混淆、端口跳跃、Brutal 上下行和 masquerade。
-- 自签证书的 VLESS 链接使用 `pcs` 指纹；Hysteria2 链接同时带 `insecure=1` 与 `pinSHA256`，Clash 优先使用证书指纹。
+- 自签证书的 VLESS 链接使用 `pcs` 指纹；Hysteria2 链接同时带 `insecure=1` 与 `pinSHA256`，Clash 同时输出 `fingerprint` 和 `skip-cert-verify: true`。
 - 端口跳跃只写入订阅参数；服务端仍需用 iptables/nftables 把整个 UDP 范围重定向到监听端口，并放行防火墙/安全组。
 - Mihomo 无法表示 VLESS + mKCP 或 VLESS + Hysteria2 传输；VLESS + mKCP 仍进入 Base64/v2rayN 订阅，VLESS + Hysteria2 没有标准 URI，不进入订阅。Clash 会跳过这些入口。
 - Hysteria2 的 UDP 端口分配会同时检查 UDP 占用；端口跳跃范围会直接作为 Xray 入站监听范围，范围过大会消耗文件描述符和内存，云防火墙需放行整个范围。也可以只监听单端口，用 iptables/nftables 把范围重定向过去。

@@ -234,7 +234,10 @@ func clashHysteria2(u *url.URL) (map[string]any, error) {
 			return nil, e
 		}
 		proxy["fingerprint"] = normalized
-	} else if strings.EqualFold(q.Get("insecure"), "1") || strings.EqualFold(q.Get("insecure"), "true") {
+	}
+	if strings.EqualFold(q.Get("insecure"), "1") || strings.EqualFold(q.Get("insecure"), "true") {
+		// 自签证书场景：fingerprint 负责 pin，skip-cert-verify 负责跳过 CA 校验，
+		// 两者需要同时保留。
 		proxy["skip-cert-verify"] = true
 	}
 	if obfs := strings.TrimSpace(q.Get("obfs")); obfs != "" {

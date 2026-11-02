@@ -132,7 +132,7 @@ func nativeInboundJSON(ib *nativeInbound) map[string]any {
 	settings := map[string]any{}
 	switch ib.Protocol {
 	case "hysteria":
-		users := []any{}
+		clients := []any{}
 		for _, c := range ib.Clients {
 			if !c.Enable {
 				continue
@@ -141,10 +141,12 @@ func nativeInboundJSON(ib *nativeInbound) map[string]any {
 			if auth == "" && ib.Hysteria != nil {
 				auth = ib.Hysteria.Auth
 			}
-			users = append(users, map[string]any{"auth": auth, "email": c.Email})
+			clients = append(clients, map[string]any{"auth": auth, "email": c.Email})
 		}
 		settings["version"] = 2
-		settings["users"] = users
+		// Hysteria2 服务端的用户字段是 clients；新版本也接受 users，
+		// 但 clients 对旧版本同样有效，统一输出这一种。
+		settings["clients"] = clients
 	case "socks":
 		accounts := []any{}
 		for _, c := range ib.Clients {
@@ -236,6 +238,11 @@ func streamSettingsJSON(ib *nativeInbound) map[string]any {
 			}
 			if ib.TLS.ServerName != "" {
 				t["serverName"] = ib.TLS.ServerName
+			}
+			// Hysteria2 跑在 QUIC 上，服务端必须显式协商 h3。
+			if network == "hysteria" {
+				t["alpn"] = []any{"h3"}
+				t["minVersion"] = "1.3"
 			}
 			stream["tlsSettings"] = t
 		}

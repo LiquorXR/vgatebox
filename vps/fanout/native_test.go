@@ -226,8 +226,10 @@ func TestStreamSettingsReality(t *testing.T) {
 }
 
 func TestDefaultEncryptedInboundSpec(t *testing.T) {
-	spec := defaultEncryptedInboundSpec("默认", "example.com:443", "example.com")
-	if spec.Protocol != "vless" || spec.Network != "xhttp" || spec.Security != "reality" || spec.Vision || spec.Fingerprint != "chrome" {
+	spec := defaultEncryptedInboundSpec("默认", "www.apple.com:443", "www.apple.com")
+	if spec.Protocol != "vless" || spec.Network != "tcp" || spec.Security != "reality" ||
+		!spec.Vision || !spec.VLESSEncryption || spec.VLESSEncryptionType != "x25519" ||
+		spec.Dest != "www.apple.com:443" || spec.ServerNames != "www.apple.com" || spec.Fingerprint != "chrome" {
 		t.Fatalf("unexpected default inbound spec: %+v", spec)
 	}
 }

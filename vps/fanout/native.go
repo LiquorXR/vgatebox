@@ -636,12 +636,17 @@ type NewInboundSpec struct {
 var nativeProtocols = map[string]bool{"vless": true, "hysteria": true}
 
 // defaultEncryptedInboundSpec is the shared default for automatically created
-// entry nodes. XHTTP+REALITY is supported by both current v2rayN and Mihomo;
-// Vision is intentionally absent because it is only valid on TCP.
+// entry nodes: VLESS + VLESS Encryption + RAW/TCP + REALITY + Vision.
+// VLESS Encryption is optional at the protocol level but enabled here so new
+// entries get the stronger default. The authentication key type stays X25519
+// for broad client compatibility; the ephemeral exchange remains post-quantum.
 func defaultEncryptedInboundSpec(remark, dest, serverNames string) NewInboundSpec {
 	return NewInboundSpec{
-		Protocol: "vless", Network: "xhttp", Security: "reality",
+		Protocol: "vless", Network: "tcp", Security: "reality",
 		Remark: remark, Dest: dest, ServerNames: serverNames, Fingerprint: "chrome",
+		Vision:              true,
+		VLESSEncryption:     true,
+		VLESSEncryptionType: "x25519",
 	}
 }
 
@@ -899,8 +904,8 @@ func buildReality(xrayBin string, spec NewInboundSpec) (*realityConfig, error) {
 	dest := strings.TrimSpace(spec.Dest)
 	if dest == "" {
 		// REALITY 要跟 dest 完成一次真实 TLS1.3 握手，dest 不稳会让所有连接
-		// 静默回落。microsoft.com 在部分机房握手经常走不完，这里选更可靠的。
-		dest = "www.tesla.com:443"
+		// 静默回落。默认使用 Apple 站点。
+		dest = "www.apple.com:443"
 	}
 	if !strings.Contains(dest, ":") {
 		dest += ":443"

@@ -34,13 +34,21 @@ func TestHysteriaInboundJSON(t *testing.T) {
 	if settings["version"] != 2 {
 		t.Fatalf("hysteria version lost: %v", settings)
 	}
-	users := settings["users"].([]any)
-	if len(users) != 1 || users[0].(map[string]any)["auth"] != "auth-pass" {
-		t.Fatalf("hysteria users lost: %v", users)
+	clients := settings["clients"].([]any)
+	if len(clients) != 1 || clients[0].(map[string]any)["auth"] != "auth-pass" {
+		t.Fatalf("hysteria clients lost: %v", clients)
+	}
+	if _, old := settings["users"]; old {
+		t.Fatalf("hysteria server must use clients, not users: %v", settings)
 	}
 	st := raw["streamSettings"].(map[string]any)
 	if st["security"] != "tls" {
 		t.Fatalf("hysteria must use tls: %v", st)
+	}
+	tls := st["tlsSettings"].(map[string]any)
+	alpn, ok := tls["alpn"].([]any)
+	if !ok || len(alpn) != 1 || alpn[0] != "h3" {
+		t.Fatalf("hysteria tls alpn must be h3: %v", tls)
 	}
 	hs := st["hysteriaSettings"].(map[string]any)
 	if hs["auth"] != "auth-pass" || hs["udpIdleTimeout"] != 60 {

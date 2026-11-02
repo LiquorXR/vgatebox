@@ -274,7 +274,7 @@ func (s *ThirdPartyManager) apiResources(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
 	}
-	host := "www.tesla.com"
+	host := "www.apple.com"
 	s.c.targetMu.Lock()
 	if s.c.plan != nil {
 		host = s.c.plan.ServerName

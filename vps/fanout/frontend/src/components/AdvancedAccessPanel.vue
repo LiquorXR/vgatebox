@@ -683,7 +683,7 @@ const createSecurityOptions = computed(() =>
           <label class="block"><span class="mb-1 block text-[11px] text-faint">证书路径</span><input v-model="createForm.cert" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="留空生成自签证书" /></label>
           <label class="block"><span class="mb-1 block text-[11px] text-faint">私钥路径</span><input v-model="createForm.key" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" /></label>
         </div>
-        <label v-if="createForm.security === 'reality'" class="block"><span class="mb-1 block text-[11px] text-faint">借用站点（留空使用默认）</span><input v-model="createForm.dest" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="www.tesla.com:443" /></label>
+        <label v-if="createForm.security === 'reality'" class="block"><span class="mb-1 block text-[11px] text-faint">借用站点（留空使用默认）</span><input v-model="createForm.dest" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="www.apple.com:443" /></label>
         <div v-if="createForm.network === 'mkcp'" class="grid gap-3 sm:grid-cols-4">
           <label class="block"><span class="mb-1 block text-[11px] text-faint">MTU</span><input v-model="createForm.kcp_mtu" inputmode="numeric" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="1350" /></label>
           <label class="block"><span class="mb-1 block text-[11px] text-faint">TTI</span><input v-model="createForm.kcp_tti" inputmode="numeric" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="50" /></label>

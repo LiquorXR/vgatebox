@@ -90,8 +90,9 @@ Vite 默认把 `/api`、`/sub`、`/login` 代理到 `http://127.0.0.1:8899`。�
 - 状态变更接口只接受 `POST`；其余方法返回 `405`。`Auth.Wrap` 还会拒绝浏览器标记为 `Sec-Fetch-Site: cross-site` 的写请求。
 - 实际通过 HTTPS 访问（或可信代理转发 `X-Forwarded-Proto: https`）时，登录 Cookie 带 `Secure`，响应带 HSTS。
 - 新建接入入口只支持 VLESS 与 Hysteria2。VLESS 可选 TCP/RAW、XHTTP、gRPC、WebSocket、HTTPUpgrade、mKCP、Hysteria2 传输，并按官方矩阵限制 REALITY 与 TLS；Hysteria2 固定为 hysteria + TLS。
+- 自动创建入口默认使用 VLESS + VLESS Encryption（X25519）+ RAW/TCP + REALITY + `xtls-rprx-vision`，REALITY 目标默认 `www.apple.com`。
 - VLESS 可单独启用 VLESS Encryption（X25519 或 ML-KEM-768）；启用后链接带 `encryption=`，`security=none` 也可用于公网。旧客户端可能无法解析。
-- Hysteria2 支持自签证书、Salamander、端口跳跃、Brutal 和 masquerade；自签链接带 `insecure=1` 和 `pinSHA256`，Clash 优先使用证书指纹。填写端口范围后，Xray 入站直接监听整个 UDP 范围；范围过大会消耗资源，云防火墙需放行整个范围，也可以用 iptables/nftables 重定向到单端口。
+- Hysteria2 支持自签证书、Salamander、端口跳跃、Brutal 和 masquerade；自签链接带 `insecure=1` 和 `pinSHA256`，Clash 同时输出 `fingerprint` 与 `skip-cert-verify: true`。填写端口范围后，Xray 入站直接监听整个 UDP 范围；范围过大会消耗资源，云防火墙需放行整个范围，也可以用 iptables/nftables 重定向到单端口。
 - VLESS + mKCP 会进入 v2rayN/Base64 订阅，Mihomo 跳过；VLESS over Hysteria2 没有标准 URI，不进入订阅，只在服务端保留 Xray-to-Xray 配置。
 - 升级时旧 VMess/Trojan 入口会从 `native.json` 过滤，不再显示或进入订阅。
 - `/assets/`、`/next/assets/` 和 favicon 在登录前可读，登录页自身的 CSS/JS 不依赖会话；它们不包含管理数据。

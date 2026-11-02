@@ -116,7 +116,7 @@ func (c *Console) apiHostDirect(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(503)
 		return
 	}
-	host := "www.tesla.com"
+	host := "www.apple.com"
 	if c.plan != nil {
 		host = c.plan.ServerName
 	}
