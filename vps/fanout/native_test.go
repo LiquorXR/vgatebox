@@ -90,7 +90,7 @@ func TestShareLinkPerProtocol(t *testing.T) {
 			Auth: "pw-1", ObfsPassword: "obfs", Ports: "20000-30000", HopInterval: 30, Up: "30 mbps", Down: "200 mbps",
 		},
 	}, c, "203.0.113.10")
-	if !strings.HasPrefix(hy, "hysteria2://pw-1@203.0.113.10:200?") {
+	if !strings.HasPrefix(hy, "hysteria2://pw-1@203.0.113.10:200/?") {
 		t.Errorf("hysteria2 链接格式不对: %s", hy)
 	}
 	for _, want := range []string{"sni=203.0.113.10", "insecure=1", "pinSHA256=AABB", "obfs=salamander", "obfs-password=obfs", "ports=20000-30000", "hop-interval=30", "up=30+mbps", "down=200+mbps"} {
