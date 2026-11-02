@@ -57,17 +57,31 @@ class NativeConnection:
     short_id: str = field(repr=False)
     fingerprint: str
     flow: str
+    network: str = "tcp"
+    path: str = ""
+    host_header: str = ""
+    service_name: str = ""
 
     def xray_config(self, socks_port):
+        stream = {"network": self.network, "security": "reality",
+                  "realitySettings": {"serverName": self.sni, "password": self.public_key,
+                                      "shortId": self.short_id, "fingerprint": self.fingerprint}}
+        if self.network == "xhttp":
+            xhttp = {"path": self.path or "/", "mode": "auto"}
+            if self.host_header:
+                xhttp["host"] = self.host_header
+            stream["xhttpSettings"] = xhttp
+        elif self.network == "grpc":
+            stream["grpcSettings"] = {"serviceName": self.service_name}
+        elif self.network != "tcp":
+            raise ToolError("unsupported_native_transport")
         return {"log": {"loglevel": "none"},
                 "inbounds": [{"tag": "acceptance", "listen": "127.0.0.1", "port": socks_port,
                               "protocol": "socks", "settings": {"auth": "noauth", "udp": False}}],
                 "outbounds": [{"tag": "slot", "protocol": "vless",
                                "settings": {"vnext": [{"address": self.host, "port": self.port,
                                                         "users": [{"id": self.client_id, "encryption": "none", "flow": self.flow}]}]},
-                               "streamSettings": {"network": "tcp", "security": "reality",
-                                                  "realitySettings": {"serverName": self.sni, "password": self.public_key,
-                                                                      "shortId": self.short_id, "fingerprint": self.fingerprint}}},
+                               "streamSettings": stream},
                               {"tag": "block", "protocol": "blackhole"}],
                 "routing": {"rules": [{"type": "field", "network": "udp", "outboundTag": "block"},
                                       {"type": "field", "ip": ["::/0"], "outboundTag": "block"},
@@ -78,13 +92,22 @@ def connection_from_native_link(link):
     try:
         p = urllib.parse.urlsplit(link)
         q = urllib.parse.parse_qs(p.query, keep_blank_values=True)
-        allowed = {"type", "security", "encryption", "sni", "pbk", "sid", "fp", "flow"}
+        allowed = {"type", "security", "encryption", "sni", "pbk", "sid", "fp", "flow",
+                   "path", "host", "mode", "serviceName", "pcs"}
         if p.scheme != "vless" or not p.hostname or not p.port or p.password is not None or set(q) - allowed:
             raise ValueError()
         if any(len(v) != 1 for v in q.values()):
             raise ValueError()
         q = {k: v[0] for k, v in q.items()}
-        if any(q.get(k) != v for k, v in {"type": "tcp", "security": "reality", "encryption": "none"}.items()):
+        network = q.get("type", "tcp")
+        # This acceptance helper intentionally validates only REALITY profiles.
+        # Xray allows REALITY with RAW/TCP, XHTTP and gRPC, not WebSocket or
+        # HTTPUpgrade; those combinations must use TLS in the main service.
+        if network not in {"tcp", "grpc", "xhttp"}:
+            raise ValueError()
+        if any(q.get(k) != v for k, v in {"security": "reality", "encryption": "none"}.items()):
+            raise ValueError()
+        if network in {"ws", "httpupgrade", "xhttp"} and q.get("path", "") and not q["path"].startswith("/"):
             raise ValueError()
         client = str(uuid.UUID(urllib.parse.unquote(p.username or "")))
         key = q.get("pbk", "")
@@ -93,12 +116,19 @@ def connection_from_native_link(link):
         sid, sni = q.get("sid", ""), q.get("sni", "")
         if len(sid) > 16 or len(sid) % 2 or not re.fullmatch(r"[0-9a-fA-F]*", sid):
             raise ValueError()
-        if not sni or not re.fullmatch(r"[A-Za-z0-9.-]+", sni) or q.get("flow", "") not in ("", "xtls-rprx-vision"):
+        flow = q.get("flow", "")
+        if not sni or not re.fullmatch(r"[A-Za-z0-9.-]+", sni) or flow not in ("", "xtls-rprx-vision"):
+            raise ValueError()
+        if flow and network != "tcp":
             raise ValueError()
         fp = q.get("fp", "")
         if fp not in {"chrome", "firefox", "safari", "ios", "android", "edge", "360", "qq", "random", "randomized"}:
             raise ValueError()
-        return NativeConnection(p.hostname, p.port, client, sni, key, sid, fp, q.get("flow", ""))
+        service = q.get("serviceName", "")
+        if network == "grpc" and not service:
+            raise ValueError()
+        return NativeConnection(p.hostname, p.port, client, sni, key, sid, fp, flow,
+                                network, q.get("path", ""), q.get("host", ""), service)
     except (ValueError, TypeError, AttributeError):
         raise ToolError("unsupported_native_subscription_profile") from None
 

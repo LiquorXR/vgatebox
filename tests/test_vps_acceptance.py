@@ -28,6 +28,13 @@ def link(i=1, **overrides):
     return f"vless://12345678-1234-4123-8123-123456789ab{i}@8.8.8.8:{30000+i}?" + urlencode(q) + "#fixture-secret-label"
 
 
+def xhttp_link(i=1, **overrides):
+    q = {"type": "xhttp", "security": "reality", "encryption": "none", "sni": "fixture.example.invalid",
+         "pbk": KEY, "sid": "0123456789abcdef", "fp": "chrome", "path": "/xhttp", "host": "cdn.example",
+         **overrides}
+    return f"vless://12345678-1234-4123-8123-123456789ab{i}@8.8.8.8:{30000+i}?" + urlencode(q) + "#fixture-secret-label"
+
+
 def plan():
     return {"version": 1, "host_ip": "8.8.8.8", "subscription_url": "http://8.8.8.8:8899/fixture-secret/sub?token=fixture-token",
             "subscription_base64": base64.b64encode("\n".join(link(i) for i in range(1, 4)).encode()).decode(),
@@ -60,6 +67,12 @@ def passing_factory(profile, binary, timeout):
 
 
 class VpsAcceptanceTests(unittest.TestCase):
+    def test_subscription_accepts_xhttp_default_link(self):
+        profiles = a.parse_subscription(base64.b64encode(xhttp_link().encode()))
+        self.assertEqual(len(profiles), 1)
+        self.assertEqual(profiles[0].network, "xhttp")
+        self.assertEqual(profiles[0].path, "/xhttp")
+
     def test_subscription_accepts_configurable_independent_slot_count(self):
         for count in (1, 5, 32):
             with self.subTest(count=count):
@@ -90,9 +103,21 @@ class VpsAcceptanceTests(unittest.TestCase):
         self.assertEqual([o["protocol"] for o in config["outbounds"]], ["vless", "blackhole"])
         self.assertNotIn("allowInsecure", json.dumps(config))
 
+    def test_xhttp_and_grpc_configs(self):
+        xhttp = a.connection_from_native_link(xhttp_link()).xray_config(19001)["outbounds"][0]["streamSettings"]
+        self.assertEqual(xhttp["network"], "xhttp")
+        self.assertEqual(xhttp["xhttpSettings"], {"path": "/xhttp", "mode": "auto", "host": "cdn.example"})
+
+        grpc = a.connection_from_native_link(xhttp_link(type="grpc", serviceName="svc")).xray_config(19001)["outbounds"][0]["streamSettings"]
+        self.assertEqual(grpc["network"], "grpc")
+        self.assertEqual(grpc["grpcSettings"], {"serviceName": "svc"})
+
     def test_unsupported_or_ambiguous_profiles_are_not_silently_rewritten(self):
-        for overrides in [{"security": "none"}, {"type": "ws"}, {"encryption": "auto"}, {"pbk": "invalid"},
+        for overrides in [{"security": "none"}, {"encryption": "auto"}, {"pbk": "invalid"},
                           {"sid": "123"}, {"sid": "gh"}, {"sni": ""}, {"fp": ""}, {"flow": "unsupported"},
+                          {"type": "unsupported"}, {"type": "ws"}, {"type": "httpupgrade"},
+                          {"type": "xhttp", "path": "no-slash"},
+                          {"type": "xhttp", "flow": "xtls-rprx-vision"}, {"type": "grpc"},
                           {"allowInsecure": "1"}]:
             with self.subTest(overrides=overrides), self.assertRaises(ToolError):
                 a.connection_from_native_link(link(**overrides))
