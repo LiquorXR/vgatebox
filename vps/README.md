@@ -31,11 +31,13 @@ curl -fsSL https://github.com/LiquorXR/vgatebox/releases/latest/download/install
 
 **DNS 解析**：每个出口收到的域名都在该 Slot 的 network namespace 内解析，查询从 `tun0` 经 VPN Gate 节点发出，返回地址按出口地区选择。解析失败时 SOCKS 直接返回 host unreachable，不会回退到 VPS 本机解析。默认解析器为 `1.1.1.1` 和 `8.8.8.8`，可在环境文件里用 `FANOUT_DNS_SERVERS`（逗号分隔，支持 `IP` 或 `IP:端口`）与 `FANOUT_DNS_TTL`（缓存秒数，默认 60，`0` 关闭缓存）调整；换节点会清空该 Slot 的解析缓存。
 
+**反向代理**：管理页由 Nginx/Caddy 终止 TLS 时，订阅地址和二维码需要外部 origin。最稳妥是在环境文件设置 `FANOUT_PUBLIC_URL=https://panel.example.com`；未设置时，只有来自本机/私有网段或 `FANOUT_TRUSTED_PROXIES` 的请求才会接受 `Forwarded`、`X-Forwarded-Proto`、`X-Forwarded-Host` 和 `X-Forwarded-Port`，公网伪造这些头不会改变链接。代理额外增加路径前缀时，应把该前缀配置为管理访问路径；只代理管理页时，节点链接优先使用 `FANOUT_PUBLIC_IP` 或自动探测到的公网 IPv4，探测不到时才回退到外部 origin 的主机名。
+
 ## 首次管理和订阅
 
 1. 执行 `vgatebox access`，使用打印的私有地址与密码登录。总览提供四步状态化操作提示。
 2. 建议在「总览」或「出口」启用「VPS 本机直出」，先使用服务器公网 IP 验证接入；这一步可选，已有就绪的 VPN Gate 出口也可直接使用。
-3. 在「订阅」复制订阅链接，在 v2rayN 等支持 VLESS / REALITY 的客户端新建订阅分组、粘贴地址并更新；选择直出或已就绪出口，开启客户端代理模式后测试网页。防火墙需允许实际接入端口，只开放管理端口不足以连接代理。
+3. 在「订阅」复制订阅链接，在 v2rayN 等支持 VLESS / XHTTP / REALITY 的客户端新建订阅分组、粘贴地址并更新；选择直出或已就绪出口，开启客户端代理模式后测试网页。防火墙需允许实际接入端口（TCP；公开 SOCKS5 还需 UDP），只开放管理端口不足以连接代理。
 4. 需要 VPN Gate 时，在「出口」设置目标数量，国家可留空。程序自动建连、创建并绑定入站，等待「已就绪」后更新原客户端订阅并手动选择。无需预先检测全部候选，也无需手动新增入站。数量和检测并发由使用者设置，真实资源或上游供给不足如实提示等待，不静默降低目标。
 5. 有固定代理时，在「接入 → 第三方 SOCKS5」填写地址、端口、账号密码及可选国家/城市/备注；保存并检测，确认启用和加入订阅后再更新客户端。
 6. 「节点池」用于按需诊断。「接入 → VPS SOCKS5」供其他电脑或程序通过本 VPS 接入，外部端口需显式开启；「原始 SSTP」导出给支持 SSTP 的客户端，自身不是 VLESS 订阅。普通使用不需另外新增入口；自行新建入口须绑定出口，未绑定会阻断。

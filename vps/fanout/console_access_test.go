@@ -65,7 +65,7 @@ func TestPublicSocksUsesCurrentCredentialAndBlockedSlot(t *testing.T) {
 	}
 	settings := public["settings"].(map[string]any)
 	account := settings["accounts"].([]any)[0].(map[string]any)
-	if settings["auth"] != "password" || settings["udp"] != false || account["user"] != "changed-user" || account["pass"] != "changed-pass" {
+	if settings["auth"] != "password" || settings["udp"] != true || account["user"] != "changed-user" || account["pass"] != "changed-pass" {
 		t.Fatal("public credential/auth not synchronized")
 	}
 	for _, raw := range cfg["outbounds"].([]any) {

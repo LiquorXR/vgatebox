@@ -55,19 +55,10 @@ func subPath(tok string) string {
 	return currentBasePath() + "/sub?token=" + tok
 }
 
-// subFullURL 按当前请求推断一个完整地址。界面上更准的做法是用
-// location.origin 拼 subPath，这里只是给不走浏览器的调用方兜底。
+// subFullURL 按当前请求推断一个完整地址。它通过 publicOrigin 处理显式外部
+// 地址、可信反向代理头和直连请求；界面地址和二维码使用同一来源。
 func subFullURL(r *http.Request, tok string) string {
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	host := r.Host
-	if host == "" {
-		if ip := hostPublicIP(); ip != "" {
-			host = ip + ":" + fmt.Sprint(getWebSettings().Port)
-		}
-	}
+	scheme, host := publicOrigin(r)
 	return scheme + "://" + host + subPath(tok)
 }
 
@@ -321,8 +312,13 @@ func handleSub(m *Manager) http.HandlerFunc {
 
 		body:=[]byte(encodeSub(links,target))
 		if target=="clash" {
-			body,err=renderClash(links)
+			var omitted []string
+			body,omitted,err=renderClash(links)
 			if err!=nil {http.Error(w,err.Error(),400);return}
+			if len(omitted)>0 {
+				w.Header().Set("X-Vgatebox-Omitted",strconv.Itoa(len(omitted)))
+				w.Header().Set("X-Vgatebox-Warning","some entries were omitted because Mihomo cannot represent their transport")
+			}
 			w.Header().Set("Content-Type","application/yaml; charset=utf-8")
 		} else {w.Header().Set("Content-Type", "text/plain; charset=utf-8")}
 		w.Header().Set("Cache-Control", "no-store")

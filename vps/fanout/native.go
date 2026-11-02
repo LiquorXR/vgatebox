@@ -508,6 +508,16 @@ type NewInboundSpec struct {
 // nativeProtocols 是自建模式支持的协议，与前端下拉保持一致。
 var nativeProtocols = map[string]bool{"vless": true, "vmess": true, "trojan": true}
 
+// defaultEncryptedInboundSpec is the shared default for automatically created
+// entry nodes. XHTTP+REALITY is supported by both current v2rayN and Mihomo;
+// Vision is intentionally absent because it is only valid on TCP.
+func defaultEncryptedInboundSpec(remark, dest, serverNames string) NewInboundSpec {
+	return NewInboundSpec{
+		Protocol: "vless", Network: "xhttp", Security: "reality",
+		Remark: remark, Dest: dest, ServerNames: serverNames, Fingerprint: "chrome",
+	}
+}
+
 // CreateInbound 新建一个入站，端口留空时随机分配。
 func (n *Native) CreateInbound(spec NewInboundSpec, tunnels []*Tunnel) (*CreatedInbound, error) {
 	n.mu.Lock()
@@ -584,9 +594,10 @@ func shareLink(ib *nativeInbound, c nativeClient, host string) string {
 				q.Set("sni", ib.TLS.ServerName)
 			}
 			// 自签证书验不过 CA。Xray 26.x 移除了 allowInsecure，
-			// 改用证书指纹让客户端固定信任这一张。
+			// 改用证书指纹让客户端固定信任这一张。pcs 是 Xray/v2rayN
+			// 共用的标准字段；旧的 pinSHA256 只保留给兼容解析。
 			if ib.TLS.SelfSigned && ib.TLS.CertSha256 != "" {
-				q.Set("pinSHA256", ib.TLS.CertSha256)
+				q.Set("pcs", ib.TLS.CertSha256)
 			}
 		}
 	case "reality":

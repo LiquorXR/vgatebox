@@ -86,10 +86,7 @@ func (n *Native) setHostDirect(enabled bool, serverName string, tunnels []*Tunne
 	for _, tunnel := range tunnels {
 		used[tunnel.Port] = true
 	}
-	ib, err := n.prepareInbound(NewInboundSpec{
-		Protocol: "vless", Network: "tcp", Security: "reality", Remark: "VPS 本机直出",
-		Dest: serverName + ":443", ServerNames: serverName, Fingerprint: "chrome",
-	}, used)
+	ib, err := n.prepareInbound(defaultEncryptedInboundSpec("VPS 本机直出", serverName+":443", serverName), used)
 	if err != nil {
 		return err
 	}

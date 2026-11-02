@@ -10,9 +10,9 @@
 
 ## 导入 Clash Verge
 
-在「订阅」选择「Clash Verge / Rev（Mihomo）」格式，再复制订阅链接，在客户端添加远程配置并更新。使用支持 VLESS/REALITY 的 Mihomo 内核。v2rayN 保持默认格式；之前复制的 Base64 链接不会自动变为 Clash 配置。
+在「订阅」选择「Clash Verge / Rev（Mihomo）」格式，再复制订阅链接，在客户端添加远程配置并更新。使用支持 VLESS、REALITY 和 XHTTP 的 Mihomo v1.19.22 或更新内核。v2rayN 保持默认格式（需使用支持 XHTTP 的近期版本）；之前复制的 Base64 链接不会自动变为 Clash 配置。
 
-Clash 输出是完整配置，支持本项目生成的 VLESS、VMess、Trojan 的 TCP、WebSocket、gRPC，以及 VLESS/REALITY。使用未支持的传输时明确拒绝导出。原订阅的令牌、范围、名称、顺序和就绪校验保持一致。转换在本 VPS 内完成，不把订阅或密钥发送给第三方转换服务。
+Clash 输出是完整配置，支持本项目生成的 VLESS、VMess、Trojan 的 TCP、WebSocket、gRPC、HTTPUpgrade，以及 VLESS 的 XHTTP；REALITY 和 UDP 默认启用。Mihomo 不支持 VMess/Trojan + XHTTP，且对 Trojan 强制 TLS；这些入口保留在 Base64/v2rayN 订阅中，Clash 导出会跳过并在响应头标记。其他未支持的传输明确拒绝导出。原订阅的令牌、范围、名称、顺序和就绪校验保持一致。转换在本 VPS 内完成，不把订阅或密钥发送给第三方转换服务。
 
 没有就绪入口时返回非成功状态，不生成假节点。不自动加入 DIRECT 后备，不降低证书验证，不把 unknown 标为住宅。用户仍可主动选择订阅内已开启的「VPS 本机直出」，它是通过 VPS 接入的独立节点。
 

@@ -12,7 +12,7 @@ import SkeletonBlock from "@/components/SkeletonBlock.vue";
 import StatusBadge from "@/components/StatusBadge.vue";
 import ToggleSwitch from "@/components/ToggleSwitch.vue";
 import UiButton from "@/components/UiButton.vue";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatVersion } from "@/lib/format";
 import { themeChoice, setTheme, type ThemeChoice } from "@/lib/theme";
 import { toast, toastError } from "@/lib/toast";
 
@@ -160,7 +160,7 @@ const themeOptions: { value: ThemeChoice; label: string }[] = [
           <div class="space-y-3">
             <div class="flex flex-wrap items-center gap-2 text-sm">
               <span class="text-muted">当前版本</span>
-              <b class="font-mono">{{ settings?.version || "dev" }}</b>
+              <b class="font-mono">{{ formatVersion(settings?.version) }}</b>
               <StatusBadge
                 v-if="updateStatus"
                 :label="updateStatus.has_update ? `可更新至 ${updateStatus.latest}` : '已是最新'"
@@ -273,7 +273,7 @@ const themeOptions: { value: ThemeChoice; label: string }[] = [
               <span>·</span>
               <span>单二进制分发</span>
               <span>·</span>
-              <span>{{ settings?.version || "dev" }}</span>
+              <span>{{ formatVersion(settings?.version) }}</span>
             </div>
           </div>
         </Panel>

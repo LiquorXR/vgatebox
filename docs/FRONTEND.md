@@ -75,6 +75,13 @@ Vite 默认把 `/api`、`/sub`、`/login` 代理到 `http://127.0.0.1:8899`。�
 - 资源用相对路径；根路径使用 `/assets/...`，`/next/` 别名使用 `/next/assets/...`，两者指向同一份构建产物。
 - API 前缀由 `src/api/client.ts` 根据当前 `location.pathname` 推导，例如 `/aB3/` 或 `/aB3/next/` → `/aB3/`。
 
+## 反向代理
+
+- 订阅地址和二维码优先使用 `FANOUT_PUBLIC_URL`（只填外部 origin，例如 `https://panel.example.com`）。
+- 未显式设置时，只有在请求来自本机/私有网段或 `FANOUT_TRUSTED_PROXIES` 中配置的代理时，才接受 `Forwarded`、`X-Forwarded-Proto`、`X-Forwarded-Host`、`X-Forwarded-Port`；公网客户端伪造这些头不会改变生成的链接。
+- 代理额外增加路径前缀时，应把该前缀配置为管理访问路径，而不是写进 `FANOUT_PUBLIC_URL`。
+- 反向代理只代理管理页面时，节点链接优先使用 `FANOUT_PUBLIC_IP` 或自动探测到的公网 IPv4；探测不到时才回退到外部 origin 的主机名。
+
 ## 服务端行为
 
 - 新 UI 的 HTML：`Cache-Control: no-store`，严格 CSP（`script-src 'self'`）。

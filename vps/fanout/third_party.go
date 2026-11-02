@@ -173,7 +173,7 @@ func (n *Native) saveThirdParty(id int, p ThirdPartyProxy, enabled bool, serverN
 			used[t.Port] = true
 		}
 		var err error
-		ib, err = n.prepareInbound(NewInboundSpec{Protocol: "vless", Network: "tcp", Security: "reality", Vision: true, Remark: "第三方 SOCKS5", Dest: serverName + ":443", ServerNames: serverName, Fingerprint: "chrome"}, used)
+		ib, err = n.prepareInbound(defaultEncryptedInboundSpec("第三方 SOCKS5", serverName+":443", serverName), used)
 		if err != nil {
 			return 0, fmt.Errorf("无法创建加密接入，请核对 REALITY 目标和可用端口")
 		}

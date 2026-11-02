@@ -3,7 +3,7 @@ import { computed } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { navGroups, navItems } from "@/lib/nav";
 import { useConsoleQuery } from "@/api/queries";
-import { formatNumber } from "@/lib/format";
+import { formatNumber, formatVersion } from "@/lib/format";
 import ProgressBar from "./ProgressBar.vue";
 
 const route = useRoute();
@@ -79,7 +79,7 @@ function badgeValue(kind: "ready" | "candidates" | undefined) {
         <ProgressBar :value="percent" size="sm" label="出口就绪进度" class="mt-2" />
         <div class="mt-2 flex items-center justify-between text-[10px] text-faint">
           <span>{{ formatNumber(candidates) }} 个候选</span>
-          <span>v{{ version }}</span>
+          <span>{{ formatVersion(version) }}</span>
         </div>
       </div>
     </div>

@@ -85,7 +85,7 @@ vgatebox uninstall --purge --legacy
 - 国家与住宅类型分别判断。`unknown` 表示类型未知，不能视为已验证住宅 IP；手填国家、城市和备注不是检测证据。
 - VPS 转发的订阅和 SOCKS5 需要 VPS 持续运行；原始 SSTP 导出需消费端自行支持相应协议。
 - 管理地址、订阅和备份含私密信息，请妥善保存。公网管理建议使用 HTTPS 反向代理或 SSH 转发。
-- 当前代理链路面向 TCP / IPv4，不提供未经验证的 UDP、IPv6 或 XHTTP 支持。
+- 当前代理链路面向 TCP / IPv4；内置 Xray 支持 VLESS、VMess、Trojan 的 TCP、WebSocket、gRPC、HTTPUpgrade 和 XHTTP 组合，默认新建入口为 VLESS + XHTTP + REALITY。UDP 在 IPv4 下全链路启用（v2rayN 需在客户端启用 UDP）；Mihomo 的 XHTTP 仅支持 VLESS，VMess/Trojan + XHTTP 会保留在 v2rayN/Xray 订阅中，Clash 订阅跳过并提示。第三方 SOCKS5 的 UDP 能力取决于上游。
 
 ## 文档
 

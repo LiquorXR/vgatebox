@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/binary"
+	"io"
 	"net"
 	"testing"
+	"time"
 )
 
 func TestParseUDPReqHeaderIPv4(t *testing.T) {
@@ -73,5 +76,89 @@ func TestSocksReplyWith(t *testing.T) {
 		if b[i] != want[i] {
 			t.Fatalf("bad reply: %v", b)
 		}
+	}
+}
+
+func TestServeSocksUDPAssociateRelaysPackets(t *testing.T) {
+	echo, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = echo.Close() })
+	go func() {
+		buf := make([]byte, 2048)
+		for {
+			n, addr, err := echo.ReadFromUDP(buf)
+			if err != nil {
+				return
+			}
+			_, _ = echo.WriteToUDP(buf[:n], addr)
+		}
+	}()
+
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		serveSocks(conn, nil, func(network, _ string) (net.Conn, error) {
+			if network != "udp" {
+				return nil, errCmdNotSupported
+			}
+			return net.Dial("udp4", echo.LocalAddr().String())
+		})
+	}()
+
+	control, err := net.Dial("tcp4", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer control.Close()
+	_ = control.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := control.Write([]byte{socksVer5, 1, authNone}); err != nil {
+		t.Fatal(err)
+	}
+	hello := make([]byte, 2)
+	if _, err := io.ReadFull(control, hello); err != nil || hello[0] != socksVer5 || hello[1] != authNone {
+		t.Fatalf("handshake failed: %v %v", hello, err)
+	}
+	if _, err := control.Write([]byte{socksVer5, cmdUDPAssociate, 0, atypIPv4, 0, 0, 0, 0, 0, 0}); err != nil {
+		t.Fatal(err)
+	}
+	reply := make([]byte, 10)
+	if _, err := io.ReadFull(control, reply); err != nil {
+		t.Fatal(err)
+	}
+	if reply[0] != socksVer5 || reply[1] != repSuccess {
+		t.Fatalf("UDP associate rejected: %v", reply)
+	}
+	bnd := &net.UDPAddr{IP: net.IP(reply[4:8]), Port: int(binary.BigEndian.Uint16(reply[8:10]))}
+	relay, err := net.DialUDP("udp4", nil, bnd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer relay.Close()
+	_ = relay.SetDeadline(time.Now().Add(5 * time.Second))
+
+	target := echo.LocalAddr().(*net.UDPAddr)
+	payload := []byte("udp-through-socks")
+	packet := []byte{0, 0, 0, atypIPv4, 127, 0, 0, 1, byte(target.Port >> 8), byte(target.Port)}
+	packet = append(packet, payload...)
+	if _, err := relay.Write(packet); err != nil {
+		t.Fatal(err)
+	}
+	response := make([]byte, 2048)
+	n, err := relay.Read(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, _, got, ok := parseUDPReqHeader(response[:n])
+	if !ok || string(got) != string(payload) {
+		t.Fatalf("UDP payload not relayed: ok=%v payload=%q", ok, got)
 	}
 }

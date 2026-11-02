@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -27,62 +28,119 @@ func normalizeVmessShare(link string) (string,error) {
 	return u.String(),nil
 }
 
+type clashUnsupportedError struct{ reason string }
+
+func (e *clashUnsupportedError) Error() string { return e.reason }
+
 func clashProxy(link string) (map[string]any,error) {
 	link,err:=normalizeVmessShare(link);if err!=nil{return nil,err}
 	u,err:=url.Parse(link)
 	if err!=nil || u.User==nil || u.Hostname()=="" {return nil,fmt.Errorf("invalid_share_link")}
 	port,err:=strconv.Atoi(u.Port());if err!=nil || port<1 || port>65535{return nil,fmt.Errorf("invalid_share_port")}
-	q:=u.Query();p:=map[string]any{"name":u.Fragment,"server":u.Hostname(),"port":port,"udp":false}
-	transport:=q.Get("type");if transport==""{transport="tcp"}
-	if transport!="tcp" && transport!="ws" && transport!="grpc" {return nil,fmt.Errorf("unsupported_clash_transport")}
-	switch u.Scheme {
+	q:=u.Query()
+	protocol:=strings.ToLower(u.Scheme)
+	switch protocol {case "vless","vmess","trojan":default:return nil,fmt.Errorf("unsupported_clash_protocol")}
+	transport:=strings.ToLower(strings.TrimSpace(q.Get("type")));if transport=="" {transport="tcp"}
+	p:=map[string]any{"name":u.Fragment,"server":u.Hostname(),"port":port,"udp":true}
+	switch protocol {
 	case "vless":
-		p["type"],p["uuid"]= "vless",u.User.Username()
-		if f:=q.Get("flow");f!="" {if f!="xtls-rprx-vision" {return nil,fmt.Errorf("unsupported_clash_flow")};p["flow"]=f}
+		p["type"],p["uuid"]="vless",u.User.Username()
 	case "vmess":
 		p["type"],p["uuid"],p["cipher"],p["alterId"]="vmess",u.User.Username(),"auto",0
 		if a:=q.Get("alterId");a!="" {n,e:=strconv.Atoi(a);if e!=nil||n<0{return nil,fmt.Errorf("invalid_vmess_alter_id")};p["alterId"]=n}
 		if cipher:=q.Get("encryption");cipher!="" {p["cipher"]=cipher}
 	case "trojan":
 		p["type"],p["password"]="trojan",u.User.Username()
-	default:return nil,fmt.Errorf("unsupported_clash_protocol")
 	}
 	if u.User.Username()=="" {return nil,fmt.Errorf("missing_share_credential")}
-	security:=q.Get("security");if security=="" {security="none";if u.Scheme=="trojan"{security="tls"}}
+	switch transport {
+	case "tcp","raw":
+	case "ws":
+		p["network"]="ws";p["ws-opts"]=clashWSOpts(q,false)
+	case "httpupgrade","http-upgrade":
+		p["network"]="ws";p["ws-opts"]=clashWSOpts(q,true)
+	case "grpc":
+		p["network"]="grpc";p["grpc-opts"]=map[string]any{"grpc-service-name":strings.TrimPrefix(q.Get("serviceName"),"/")}
+	case "xhttp":
+		if protocol!="vless" {
+			return nil,&clashUnsupportedError{reason:"Mihomo only supports XHTTP with VLESS"}
+		}
+		p["network"]="xhttp";p["xhttp-opts"]=clashXHTTPOpts(q)
+	default:
+		return nil,fmt.Errorf("unsupported_clash_transport")
+	}
+	security:=strings.ToLower(strings.TrimSpace(q.Get("security")))
+	if security=="" {security="none";if protocol=="trojan"{security="tls"}}
 	if security!="none" && security!="tls" && security!="reality" {return nil,fmt.Errorf("unsupported_clash_security")}
-	if u.Scheme=="trojan" && security!="tls" {return nil,fmt.Errorf("unsupported_clash_security")}
+	if protocol=="trojan" && security=="none" {
+		return nil,&clashUnsupportedError{reason:"Mihomo forces TLS for Trojan"}
+	}
 	if security!="none" {
 		p["tls"],p["skip-cert-verify"]=true,false
-		key:="servername";if u.Scheme=="trojan" {key="sni"}
+		key:="servername";if protocol=="trojan" {key="sni"}
 		if sni:=q.Get("sni");sni!="" {p[key]=sni}
 		if fp:=q.Get("fp");fp!="" {p["client-fingerprint"]=fp} else if security=="reality" {p["client-fingerprint"]="chrome"}
 		if alpn:=q.Get("alpn");alpn!="" {p["alpn"]=strings.Split(alpn,",")}
-		if pin:=q.Get("pinSHA256");pin!="" {
-			b,e:=hex.DecodeString(strings.ReplaceAll(pin,":",""));if e!=nil || len(b)!=32{return nil,fmt.Errorf("invalid_certificate_pin")};p["fingerprint"]=hex.EncodeToString(b)
+		if pin:=q.Get("pcs");pin!="" {
+			normalized,e:=normalizeCertificatePin(pin);if e!=nil{return nil,e};p["fingerprint"]=normalized
+		} else if pin:=q.Get("pinSHA256");pin!="" {
+			normalized,e:=normalizeCertificatePin(pin);if e!=nil{return nil,e};p["fingerprint"]=normalized
 		}
 	}
 	if security=="reality" {
-		if u.Scheme!="vless" {return nil,fmt.Errorf("unsupported_clash_reality")}
 		key,e:=base64.RawURLEncoding.DecodeString(q.Get("pbk"));if e!=nil||len(key)!=32{return nil,fmt.Errorf("invalid_reality_key")}
 		sid:=q.Get("sid");if _,e:=hex.DecodeString(sid);e!=nil||len(sid)>16{return nil,fmt.Errorf("invalid_reality_short_id")}
 		p["reality-opts"]=map[string]any{"public-key":q.Get("pbk"),"short-id":sid}
 	}
-	if transport!="tcp" {p["network"]=transport}
-	if transport=="ws" {path:=q.Get("path");if path==""{path="/"};ws:=map[string]any{"path":path};if host:=q.Get("host");host!="" {ws["headers"]=map[string]string{"Host":host}};p["ws-opts"]=ws}
-	if transport=="grpc" {p["grpc-opts"]=map[string]string{"grpc-service-name":q.Get("serviceName")}}
+	if flow:=q.Get("flow");flow!="" {
+		if protocol!="vless" || flow!="xtls-rprx-vision" {return nil,fmt.Errorf("unsupported_clash_flow")}
+		p["flow"]=flow
+	}
+	// XUDP gives Mihomo a UDP path that also works over XHTTP; it is a
+	// separate wire encoding from the proxy protocol and is safe for TCP too.
+	if protocol=="vless" || protocol=="vmess" {p["packet-encoding"]="xudp"}
 	return p,nil
+}
+
+func clashWSOpts(q url.Values, upgrade bool) map[string]any {
+	path:=q.Get("path");if path=="" {path="/"}
+	opts:=map[string]any{"path":path}
+	if host:=q.Get("host");host!="" {opts["headers"]=map[string]string{"Host":host}}
+	if upgrade {opts["v2ray-http-upgrade"]=true}
+	return opts
+}
+
+func clashXHTTPOpts(q url.Values) map[string]any {
+	path:=q.Get("path");if path=="" {path="/"}
+	opts:=map[string]any{"path":path}
+	if host:=q.Get("host");host!="" {opts["host"]=host}
+	if mode:=q.Get("mode");mode!="" {opts["mode"]=mode}
+	return opts
+}
+
+func normalizeCertificatePin(raw string) (string,error) {
+	b,err:=hex.DecodeString(strings.ReplaceAll(strings.TrimSpace(raw),":",""))
+	if err!=nil || len(b)!=32 {return "",fmt.Errorf("invalid_certificate_pin")}
+	return hex.EncodeToString(b),nil
 }
 
 // JSON is a YAML 1.2 document and avoids injecting user names or credentials
 // into YAML syntax. Mihomo consumes this complete profile directly.
-func renderClash(links []string) ([]byte,error) {
-	proxies:=[]map[string]any{};names:=[]string{}
+func renderClash(links []string) ([]byte,[]string,error) {
+	proxies:=[]map[string]any{};names:=[]string{};omitted:=[]string{}
 	used:=map[string]bool{"vgatebox":true,"DIRECT":true,"REJECT":true,"GLOBAL":true}
 	for i,link:=range links {
-		p,err:=clashProxy(link);if err!=nil {return nil,fmt.Errorf("第 %d 个入口无法导出 Clash 配置（%s）",i+1,err)}
+		p,err:=clashProxy(link)
+		if err!=nil {
+			var unsupported *clashUnsupportedError
+			if errors.As(err,&unsupported) {omitted=append(omitted,fmt.Sprintf("%d",i+1));continue}
+			return nil,nil,fmt.Errorf("第 %d 个入口无法导出 Clash 配置（%s）",i+1,err)
+		}
 		name,_:=p["name"].(string);name=strings.TrimSpace(name);if name==""{name=fmt.Sprintf("节点 %02d",i+1)}
 		base:=name;for n:=2;used[name];n++ {name=fmt.Sprintf("%s · %d",base,n)}
 		used[name]=true;p["name"]=name;names=append(names,name);proxies=append(proxies,p)
 	}
-	return json.MarshalIndent(map[string]any{"mode":"rule","log-level":"warning","ipv6":false,"proxies":proxies,"proxy-groups":[]any{map[string]any{"name":"vgatebox","type":"select","proxies":names}},"rules":[]string{"MATCH,vgatebox"}},"","  ")
+	if len(proxies)==0 {return nil,omitted,fmt.Errorf("没有 Mihomo 可表达的节点")}
+	blob,err:=json.MarshalIndent(map[string]any{"mode":"rule","log-level":"warning","ipv6":false,"proxies":proxies,"proxy-groups":[]any{map[string]any{"name":"vgatebox","type":"select","proxies":names}},"rules":[]string{"MATCH,vgatebox"}},"","  ")
+	return blob,omitted,err
 }

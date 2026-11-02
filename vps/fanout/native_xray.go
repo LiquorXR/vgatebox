@@ -152,7 +152,7 @@ func nativeInboundJSON(ib *nativeInbound) map[string]any {
 				accounts = append(accounts, map[string]any{"user": c.Email, "pass": c.Password})
 			}
 		}
-		settings = map[string]any{"auth": "password", "accounts": accounts, "udp": false}
+		settings = map[string]any{"auth": "password", "accounts": accounts, "udp": true}
 	}
 	if ib.Protocol == "vless" {
 		settings["decryption"] = "none"

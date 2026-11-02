@@ -549,10 +549,7 @@ func publicHost(r *http.Request) string {
 	if ip := hostPublicIP(); ip != "" {
 		return ip
 	}
-	host := r.Host
-	if i := strings.LastIndex(host, ":"); i > 0 {
-		host = host[:i]
-	}
+	host := publicHostWithoutPort(r)
 	if host == "" || host == "127.0.0.1" || host == "localhost" {
 		return "<服务器IP>"
 	}

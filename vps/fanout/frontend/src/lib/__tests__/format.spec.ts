@@ -6,6 +6,7 @@ import {
   formatLatency,
   formatNumber,
   formatRelative,
+  formatVersion,
   pad2,
   truncate,
 } from "../format";
@@ -24,6 +25,14 @@ describe("format", () => {
     expect(formatLatency(42.4)).toBe("42 ms");
     expect(formatLatency(0)).toBe("—");
     expect(truncate("abcdefghij", 5)).toBe("abcd…");
+  });
+
+  it("formats a single version prefix", () => {
+    expect(formatVersion("v1.2.4")).toBe("v1.2.4");
+    expect(formatVersion("1.2.4")).toBe("v1.2.4");
+    expect(formatVersion("vv1.2.4")).toBe("v1.2.4");
+    expect(formatVersion("dev")).toBe("dev");
+    expect(formatVersion("")).toBe("dev");
   });
 
   it("formats relative times and durations", () => {

@@ -88,6 +88,12 @@ export function formatNumber(value: number | undefined | null): string {
   return value.toLocaleString("zh-CN");
 }
 
+export function formatVersion(value: string | undefined | null): string {
+  const version = (value || "").trim();
+  if (!version || version === "dev") return "dev";
+  return `v${version.replace(/^v+/i, "")}`;
+}
+
 export function formatMbps(value: number | undefined | null): string {
   if (!value || !Number.isFinite(value)) return "—";
   return `${value.toFixed(1)} Mbps`;

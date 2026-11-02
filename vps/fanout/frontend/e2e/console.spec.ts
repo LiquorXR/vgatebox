@@ -10,6 +10,8 @@ test("root loads the new console and exits page", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "总览" })).toBeVisible();
   await expect(page.getByText("就绪出口").first()).toBeVisible();
   await expect(page.getByText("2 / 4").first()).toBeVisible();
+  await expect(page.getByText("vv0.9.2")).toHaveCount(0);
+  await expect(page.getByText("v0.9.2").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "刷新来源" })).toHaveCount(1);
   await expect(page.getByRole("button", { name: "复制订阅" })).toHaveCount(1);
 
@@ -105,6 +107,8 @@ test("access tabs render SSTP and third-party resources", async ({ page }) => {
   await page.getByRole("button", { name: "新增接入入口" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.locator('select').filter({ hasText: "VLESS" }).first()).toBeVisible();
+  await expect(page.getByRole("dialog").locator("select").nth(2)).toHaveValue("xhttp");
+  await expect(page.getByRole("dialog").locator("select").nth(3)).toHaveValue("reality");
   await page.getByRole("button", { name: "取消" }).click();
 
   await page

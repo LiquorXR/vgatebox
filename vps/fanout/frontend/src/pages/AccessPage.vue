@@ -739,7 +739,7 @@ const deleteMutation = useMutation({
         </div>
 
         <div class="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
-          <p class="text-[11px] text-faint">外部端口需在防火墙放行；SOCKS5 连接本身不加密。</p>
+          <p class="text-[11px] text-faint">外部端口需在防火墙放行 TCP/UDP；SOCKS5 连接本身不加密。</p>
           <UiButton
             size="sm"
             :loading="socksMutation.isPending.value"

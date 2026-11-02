@@ -85,8 +85,10 @@ func (n *Native) ensureSlotInbounds(tunnels []*Tunnel, serverName string) error 
 				return err
 			}
 		}
-		ib, err := n.prepareInbound(NewInboundSpec{realityChecked: true, Protocol: "vless", Network: "tcp", Security: "reality", Port: port,
-			Remark: fmt.Sprintf("出口 %02d", v.Slot), Dest: serverName + ":443", ServerNames: serverName, Fingerprint: "chrome"}, used)
+		spec := defaultEncryptedInboundSpec(fmt.Sprintf("出口 %02d", v.Slot), serverName+":443", serverName)
+		spec.realityChecked = true
+		spec.Port = port
+		ib, err := n.prepareInbound(spec, used)
 		if err != nil {
 			return err
 		}

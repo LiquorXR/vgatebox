@@ -209,6 +209,37 @@ func TestStreamSettingsReality(t *testing.T) {
 	}
 }
 
+func TestDefaultEncryptedInboundSpec(t *testing.T) {
+	spec := defaultEncryptedInboundSpec("默认", "example.com:443", "example.com")
+	if spec.Protocol != "vless" || spec.Network != "xhttp" || spec.Security != "reality" || spec.Vision || spec.Fingerprint != "chrome" {
+		t.Fatalf("unexpected default inbound spec: %+v", spec)
+	}
+}
+
+func TestShareLinkCarriesXHTTPAndHTTPUpgradeParameters(t *testing.T) {
+	c := nativeClient{ID: "uuid-1", Password: "pw-1", Enable: true}
+	xhttp := shareLink(&nativeInbound{
+		Port: 443, Protocol: "vless", Network: "xhttp", Path: "/xhttp", Host: "cdn.example",
+		Security: "reality", Remark: "xhttp",
+		Reality: &realityConfig{ServerNames: []string{"example.com"}, PublicKey: "PBK", ShortIDs: []string{"sid1"}, Fingerprint: "chrome"},
+	}, c, "203.0.113.1")
+	for _, want := range []string{"type=xhttp", "path=%2Fxhttp", "host=cdn.example", "security=reality", "pbk=PBK", "sid=sid1"} {
+		if !strings.Contains(xhttp, want) {
+			t.Errorf("XHTTP link missing %s: %s", want, xhttp)
+		}
+	}
+	upgrade := shareLink(&nativeInbound{
+		Port: 443, Protocol: "vmess", Network: "httpupgrade", Path: "/upgrade", Host: "cdn.example",
+		Security: "tls", Remark: "upgrade",
+		TLS: &tlsConfig{ServerName: "example.com", SelfSigned: true, CertSha256: "AABB"},
+	}, c, "203.0.113.1")
+	for _, want := range []string{"vmess://", "type=httpupgrade", "path=%2Fupgrade", "host=cdn.example", "pcs=AABB"} {
+		if !strings.Contains(upgrade, want) {
+			t.Errorf("HTTPUpgrade VMess link missing %s: %s", want, upgrade)
+		}
+	}
+}
+
 func TestShareLinkCarriesSecurityParams(t *testing.T) {
 	c := nativeClient{ID: "uuid-1", Enable: true, Flow: "xtls-rprx-vision"}
 
@@ -231,7 +262,7 @@ func TestShareLinkCarriesSecurityParams(t *testing.T) {
 		Port: 200, Protocol: "vless", Network: "tcp", Security: "tls", Remark: "t",
 		TLS: &tlsConfig{ServerName: "demo.local", SelfSigned: true, CertSha256: "AABB"},
 	}, nativeClient{ID: "u", Enable: true}, "h")
-	if !strings.Contains(tl, "pinSHA256=AABB") {
-		t.Errorf("自签 TLS 链接要带证书指纹: %s", tl)
+	if !strings.Contains(tl, "pcs=AABB") || strings.Contains(tl, "pinSHA256=") {
+		t.Errorf("自签 TLS 链接要带标准证书指纹: %s", tl)
 	}
 }

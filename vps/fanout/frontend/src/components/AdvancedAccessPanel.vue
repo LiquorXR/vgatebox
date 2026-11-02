@@ -111,7 +111,7 @@ const createOpen = ref(false);
 const createForm = reactive({
   slot: 0,
   protocol: "vless",
-  network: "tcp",
+  network: "xhttp",
   security: "reality",
   vision: false,
   port: "",
@@ -140,7 +140,7 @@ function openCreate() {
   Object.assign(createForm, {
     slot: props.exits.find((exit) => exit.status === "up")?.slot || 0,
     protocol: "vless",
-    network: "tcp",
+    network: "xhttp",
     security: "reality",
     vision: false,
     port: "",
@@ -568,6 +568,12 @@ const createSecurityOptions = computed(() =>
           <label class="block"><span class="mb-1 block text-xs font-medium">传输</span><select v-model="createForm.network" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-2 text-sm"><option value="tcp">TCP</option><option value="ws">WebSocket</option><option value="grpc">gRPC</option><option value="httpupgrade">HTTPUpgrade</option><option value="xhttp">XHTTP</option></select></label>
           <label class="block"><span class="mb-1 block text-xs font-medium">安全</span><select v-model="createForm.security" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-2 text-sm"><option v-for="option in createSecurityOptions" :key="option.value" :value="option.value" :disabled="option.disabled">{{ option.label }}</option></select></label>
         </div>
+        <p v-if="createForm.network === 'xhttp' && createForm.protocol !== 'vless'" class="rounded-lg border border-warn/25 bg-warn-soft px-3 py-2 text-[11px] leading-relaxed text-warn">
+          Mihomo 不支持 {{ createForm.protocol.toUpperCase() }} + XHTTP；该入口会进入 v2rayN/Xray 订阅，但 Clash 订阅会跳过它。
+        </p>
+        <p v-if="createForm.protocol === 'trojan' && createForm.security === 'none'" class="rounded-lg border border-warn/25 bg-warn-soft px-3 py-2 text-[11px] leading-relaxed text-warn">
+          Mihomo 对 Trojan 强制启用 TLS；该入口会进入 v2rayN/Xray 订阅，但 Clash 订阅会跳过它。
+        </p>
         <label v-if="visionAllowed" class="flex items-center gap-2 text-xs text-muted"><input v-model="createForm.vision" type="checkbox" class="accent-accent" />启用 xtls-rprx-vision</label>
         <div v-if="createForm.security === 'tls'" class="grid gap-3 sm:grid-cols-3">
           <label class="block"><span class="mb-1 block text-[11px] text-faint">域名 SNI</span><input v-model="createForm.sni" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="留空使用 localhost" /></label>
