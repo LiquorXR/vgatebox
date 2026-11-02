@@ -135,7 +135,7 @@ python3 scripts/toolbox.py --config config/settings.json --env-file /path/intell
 - **Hysteria2**：`hysteria` 协议 + `hysteria` 传输 + TLS，必须 version 2。支持自签证书、Salamander 混淆、端口跳跃、Brutal 上下行和 masquerade。
 - 自签证书的 VLESS 链接使用 `pcs` 指纹；Hysteria2 链接同时带 `insecure=1` 与 `pinSHA256`，Clash 同时输出 `fingerprint` 和 `skip-cert-verify: true`。
 - 端口跳跃只写入订阅参数；服务端仍需用 iptables/nftables 把整个 UDP 范围重定向到监听端口，并放行防火墙/安全组。
-- Mihomo 无法表示 VLESS + mKCP 或 VLESS + Hysteria2 传输；VLESS + mKCP 仍进入 Base64/v2rayN 订阅，VLESS + Hysteria2 没有标准 URI，不进入订阅。Clash 会跳过这些入口。
+- Mihomo 无法表示 VLESS + mKCP 或 VLESS + Hysteria2 传输；VLESS + mKCP 仍进入 Base64/v2rayN 订阅，VLESS + Hysteria2 没有标准 URI，不进入订阅。Clash 会跳过这些入口。Clash 的 REALITY 节点会写入 `support-x25519mlkem768: true`，以匹配固定 Xray 26.x 服务端的新握手要求；Mihomo 需 v1.19.33 或更新。
 - Hysteria2 的 UDP 端口分配会同时检查 UDP 占用；端口跳跃范围会直接作为 Xray 入站监听范围，范围过大会消耗文件描述符和内存，云防火墙需放行整个范围。也可以只监听单端口，用 iptables/nftables 把范围重定向过去。
 
 ## 验收与限制

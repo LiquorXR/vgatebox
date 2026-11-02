@@ -51,8 +51,9 @@ func TestClashProfilePreservesRealityOrderNamesAndNoDirectFallback(t *testing.T)
 		if cfg.Groups[0].Proxies[i] != name || p["udp"] != true || p["skip-cert-verify"] != false || p["client-fingerprint"] != "chrome" || p["flow"] != "xtls-rprx-vision" || p["packet-encoding"] != "xudp" {
 			t.Fatal("transport or ordering changed")
 		}
-		if p["reality-opts"].(map[string]any)["short-id"] != "12345678" {
-			t.Fatal("REALITY credentials lost")
+		reality := p["reality-opts"].(map[string]any)
+		if reality["short-id"] != "12345678" || reality["support-x25519mlkem768"] != true {
+			t.Fatal("REALITY credentials or ML-KEM compatibility lost")
 		}
 	}
 }

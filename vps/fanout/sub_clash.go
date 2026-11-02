@@ -181,7 +181,13 @@ func clashProxy(link string) (map[string]any, error) {
 		if _, e := hex.DecodeString(sid); e != nil || len(sid) > 16 {
 			return nil, fmt.Errorf("invalid_reality_short_id")
 		}
-		p["reality-opts"] = map[string]any{"public-key": q.Get("pbk"), "short-id": sid}
+		// Xray 26.9+ 的 REALITY 服务端要求 ClientHello 携带 X25519MLKEM768；
+		// Mihomo 默认仍会移除该 key share，显式开启后才能完成认证。
+		p["reality-opts"] = map[string]any{
+			"public-key":             q.Get("pbk"),
+			"short-id":               sid,
+			"support-x25519mlkem768": true,
+		}
 	}
 	if flow := q.Get("flow"); flow != "" {
 		if protocol != "vless" || flow != "xtls-rprx-vision" {
