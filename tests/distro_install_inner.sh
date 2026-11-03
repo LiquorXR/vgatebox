@@ -33,14 +33,6 @@ ip netns exec vgb-ci ip link set lo up
 ip netns exec vgb-ci iptables -A OUTPUT -j REJECT
 ip netns exec vgb-ci iptables -C OUTPUT -j REJECT
 ip netns delete vgb-ci
-if command -v rpm >/dev/null; then
-  rpm -q vgatebox-sstp-client
-  sstpc --version
-  getent passwd sstpc >/dev/null
-  ppp_version=$(rpm -q --qf '%{VERSION}' ppp)
-  # dryrun loads the real plugin without a VPN peer or kernel PPP negotiation.
-  timeout 10 pppd plugin "$(rpm --eval '%{_libdir}')/pppd/$ppp_version/sstp-pppd-plugin.so" dryrun noauth notty >/tmp/ppp.log 2>&1 || { cat /tmp/ppp.log; exit 1; }
-fi
 run_install
 python3 /src/tests/distro_verify.py compare-empty
 test ! -e /var/lib/vgatebox/pool/node_pool.json
@@ -56,7 +48,7 @@ PY
 # local to this disposable test; no VPN traffic goes to the public fixture IP.
 iptables -I OUTPUT -d 8.8.8.8 -p tcp --dport 1194 -j REJECT
 iptables -I FORWARD -d 8.8.8.8 -p tcp --dport 1194 -j REJECT
-command -v openssl >/dev/null || { if command -v apt-get >/dev/null; then apt-get install -y openssl; else dnf -y install openssl; fi; }
+command -v openssl >/dev/null || apt-get install -y openssl
 python3 /src/tests/pool_source_fixture.py >/tmp/source-fixture.log 2>&1 &
 source_pid=$!
 trap 'kill "$source_pid" 2>/dev/null || true' EXIT

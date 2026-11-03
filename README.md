@@ -13,7 +13,7 @@
 
 需要 root、Linux x86_64、systemd 和可用的 TUN/network namespace。支持范围与各系统测试结果见 [系统兼容性](docs/LINUX_SUPPORT.md)。
 
-安装入口始终使用最新正式版，版本与发布记录见 [Releases](https://github.com/LiquorXR/vgatebox/releases/latest)。统一安装入口支持 Debian 12/13、Ubuntu 22.04/24.04 和 CentOS Stream 9/10。六个系统已通过自动安装、更新及卸载测试；CentOS 独立 VPS 验收尚未完成。CentOS 7/8（含 Stream 8）不在支持范围。
+安装入口始终使用最新正式版，版本与发布记录见 [Releases](https://github.com/LiquorXR/vgatebox/releases/latest)。统一安装入口支持 Debian 12/13、Ubuntu 22.04/24.04 和 CentOS Stream 9/10。Debian/Ubuntu 四个系统已通过自动安装、更新及卸载测试；CentOS Stream 保留安装支持，但不再纳入自动测试，独立 VPS 验收尚未完成。CentOS 7/8（含 Stream 8）不在支持范围。
 
 以上系统均以 root 执行同一段命令，自动选择 APT 或 DNF：
 

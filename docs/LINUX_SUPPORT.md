@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | Debian 12 / 13 | 发行版 APT 仓库 | 自动新装、更新、卸载通过；Debian 12 有此前 VPS 记录 |
 | Ubuntu 22.04 / 24.04 | 发行版 APT 仓库（含 Universe） | 自动新装、更新、卸载通过 |
-| CentOS Stream 9 / 10 | 系统仓库、EPEL、固定上游 SSTP 源码 | 自动新装、更新、卸载通过；独立 VPS 待验收 |
+| CentOS Stream 9 / 10 | 系统仓库、EPEL、固定上游 SSTP 源码 | 保留安装支持；不再纳入 CI 自动测试，独立 VPS 未验收 |
 
 统一安装入口使用同一套命令，命令见 [README](../README.md#安装)。ARM64、CentOS 7、CentOS Linux 8、OpenVZ 等受限容器和非 systemd 系统不在支持范围；Rocky/Alma/RHEL 尚未单独验收。
 
@@ -26,6 +26,6 @@ RPM 创建上游所需的 `sstpc` 系统用户与组供连接后降权，已有�
 
 ## 自动验收边界
 
-矩阵使用各发行版原始容器，安装真实依赖、启动 systemd、执行完整包新装与同版本更新，检查随机管理身份、真实订阅 HTTPS 链路、隔离网络规则和完整卸载；CentOS 额外验证本机 RPM 及 PPP 插件加载。
+矩阵使用 Debian 12/13 和 Ubuntu 22.04/24.04 的原始容器，安装真实依赖、启动 systemd、执行完整包新装与同版本更新，检查随机管理身份、真实订阅 HTTPS 链路、隔离网络规则和完整卸载。
 
-特权容器共享 GitHub runner 内核，不替代真实 VPS 的 SELinux enforcing、firewalld、TUN/PPP 模块、服务商网络与 VPN Gate 正向连接验收。当前没有 CentOS VPS，未将这些项目计为通过。
+特权容器共享 GitHub runner 内核，不替代真实 VPS 的 SELinux enforcing、firewalld、TUN/PPP 模块、服务商网络与 VPN Gate 正向连接验收。
