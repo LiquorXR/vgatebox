@@ -46,7 +46,7 @@ def enrich(nodes: list, settings: dict, cache_path: Path, transport=get_json, pr
             else:
                 protocol["intelligence_error"] = "intelligence_budget_or_service_unavailable"
                 continue
-            image = classify(raw, settings, provider, ip)
+            image = classify(raw, provider, ip)
             image["identity_assurance"] = "normal_https_certificate_validation"
             image["expires_at"] = entry["expires_at"] if cached else expires_at(settings["intelligence_ttl_seconds"])
             if cached:

@@ -13,7 +13,7 @@ def flag(value):
     return value if type(value) is bool else None
 
 
-def classify(raw: dict, settings: dict, provider: str, expected_ip: str) -> dict:
+def classify(raw: dict, provider: str, expected_ip: str) -> dict:
     if public_ipv4(raw.get("ip")) != expected_ip:
         raise ToolError("intelligence_ip_mismatch")
     privacy = raw.get("privacy") if isinstance(raw.get("privacy"), dict) else {}

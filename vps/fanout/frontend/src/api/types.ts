@@ -4,7 +4,6 @@ export interface EgressProfile {
   city?: string;
   country_status?: string;
   intelligence_status?: string;
-  intelligence_error?: string;
   ip_type?: string;
   protocol?: string;
   provider?: string;
@@ -12,10 +11,7 @@ export interface EgressProfile {
   isp?: string;
   expires_at?: string;
   reason?: string;
-  confidence?: string;
   fraud_score?: number;
-  residential?: boolean | null;
-  hosting?: boolean | null;
   [key: string]: unknown;
 }
 

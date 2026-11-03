@@ -62,7 +62,7 @@ def check_node(node: dict, environment: dict, settings: dict, transport=get_json
                 latency = None
             protocol.update({"status": "passed", "host": candidate["host"], "port": candidate["port"],
                              "expected_exit_ip": expected, "latency_ms": latency,
-                             "egress": classify(raw, settings, "checker-worker", expected),
+                             "egress": classify(raw, "checker-worker", expected),
                              "observed_by": "checker-worker", "verified_at": utc_now(),
                              "baseline_assurance": "preliminary_checker_tls_T1"})
             protocol["egress"]["identity_assurance"] = "preliminary_checker_tls_T1"

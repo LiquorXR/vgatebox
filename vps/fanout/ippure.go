@@ -24,13 +24,10 @@ type ippureResponse struct {
 	IP             string `json:"ip"`
 	ASN            int    `json:"asn"`
 	ASOrganization string `json:"asOrganization"`
-	Country        string `json:"country"`
 	CountryCode    string `json:"countryCode"`
-	Region         string `json:"region"`
 	City           string `json:"city"`
 	FraudScore     *int   `json:"fraudScore"`
 	IsResidential  *bool  `json:"isResidential"`
-	IsBroadcast    *bool  `json:"isBroadcast"`
 }
 
 func ippureEnabled() bool {
@@ -92,8 +89,6 @@ func asnPtr(asn int) *string {
 	value := fmt.Sprintf("AS%d", asn)
 	return &value
 }
-
-func intPtr(value int) *int { return &value }
 
 // profileFromIPPure turns one validated caller-IP response into the shared
 // OpenVPN profile. isResidential is the only explicit residential signal

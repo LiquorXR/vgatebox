@@ -5,11 +5,13 @@ import (
 	"time"
 )
 
+func intPtr(value int) *int { return &value }
+
 func TestProfileFromIPPureRequiresExplicitResidentialEvidence(t *testing.T) {
 	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
 	raw := ippureResponse{
 		IP: "70.79.253.35", ASN: 7922, ASOrganization: "Comcast",
-		Country: "United States", CountryCode: "US", City: "Philadelphia",
+		CountryCode: "US", City: "Philadelphia",
 		FraudScore: intPtr(12), IsResidential: func() *bool { v := true; return &v }(),
 	}
 	image, err := profileFromIPPure(raw, raw.IP, now)

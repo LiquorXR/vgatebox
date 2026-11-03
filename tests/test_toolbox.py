@@ -178,15 +178,15 @@ class SourceTests(unittest.TestCase):
 class ClassifierTests(unittest.TestCase):
     def test_residential_requires_explicit_evidence(self):
         raw = image()
-        self.assertEqual(classify(raw, SETTINGS, "test", EXIT)["ip_type"], "unknown")
+        self.assertEqual(classify(raw, "test", EXIT)["ip_type"], "unknown")
         raw["privacy"]["is_residential"] = True
-        self.assertEqual(classify(raw, SETTINGS, "test", EXIT)["ip_type"], "strict_residential")
+        self.assertEqual(classify(raw, "test", EXIT)["ip_type"], "strict_residential")
 
     def test_missing_hosting_is_not_false(self):
         raw = image()
         raw["privacy"] = {}
         raw["is_datacenter"] = False  # Old Checker synthesized flag is intentionally ignored.
-        result = classify(raw, SETTINGS, "test", EXIT)
+        result = classify(raw, "test", EXIT)
         self.assertEqual(result["ip_type"], "unknown")
         self.assertIsNone(result["hosting"])
         self.assertIsNone(result["proxy"])
@@ -194,18 +194,18 @@ class ClassifierTests(unittest.TestCase):
     def test_company_hosting_blocks_residential_label(self):
         raw = image()
         raw["company"] = {"type": "hosting"}
-        self.assertEqual(classify(raw, SETTINGS, "test", EXIT)["ip_type"], "unknown")
+        self.assertEqual(classify(raw, "test", EXIT)["ip_type"], "unknown")
         raw["privacy"]["is_residential"] = True
-        self.assertEqual(classify(raw, SETTINGS, "test", EXIT)["ip_type"], "unknown")
+        self.assertEqual(classify(raw, "test", EXIT)["ip_type"], "unknown")
 
     def test_explicit_negative_residential_is_not_residential(self):
         raw = image()
         raw["privacy"]["is_residential"] = False
-        self.assertEqual(classify(raw, SETTINGS, "test", EXIT)["ip_type"], "unknown")
+        self.assertEqual(classify(raw, "test", EXIT)["ip_type"], "unknown")
 
     def test_intelligence_must_describe_queried_ip(self):
         with self.assertRaisesRegex(ToolError, "intelligence_ip_mismatch"):
-            classify(image(), SETTINGS, "test", "1.1.1.1")
+            classify(image(), "test", "1.1.1.1")
 
 
 class CheckerTests(unittest.TestCase):
