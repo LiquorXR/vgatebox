@@ -52,6 +52,13 @@ type Console struct {
 	results          map[string]CheckResult
 	checkParallelism int
 	checkIPType      bool
+	// 0 means automatic: derived from the saved automatic check interval.
+	checkResultTTLMinutes int
+	observationTTLMinutes int
+	ippureTTLHours        int
+	ttlMu                 sync.RWMutex
+	checksDirty           bool
+	checksFlushInterval   time.Duration
 	// Test seams exercise intent/persistence without creating real namespaces.
 	start  func(Node, SlotPolicy) (*Tunnel, error)
 	remove func(int) error
@@ -97,9 +104,6 @@ func newConsole(m *Manager) (*Console, error) {
 	if c.results == nil {
 		c.results = map[string]CheckResult{}
 	}
-	for _, r := range c.results {
-		m.recordConnectivity(r)
-	}
 	if err := c.loadCheckSettings(); err != nil {
 		return nil, err
 	}
@@ -107,12 +111,20 @@ func newConsole(m *Manager) (*Console, error) {
 		c.cancel()
 		return nil, err
 	}
+	now := time.Now().UTC()
+	c.applyTTLSettings(now)
+	c.migrateCheckResultTTL(now)
+	for _, r := range c.results {
+		m.recordConnectivity(r)
+	}
+	c.retainChecks(now)
 	if err := c.loadSstpManager(); err != nil {
 		c.cancel()
 		return nil, err
 	}
 	c.loadThirdPartyManager()
 	m.console = c
+	go c.watchChecksPersistence()
 	return c, nil
 }
 
@@ -336,6 +348,7 @@ func (c *Console) routes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/console/source-settings", c.apiSourceSettings)
 	mux.HandleFunc("/api/console/automation", c.apiAutomation)
 	mux.HandleFunc("/api/console/check/settings", c.apiCheckSettings)
+	mux.HandleFunc("/api/console/ippure-cache", c.apiIPPureCache)
 	mux.HandleFunc("/api/console/check", c.apiCheck)
 	mux.HandleFunc("/api/console/check/cancel", c.apiCheckCancel)
 	mux.HandleFunc("/api/console/slot/delete", c.apiDeleteSlot)
@@ -495,18 +508,25 @@ func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {
 		results[k] = v
 	}
 	check := c.check
-	parallelism := c.checkParallelism
-	checkIPType := c.checkIPType
 	c.checksMu.Unlock()
 	var checkView any
 	if check != nil {
 		checkView = check.view()
 	}
 	// Source/profile changes invalidate diagnostic results without calling them
-	// currently available. The original completion time is retained in the row.
+	// currently available. Old checks.json entries without ExpiresAt use
+	// CheckedAt plus the currently effective TTL.
+	resultTTL := c.checkResultTTLAt(time.Now().UTC())
+	now := time.Now().UTC()
 	for _, n := range nodes {
-		if v, ok := results[n.HostName]; ok && (v.ProfileSHA != profileDigest(n.Config) || time.Since(v.CheckedAt) > 15*time.Minute) {
-			v.Stale = true
+		if v, ok := results[n.HostName]; ok {
+			expiry := resultExpiry(v, resultTTL)
+			if v.ExpiresAt.IsZero() && !expiry.IsZero() {
+				v.ExpiresAt = expiry
+			}
+			if v.ProfileSHA != profileDigest(n.Config) || (!expiry.IsZero() && !now.Before(expiry)) {
+				v.Stale = true
+			}
 			results[n.HostName] = v
 		}
 	}
@@ -542,7 +562,7 @@ func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 200, map[string]any{"version": version, "capacity": c.m.maxSlots, "target": target, "target_configured": plan != nil, "suggested_target": suggestedTarget, "allocated": len(view.Exits), "ready": ready, "stopped": stopped, "waiting": max(0, target-ready-stopped), "candidates": len(nodes), "pool_read_at": fetched, "pool_generated_at": generated, "pool_source": publicPoolSource(pool.Source), "automation": c.automationView(time.Now().UTC()), "default_server_name": serverName, "plan": plan, "plan_error": planErr, "refresh": refresh, "check": checkView, "check_settings": map[string]any{"parallelism": parallelism, "ip_type_check": checkIPType}, "results": results, "regions": c.m.Regions(), "memory": memory})
+	writeJSON(w, 200, map[string]any{"version": version, "capacity": c.m.maxSlots, "target": target, "target_configured": plan != nil, "suggested_target": suggestedTarget, "allocated": len(view.Exits), "ready": ready, "stopped": stopped, "waiting": max(0, target-ready-stopped), "candidates": len(nodes), "pool_read_at": fetched, "pool_generated_at": generated, "pool_source": publicPoolSource(pool.Source), "automation": c.automationView(time.Now().UTC()), "default_server_name": serverName, "plan": plan, "plan_error": planErr, "refresh": refresh, "check": checkView, "check_settings": c.checkSettingsView(time.Now().UTC()), "results": results, "regions": c.m.Regions(), "memory": memory})
 }
 
 func (c *Console) apiPoolRefresh(w http.ResponseWriter, r *http.Request) {
@@ -550,11 +570,28 @@ func (c *Console) apiPoolRefresh(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(405)
 		return
 	}
-	if _, err := c.startPoolRefresh(false); err != nil {
+	done, err := c.startPoolRefresh(false)
+	if err != nil {
 		writeJSON(w, 503, map[string]string{"error": "管理服务正在停止"})
 		return
 	}
+	c.waitRefreshThenTick(done)
 	writeJSON(w, 202, map[string]string{"status": "running"})
+}
+
+// waitRefreshThenTick lets a completed console refresh wake the scheduler once.
+// The scheduler still rechecks every due time and running task before acting.
+func (c *Console) waitRefreshThenTick(done <-chan struct{}) {
+	if done == nil {
+		return
+	}
+	go func() {
+		select {
+		case <-done:
+			c.automationTick(time.Now().UTC())
+		case <-c.ctx.Done():
+		}
+	}()
 }
 
 func (c *Console) startPoolRefresh(scheduled bool) (<-chan struct{}, error) {

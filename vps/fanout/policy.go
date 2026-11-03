@@ -231,28 +231,48 @@ func (m *Manager) policyCandidates(p SlotPolicy, avoid map[string]bool, exceptSl
 		}
 		out = append(out, n)
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		ra, la := m.connectivityRank(out[i])
-		rb, lb := m.connectivityRank(out[j])
-		if ra != rb {
-			return ra < rb
+	type rankedCandidate struct {
+		node      Node
+		rank      int
+		latency   float64
+		preferred bool
+		speed     float64
+	}
+	now := time.Now()
+	ranked := make([]rankedCandidate, 0, len(out))
+	for _, n := range out {
+		image := freshCandidateImage(n)
+		rank, latency := m.connectivityRankLocked(n, now)
+		ranked = append(ranked, rankedCandidate{
+			node:      n,
+			rank:      rank,
+			latency:   latency,
+			preferred: image != nil && containsFold(p.PreferredISP, stringValue(image.ISP)),
+			speed:     n.SpeedMbps,
+		})
+	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		a, b := ranked[i], ranked[j]
+		if a.rank != b.rank {
+			return a.rank < b.rank
 		}
-		if ra == 0 && la != lb {
-			if la <= 0 {
+		if a.rank == 0 && a.latency != b.latency {
+			if a.latency <= 0 {
 				return false
 			}
-			if lb <= 0 {
+			if b.latency <= 0 {
 				return true
 			}
-			return la < lb
+			return a.latency < b.latency
 		}
-		a, b := freshCandidateImage(out[i]), freshCandidateImage(out[j])
-		pa, pb := a != nil && containsFold(p.PreferredISP, stringValue(a.ISP)), b != nil && containsFold(p.PreferredISP, stringValue(b.ISP))
-		if pa != pb {
-			return pa
+		if a.preferred != b.preferred {
+			return a.preferred
 		}
-		return out[i].SpeedMbps > out[j].SpeedMbps
+		return a.speed > b.speed
 	})
+	for i := range ranked {
+		out[i] = ranked[i].node
+	}
 	return out
 }
 

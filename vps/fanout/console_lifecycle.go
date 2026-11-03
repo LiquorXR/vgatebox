@@ -33,6 +33,7 @@ func (c *Console) shutdown() {
 	if finished != nil {
 		<-finished
 	}
+	_ = c.flushChecks()
 }
 
 func diagnosticConfigOwned(workDir, ns, executable, config string) bool {

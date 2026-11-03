@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -16,7 +18,7 @@ import (
 // SOCKS listener provides that path without exposing the proxy publicly.
 const (
 	defaultIPPureURL  = "https://my.ippure.com/v1/info"
-	ippureTTL         = 24 * time.Hour
+	defaultIPPureTTL  = 24 * time.Hour
 	ippureRuleVersion = "ippure-1"
 )
 
@@ -28,6 +30,22 @@ type ippureResponse struct {
 	City           string `json:"city"`
 	FraudScore     *int   `json:"fraudScore"`
 	IsResidential  *bool  `json:"isResidential"`
+}
+
+type ippureCacheEntry struct {
+	Profile  EgressProfile `json:"profile"`
+	CachedAt time.Time     `json:"cached_at"`
+}
+
+type ippureCacheFile struct {
+	Version int                         `json:"version"`
+	Entries map[string]ippureCacheEntry `json:"entries"`
+}
+
+type ippureCacheStats struct {
+	Entries int `json:"entries"`
+	Hits    int `json:"hits"`
+	Queries int `json:"queries"`
 }
 
 func ippureEnabled() bool {
@@ -94,12 +112,19 @@ func asnPtr(asn int) *string {
 // OpenVPN profile. isResidential is the only explicit residential signal
 // IPPure provides; missing or false never becomes strict_residential.
 func profileFromIPPure(raw ippureResponse, expectedIP string, now time.Time) (EgressProfile, error) {
+	return profileFromIPPureTTL(raw, expectedIP, now, defaultIPPureTTL)
+}
+
+func profileFromIPPureTTL(raw ippureResponse, expectedIP string, now time.Time, ttl time.Duration) (EgressProfile, error) {
 	image := unknownOpenVPNEgress(expectedIP, "ippure_unavailable")
 	image.Protocol = "openvpn"
 	if raw.IP != expectedIP {
 		return image, fmt.Errorf("ippure_ip_mismatch")
 	}
-	expires := now.Add(ippureTTL)
+	if ttl <= 0 {
+		ttl = defaultIPPureTTL
+	}
+	expires := now.Add(ttl)
 	country := strings.ToUpper(strings.TrimSpace(raw.CountryCode))
 	if flagOf(country) == "" || country == "ZZ" || country == "XX" {
 		country = ""
@@ -140,7 +165,28 @@ func profileFromIPPure(raw ippureResponse, expectedIP string, now time.Time) (Eg
 	return image, nil
 }
 
-func (t *Tunnel) probeIPPure(parent context.Context, expectedIP string) EgressProfile {
+// ippureCacheable accepts only a complete, passed answer. A successful
+// "not residential" answer is cached as unknown; failures, IP mismatches and
+// incomplete evidence are queried again next time.
+func ippureCacheable(raw ippureResponse, image EgressProfile, expectedIP string) bool {
+	if expectedIP == "" || raw.IP != expectedIP || image.IP != expectedIP || image.IntelligenceStatus != "passed" {
+		return false
+	}
+	if raw.IsResidential == nil || raw.ASN <= 0 || strings.TrimSpace(raw.ASOrganization) == "" {
+		return false
+	}
+	country := strings.ToUpper(strings.TrimSpace(raw.CountryCode))
+	if flagOf(country) == "" || country == "ZZ" || country == "XX" {
+		return false
+	}
+	if image.IPType != "strict_residential" && image.IPType != "unknown" {
+		return false
+	}
+	expiry, err := time.Parse(time.RFC3339Nano, image.ExpiresAt)
+	return err == nil && expiry.After(time.Now())
+}
+
+func (t *Tunnel) probeIPPure(parent context.Context, expectedIP string, ttl time.Duration) (EgressProfile, ippureResponse, bool) {
 	profile := unknownOpenVPNEgress(expectedIP, "ippure_unavailable")
 	profile.Protocol = "openvpn"
 	cred := t.probeCredential()
@@ -155,25 +201,178 @@ func (t *Tunnel) probeIPPure(parent context.Context, expectedIP string) EgressPr
 	))
 	if err != nil {
 		profile.IntelligenceError = "ippure_http_failed"
-		return profile
+		return profile, ippureResponse{}, false
 	}
 	var raw ippureResponse
 	if err := json.Unmarshal(out, &raw); err != nil {
 		profile.IntelligenceError = "ippure_invalid_json"
-		return profile
+		return profile, ippureResponse{}, false
 	}
-	image, err := profileFromIPPure(raw, expectedIP, time.Now().UTC())
+	image, err := profileFromIPPureTTL(raw, expectedIP, time.Now().UTC(), ttl)
 	if err != nil {
 		profile.IntelligenceError = err.Error()
-		return profile
+		return profile, raw, false
 	}
 	image.Raw = out
-	return image
+	return image, raw, ippureCacheable(raw, image, expectedIP)
+}
+
+func (m *Manager) ippureTTLValue() time.Duration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.ippureTTL > 0 {
+		return m.ippureTTL
+	}
+	return defaultIPPureTTL
+}
+
+func (m *Manager) setIPPureTTL(ttl time.Duration) {
+	if ttl <= 0 {
+		ttl = defaultIPPureTTL
+	}
+	m.mu.Lock()
+	m.ippureTTL = ttl
+	m.mu.Unlock()
+}
+
+func (m *Manager) ippureCachePath() string {
+	dir := m.evidenceDir
+	if strings.TrimSpace(dir) == "" {
+		dir = m.workDir
+	}
+	return filepath.Join(dir, "ippure-cache.json")
+}
+
+func (m *Manager) loadIPPureCacheLocked() {
+	if m.ippureCacheLoaded {
+		return
+	}
+	m.ippureCacheLoaded = true
+	if m.ippureCache == nil {
+		m.ippureCache = map[string]ippureCacheEntry{}
+	}
+	blob, err := os.ReadFile(m.ippureCachePath())
+	if err != nil {
+		return
+	}
+	var file ippureCacheFile
+	if json.Unmarshal(blob, &file) != nil || file.Entries == nil {
+		return
+	}
+	for ip, entry := range file.Entries {
+		if entry.Profile.IP == ip && entry.Profile.IntelligenceStatus == "passed" &&
+			entry.Profile.Provider == "ippure" && entry.Profile.RuleVersion == ippureRuleVersion {
+			m.ippureCache[ip] = entry
+		}
+	}
+}
+
+func (m *Manager) saveIPPureCacheLocked() error {
+	if m.ippureCache == nil {
+		m.ippureCache = map[string]ippureCacheEntry{}
+	}
+	blob, err := json.Marshal(ippureCacheFile{Version: 1, Entries: m.ippureCache})
+	if err != nil {
+		return err
+	}
+	return atomicConfigWrite(m.ippureCachePath(), blob)
+}
+
+func (m *Manager) cachedIPPure(ip string, now time.Time) (EgressProfile, bool) {
+	if strings.TrimSpace(ip) == "" {
+		return EgressProfile{}, false
+	}
+	m.ippureMu.Lock()
+	defer m.ippureMu.Unlock()
+	m.loadIPPureCacheLocked()
+	entry, ok := m.ippureCache[ip]
+	if !ok {
+		return EgressProfile{}, false
+	}
+	expiry, err := time.Parse(time.RFC3339Nano, entry.Profile.ExpiresAt)
+	if err != nil || !expiry.After(now) || entry.Profile.IP != ip || entry.Profile.IntelligenceStatus != "passed" ||
+		entry.Profile.Provider != "ippure" || entry.Profile.RuleVersion != ippureRuleVersion {
+		delete(m.ippureCache, ip)
+		_ = m.saveIPPureCacheLocked()
+		return EgressProfile{}, false
+	}
+	image := entry.Profile
+	image.Raw = nil
+	image.CacheUsed = true
+	m.ippureHits++
+	return image, true
+}
+
+func (m *Manager) storeIPPure(ip string, image EgressProfile) {
+	if image.IntelligenceStatus != "passed" || image.IP != ip {
+		return
+	}
+	if image.IPType != "strict_residential" && image.IPType != "unknown" {
+		return
+	}
+	expiry, err := time.Parse(time.RFC3339Nano, image.ExpiresAt)
+	if err != nil || !expiry.After(time.Now()) {
+		return
+	}
+	image.Raw = nil
+	image.CacheUsed = false
+	m.ippureMu.Lock()
+	defer m.ippureMu.Unlock()
+	m.loadIPPureCacheLocked()
+	m.ippureCache[ip] = ippureCacheEntry{Profile: image, CachedAt: time.Now().UTC()}
+	_ = m.saveIPPureCacheLocked()
+}
+
+func (m *Manager) noteIPPureQuery() {
+	m.ippureMu.Lock()
+	m.ippureQueries++
+	m.ippureMu.Unlock()
+}
+
+func (m *Manager) ippureCacheStats() ippureCacheStats {
+	m.ippureMu.Lock()
+	defer m.ippureMu.Unlock()
+	m.loadIPPureCacheLocked()
+	now := time.Now().UTC()
+	changed := false
+	for ip, entry := range m.ippureCache {
+		expiry, err := time.Parse(time.RFC3339Nano, entry.Profile.ExpiresAt)
+		if err != nil || !expiry.After(now) || entry.Profile.IP != ip || entry.Profile.IntelligenceStatus != "passed" ||
+			entry.Profile.Provider != "ippure" || entry.Profile.RuleVersion != ippureRuleVersion {
+			delete(m.ippureCache, ip)
+			changed = true
+		}
+	}
+	if changed {
+		_ = m.saveIPPureCacheLocked()
+	}
+	return ippureCacheStats{Entries: len(m.ippureCache), Hits: m.ippureHits, Queries: m.ippureQueries}
+}
+
+// clearIPPureCache is the explicit operator action; it never affects running
+// exits, only the next profile lookup.
+func (m *Manager) clearIPPureCache() error {
+	m.ippureMu.Lock()
+	defer m.ippureMu.Unlock()
+	m.ippureCache = map[string]ippureCacheEntry{}
+	m.ippureCacheLoaded = true
+	m.ippureHits, m.ippureQueries = 0, 0
+	if err := os.Remove(m.ippureCachePath()); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func (m *Manager) lookupEgressProfile(t *Tunnel, ip string) EgressProfile {
 	if ippureEnabled() {
-		image := t.probeIPPure(t.workContext(), ip)
+		if image, ok := m.cachedIPPure(ip, time.Now().UTC()); ok {
+			return image
+		}
+		m.noteIPPureQuery()
+		image, _, cacheable := t.probeIPPure(t.workContext(), ip, m.ippureTTLValue())
+		if cacheable {
+			m.storeIPPure(ip, image)
+		}
 		// A failed IPPure query may fall back to an explicitly configured
 		// provider, but a successful "not residential" answer never does.
 		if image.IntelligenceStatus == "failed" && strings.TrimSpace(os.Getenv("INTELLIGENCE_URL_TEMPLATE")) != "" {
@@ -182,4 +381,19 @@ func (m *Manager) lookupEgressProfile(t *Tunnel, ip string) EgressProfile {
 		return image
 	}
 	return lookupOpenVPNEgressContext(t.workContext(), m.evidenceDir, ip)
+}
+
+func (c *Console) apiIPPureCache(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, 200, c.m.ippureCacheStats())
+	case http.MethodPost, http.MethodDelete:
+		if err := c.m.clearIPPureCache(); err != nil {
+			writeJSON(w, 500, map[string]string{"error": "IPPure 缓存清除失败"})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "cache": c.m.ippureCacheStats()})
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
 }

@@ -98,7 +98,7 @@ func TestConnectObservationsPrioritizeFreshPassedWithoutTrustingAsLive(t *testin
 	m.nodes[2].Config = "c"
 	m.mu.Lock()
 	r := m.observations["passed"]
-	r.CheckedAt = time.Now().Add(-16 * time.Minute)
+	r.CheckedAt = time.Now().Add(-31 * time.Minute)
 	m.observations["passed"] = r
 	m.mu.Unlock()
 	picks = m.policyCandidates(defaultSlotPolicyForMode("", false), nil, 0)

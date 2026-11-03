@@ -29,8 +29,24 @@ type Manager struct {
 	credentialApply func(*Tunnel) error
 	connectBudget   *connectBudget
 	observations    map[string]CheckResult
+	observationTTL  time.Duration
 	diagnostics     map[string]*diagnosticLease
 	console         *Console
+
+	// Health probing is bounded and test seams use the same paths as production.
+	healthEvery         time.Duration
+	healthParallelLimit int
+	healthProbeWindow   time.Duration
+	healthEchoWindow    time.Duration
+	healthProbe         func(context.Context, *Tunnel) (string, float64, error)
+	healthReconnect     func(*Tunnel, string)
+
+	ippureMu          sync.Mutex
+	ippureCache       map[string]ippureCacheEntry
+	ippureCacheLoaded bool
+	ippureHits        int
+	ippureQueries     int
+	ippureTTL         time.Duration
 }
 
 func NewManager(maxSlots int, workDir string) *Manager {
@@ -44,6 +60,8 @@ func NewManager(maxSlots int, workDir string) *Manager {
 		connectBudget: newConnectBudget(defaultCheckParallelism),
 		observations:  map[string]CheckResult{},
 		diagnostics:   map[string]*diagnosticLease{},
+		ippureCache:   map[string]ippureCacheEntry{},
+		ippureTTL:     defaultIPPureTTL,
 	}
 }
 

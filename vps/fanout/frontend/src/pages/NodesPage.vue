@@ -186,6 +186,15 @@ const checkSettingsMutation = useMutation({
   onError: (error) => toastError(error, "保存检测设置失败"),
 });
 
+const clearIPPureMutation = useMutation({
+  mutationFn: () => post("api/console/ippure-cache", {}),
+  onSuccess: () => {
+    toast("IPPure 缓存已清除", { tone: "success" });
+    void queryClient.invalidateQueries({ queryKey: keys.console });
+  },
+  onError: (error) => toastError(error, "清除 IPPure 缓存失败"),
+});
+
 function checkSelected() {
   if (!selected.value.size) return;
   checkMutation.mutate({ hosts: [...selected.value], priority: true });
@@ -239,7 +248,7 @@ async function saveSource() {
 const automationOpen = ref(false);
 const automationLoading = ref(false);
 const automationSaving = ref(false);
-const automationForm = reactive({ refresh_enabled: true, refresh_minutes: 60, check_enabled: true, check_minutes: 60 });
+const automationForm = reactive({ refresh_enabled: true, refresh_minutes: 60, check_enabled: true, check_minutes: 15 });
 
 async function openAutomation() {
   automationLoading.value = true;
@@ -257,8 +266,12 @@ async function openAutomation() {
 async function saveAutomation() {
   const refresh = Number(automationForm.refresh_minutes);
   const check = Number(automationForm.check_minutes);
-  if (![refresh, check].every((value) => Number.isSafeInteger(value) && value >= 30 && value <= 525600)) {
-    toast("自动任务间隔须为 30–525600 分钟", { tone: "error" });
+  if (!Number.isSafeInteger(refresh) || refresh < 30 || refresh > 525600) {
+    toast("自动刷新间隔须为 30–525600 分钟", { tone: "error" });
+    return;
+  }
+  if (!Number.isSafeInteger(check) || check < 15 || check > 525600) {
+    toast("自动检测间隔须为 15–525600 分钟", { tone: "error" });
     return;
   }
   automationSaving.value = true;
@@ -280,6 +293,27 @@ async function saveAutomation() {
 }
 
 const sourceText = computed(() => sourceLabel(summary.value?.pool_source));
+
+const checkSettings = computed(() => summary.value?.check_settings);
+const ippureCache = computed(() => checkSettings.value?.ippure_cache);
+const ttlMismatch = computed(() => {
+  const auto = summary.value?.automation?.settings;
+  const resultTTL = checkSettings.value?.check_result_ttl_effective_minutes;
+  if (!auto?.check_enabled || !resultTTL) return "";
+  if (auto.check_minutes > resultTTL) {
+    return `自动检测间隔 ${auto.check_minutes} 分钟大于结果有效期 ${resultTTL} 分钟；结果会在下一轮前过期。`;
+  }
+  return "";
+});
+
+function observationExpiry(node: Node): string {
+  const result = effectiveResult(node);
+  const minutes = checkSettings.value?.observation_ttl_effective_minutes;
+  if (!result.checked_at || !minutes) return "";
+  const date = new Date(result.checked_at);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Date(date.getTime() + minutes * 60_000).toISOString();
+}
 
 // Details
 const detailNode = ref<Node | null>(null);
@@ -420,7 +454,10 @@ const detailNode = ref<Node | null>(null);
                     <div v-if="effectiveResult(node).code" class="mt-1 text-[10px] text-bad">{{ errorLabel(effectiveResult(node).code) }}</div>
                   </td>
                   <td class="tnum px-2 py-2.5 text-xs text-muted">{{ formatLatency(effectiveResult(node).latency_ms) }}</td>
-                  <td class="px-2 py-2.5 text-[11px] text-faint">{{ formatDateTime(effectiveResult(node).checked_at) }}</td>
+                  <td class="px-2 py-2.5 text-[11px] text-faint">
+                    {{ formatDateTime(effectiveResult(node).checked_at) }}
+                    <div class="text-[10px]">有效至 {{ formatDateTime(effectiveResult(node).expires_at) }}</div>
+                  </td>
                   <td class="px-4 py-2.5 text-right">
                     <UiButton size="sm" variant="ghost" :loading="submitting.has(node.hostname)" @click="checkNode(node)">检测</UiButton>
                   </td>
@@ -444,8 +481,13 @@ const detailNode = ref<Node | null>(null);
             <div><dt class="text-faint">来源</dt><dd class="mt-0.5 leading-relaxed text-ink">{{ sourceText }}</dd></div>
             <div><dt class="text-faint">来源刷新</dt><dd class="mt-0.5 text-ink">{{ scheduleLabel(summary?.automation, "refresh") }}</dd></div>
             <div><dt class="text-faint">候选检测</dt><dd class="mt-0.5 text-ink">{{ scheduleLabel(summary?.automation, "check") }}</dd></div>
+            <div><dt class="text-faint">结果有效</dt><dd class="mt-0.5 text-ink">{{ checkSettings?.check_result_ttl_effective_minutes ? `${checkSettings.check_result_ttl_effective_minutes} 分钟` : "—" }}<template v-if="checkSettings?.check_result_ttl_minutes"> · 手动</template><template v-else> · 自动</template></dd></div>
+            <div><dt class="text-faint">排序观察有效</dt><dd class="mt-0.5 text-ink">{{ checkSettings?.observation_ttl_effective_minutes ? `${checkSettings.observation_ttl_effective_minutes} 分钟` : "—" }}</dd></div>
+            <div v-if="ippureCache"><dt class="text-faint">IPPure 缓存</dt><dd class="mt-0.5 text-ink">命中 {{ ippureCache.hits }} 次 · 查询 {{ ippureCache.queries }} 次 · {{ ippureCache.entries }} 条<template v-if="checkSettings?.ippure_ttl_hours"> · {{ checkSettings.ippure_ttl_hours }} 小时</template></dd></div>
             <div><dt class="text-faint">上次获取</dt><dd class="mt-0.5 text-ink">{{ formatDateTime(summary?.pool_generated_at) }}</dd></div>
           </dl>
+          <UiButton v-if="ippureCache?.entries" size="sm" variant="ghost" class="mt-3" :loading="clearIPPureMutation.isPending.value" @click="clearIPPureMutation.mutate()">清除 IPPure 缓存</UiButton>
+          <p v-if="ttlMismatch" class="mt-3 rounded-lg border border-warn/30 bg-warn-soft px-3 py-2 text-[11px] leading-relaxed text-warn">{{ ttlMismatch }}</p>
           <p class="mt-3 border-t border-line pt-3 text-[11px] leading-relaxed text-faint">
             所有获取、镜像校验和节点检测都由本 VPS 执行；检测通过不等于会永久在线。
           </p>
@@ -486,11 +528,11 @@ const detailNode = ref<Node | null>(null);
       </form>
     </DialogShell>
 
-    <DialogShell :open="automationOpen" title="周期任务" description="自动任务最低 30 分钟，默认 60 分钟；获取和检测由本 VPS 完成。" size="md" @update:open="automationOpen = $event">
+    <DialogShell :open="automationOpen" title="周期任务" description="自动刷新最低 30 分钟，自动检测最低 15 分钟；默认检测 15 分钟。获取和检测由本 VPS 完成。" size="md" @update:open="automationOpen = $event">
       <form class="space-y-4" @submit.prevent="saveAutomation">
         <div class="rounded-lg border border-line p-3">
           <div class="flex items-center justify-between gap-3">
-            <div><div class="text-sm font-medium">自动刷新候选清单</div><div class="text-[11px] text-muted">失败保留旧清单。</div></div>
+            <div><div class="text-sm font-medium">自动刷新候选清单</div><div class="text-[11px] text-muted">最低 30 分钟；失败保留旧清单。</div></div>
             <ToggleSwitch v-model="automationForm.refresh_enabled" label="自动刷新候选清单" />
           </div>
           <label class="mt-3 block">
@@ -500,12 +542,12 @@ const detailNode = ref<Node | null>(null);
         </div>
         <div class="rounded-lg border border-line p-3">
           <div class="flex items-center justify-between gap-3">
-            <div><div class="text-sm font-medium">自动批量检测候选</div><div class="text-[11px] text-muted">按完成时间计算下一轮，不叠加任务。</div></div>
+            <div><div class="text-sm font-medium">自动批量检测候选</div><div class="text-[11px] text-muted">最低 15 分钟；按完成时间计算下一轮，不叠加任务。</div></div>
             <ToggleSwitch v-model="automationForm.check_enabled" label="自动批量检测候选" />
           </div>
           <label class="mt-3 block">
             <span class="mb-1 block text-[11px] text-faint">检测间隔（分钟）</span>
-            <input v-model.number="automationForm.check_minutes" name="check-minutes" type="number" min="30" max="525600" required class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
+            <input v-model.number="automationForm.check_minutes" name="check-minutes" type="number" min="15" max="525600" required class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
           </label>
         </div>
         <div class="flex justify-end gap-2 pt-1">
@@ -527,6 +569,7 @@ const detailNode = ref<Node | null>(null);
           <div><dt class="text-faint">类型依据</dt><dd class="mt-0.5">{{ nodeEgress(detailNode)?.reason || "—" }}</dd></div>
           <div><dt class="text-faint">画像状态</dt><dd class="mt-0.5">{{ nodeEgress(detailNode)?.intelligence_status || "—" }}</dd></div>
           <div><dt class="text-faint">画像来源</dt><dd class="mt-0.5">{{ nodeEgress(detailNode)?.provider || "—" }}</dd></div>
+          <div><dt class="text-faint">画像有效至</dt><dd class="mt-0.5">{{ formatDateTime(nodeEgress(detailNode)?.expires_at) }}</dd></div>
           <div v-if="nodeEgress(detailNode)?.fraud_score !== undefined && nodeEgress(detailNode)?.fraud_score !== null"><dt class="text-faint">风险分</dt><dd class="tnum mt-0.5">{{ nodeEgress(detailNode)?.fraud_score }}</dd></div>
           <div><dt class="text-faint">预期出口</dt><dd class="mt-0.5 font-mono">{{ detailNode.expected_exit_ip || "—" }}</dd></div>
           <div><dt class="text-faint">SSTP 候选</dt><dd class="mt-0.5">{{ detailNode.sstp_candidates?.length || 0 }} 个</dd></div>
@@ -538,6 +581,8 @@ const detailNode = ref<Node | null>(null);
           <StatusBadge :label="checkStatusLabel(effectiveResult(detailNode).status)" :tone="checkStatusTone(effectiveResult(detailNode).status)" size="sm" />
           <p v-if="effectiveResult(detailNode).code" class="mt-2 text-bad">{{ errorLabel(effectiveResult(detailNode).code) }}</p>
           <p class="mt-2 text-faint">检测时间 {{ formatDateTime(effectiveResult(detailNode).checked_at) }}</p>
+          <p class="mt-1 text-faint">结果有效至 {{ formatDateTime(effectiveResult(detailNode).expires_at) }}</p>
+          <p class="mt-1 text-faint">排序观察有效至 {{ formatDateTime(observationExpiry(detailNode)) }}</p>
         </div>
         <UiButton size="sm" :loading="submitting.has(detailNode.hostname)" @click="checkNode(detailNode)">立即检测</UiButton>
       </div>

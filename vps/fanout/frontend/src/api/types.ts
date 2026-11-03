@@ -187,6 +187,24 @@ export interface ScheduleView {
   next_at?: string;
   nodes?: number;
   passed?: number;
+  waiting_for_refresh?: boolean;
+}
+
+export interface IPPureCacheView {
+  entries: number;
+  hits: number;
+  queries: number;
+}
+
+export interface CheckSettingsView {
+  parallelism: number;
+  ip_type_check: boolean;
+  check_result_ttl_minutes?: number;
+  check_result_ttl_effective_minutes?: number;
+  observation_ttl_minutes?: number;
+  observation_ttl_effective_minutes?: number;
+  ippure_ttl_hours?: number;
+  ippure_cache?: IPPureCacheView;
 }
 
 export interface AutomationView {
@@ -229,7 +247,7 @@ export interface ConsoleSummary {
   plan_error: string;
   refresh: RefreshView;
   check: CheckRunView | null;
-  check_settings: { parallelism: number; ip_type_check: boolean };
+  check_settings: CheckSettingsView;
   results: Record<string, CheckResult>;
   regions: RegionStat[];
   memory: Record<string, number>;

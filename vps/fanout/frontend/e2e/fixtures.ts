@@ -229,7 +229,7 @@ const consoleData = {
     integrity_verified: true,
   },
   automation: {
-    settings: { refresh_enabled: true, refresh_minutes: 60, check_enabled: true, check_minutes: 60 },
+    settings: { refresh_enabled: true, refresh_minutes: 60, check_enabled: true, check_minutes: 15 },
     refresh: {
       enabled: true,
       minutes: 60,
@@ -242,7 +242,7 @@ const consoleData = {
     },
     check: {
       enabled: true,
-      minutes: 60,
+      minutes: 15,
       status: "completed",
       running: false,
       finished_at: now,
@@ -257,7 +257,16 @@ const consoleData = {
   plan_error: "",
   refresh: { status: "passed", checked_at: now, elapsed_seconds: 12, timeout_seconds: 90 },
   check: null,
-  check_settings: { parallelism: 2, ip_type_check: false },
+  check_settings: {
+    parallelism: 2,
+    ip_type_check: false,
+    check_result_ttl_minutes: 0,
+    check_result_ttl_effective_minutes: 30,
+    observation_ttl_minutes: 30,
+    observation_ttl_effective_minutes: 30,
+    ippure_ttl_hours: 24,
+    ippure_cache: { entries: 0, hits: 0, queries: 0 },
+  },
   results,
   regions: [
     { code: "JP", name: "日本", available: 12, best_ping: 35, best_speed_mbps: 48.5 },

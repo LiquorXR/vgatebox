@@ -22,6 +22,7 @@ export function scheduleLabel(
   if (!item.enabled) return "已关闭";
   let text = `每 ${item.minutes} 分钟 · ${runStatus[item.status] || item.status}`;
   if (item.running) text += " · 完成后再计时";
+  else if (item.waiting_for_refresh) text += " · 等待来源刷新完成";
   else if (item.next_at) text += ` · 下次 ${formatDateTime(item.next_at)}`;
   if (item.finished_at) text += ` · 上次 ${formatDateTime(item.finished_at)}`;
   return text;

@@ -141,7 +141,7 @@ func main() {
 	go console.watchAutomation()
 	go console.sstp.watch()
 
-	go mgr.WatchHealth()
+	go mgr.WatchHealth(console.ctx)
 	go mgr.WatchNodePool()
 
 	stop := make(chan os.Signal, 1)

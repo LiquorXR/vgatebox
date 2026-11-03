@@ -3,7 +3,7 @@ import { scheduleLabel, sourceLabel } from "../automation";
 import type { AutomationView } from "@/api/types";
 
 const view: AutomationView = {
-  settings: { refresh_enabled: true, refresh_minutes: 60, check_enabled: false, check_minutes: 30 },
+  settings: { refresh_enabled: true, refresh_minutes: 60, check_enabled: false, check_minutes: 15 },
   refresh: {
     enabled: true,
     minutes: 60,
@@ -43,6 +43,16 @@ describe("scheduleLabel", () => {
     };
     const text = scheduleLabel(running, "refresh");
     expect(text).toContain("完成后再计时");
+    expect(text).not.toContain("下次");
+  });
+
+  it("shows that a check waits for the source refresh", () => {
+    const waiting = {
+      ...view,
+      check: { ...view.check, enabled: true, waiting_for_refresh: true, next_at: "2026-10-31T11:00:00Z" },
+    };
+    const text = scheduleLabel(waiting, "check");
+    expect(text).toContain("等待来源刷新完成");
     expect(text).not.toContain("下次");
   });
 });

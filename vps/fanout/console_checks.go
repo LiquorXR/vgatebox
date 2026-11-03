@@ -175,6 +175,7 @@ func (c *Console) probeCandidate(parent context.Context, node Node, slot int, pr
 	helper := NewManager(1, dir)
 	helper.connectBudget = c.m.connectBudget
 	helper.evidenceDir = c.m.evidenceDir
+	helper.setIPPureTTL(c.m.ippureTTLValue())
 	helper.tunnels[t.Slot] = t
 	defer func() { progress("cleanup"); t.stop(); _ = os.RemoveAll(filepath.Join("/etc/netns", t.nsName())) }()
 	if err := helper.tryNode(t); err != nil {
@@ -397,6 +398,7 @@ func (c *Console) startCheck(in CheckRequest) (*CheckRun, error) {
 // One dispatcher owns all running diagnostic identities. Manual items can join
 // a batch and take the next free permit without exceeding its configured limit.
 func (c *Console) runChecks(ctx context.Context, j *CheckRun) {
+	defer c.flushChecks()
 	dispatchCheckRun(ctx, j, &c.checksMu, func(index, slot int, item CheckResult, node Node) { c.runCheckItem(ctx, j, index, item, node, slot) }, func() { c.automationCheckFinished(j) })
 }
 
@@ -503,6 +505,9 @@ func (c *Console) runCheckItem(ctx context.Context, j *CheckRun, index int, item
 	result.CheckedAt = time.Now().UTC()
 	result.StartedAt = item.StartedAt
 	result.Priority = item.Priority
+	if result.Protocol == "" || result.Protocol == "openvpn" {
+		result.ExpiresAt = result.CheckedAt.Add(c.checkResultTTLAt(result.CheckedAt))
+	}
 	if result.Host == "" {
 		result.Host = item.Host
 	}
@@ -513,14 +518,13 @@ func (c *Console) runCheckItem(ctx context.Context, j *CheckRun, index int, item
 		result.Status, result.Code = "cancelled", "cancelled"
 	}
 	// Only completed observations replace previous evidence; no count-based
-	// truncation discards a large user's results.
+	// truncation discards a large user's results. Persistence is coalesced and
+	// happens outside this worker.
 	if (result.Status == "passed" || result.Status == "failed") && result.Host != "" {
 		c.checksMu.Lock()
 		c.results[result.Host] = result
 		c.m.recordConnectivity(result)
-		if blob, err := json.Marshal(c.results); err == nil {
-			_ = atomicConfigWrite(filepath.Join(c.m.workDir, "checks.json"), blob)
-		}
+		c.markChecksDirtyLocked()
 		c.checksMu.Unlock()
 	}
 	j.mu.Lock()
