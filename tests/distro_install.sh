@@ -10,10 +10,10 @@ if [[ ${VGB_TEST_CLIENT:-} == mihomo ]]; then
   python3 "$root/scripts/install_mihomo_test.py"
   test_mount=(-v "$root/tools/bin:/mihomo:ro")
 fi
-for attempt in {1..3}; do
+for attempt in {1..4}; do
   if docker build --build-arg "BASE_IMAGE=$image" -f "$root/tests/distro.Dockerfile" -t vgatebox-distro-check "$root/tests"; then break; fi
-  ((attempt < 3)) || exit 1
-  sleep 2
+  ((attempt < 4)) || exit 1
+  sleep $((attempt * 10))
 done
 name=vgatebox-distro-$RANDOM
 trap 'docker logs "$name"; docker rm -f "$name" >/dev/null' EXIT
