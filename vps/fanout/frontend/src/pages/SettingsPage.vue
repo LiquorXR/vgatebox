@@ -277,8 +277,8 @@ const themeOptions: { value: ThemeChoice; label: string }[] = [
         <Panel title="关于">
           <div class="space-y-3 text-xs leading-relaxed text-muted">
             <div class="flex items-center gap-2 text-ink"><ShieldCheck :size="16" class="text-accent" /><b>vgatebox</b></div>
-            <p>从候选发现到独立出口和订阅，在同一个控制台完成。节点来源 VPN Gate；隧道 OpenVPN；数据面 Xray-core。</p>
-            <p>许可证保留在安装包 licenses 目录。缺少可信画像时，出口类型显示 unknown，不会标为家宽。</p>
+            <p>在自己的 VPS 上管理 VPN Gate、第三方 SOCKS5 和本机直出，用一条订阅在 v2rayN、Clash/Mihomo 等客户端使用。</p>
+            <p>内置 Xray 提供客户端接入，OpenVPN 建立 VPN Gate 出口；配置和凭据只保存在这台 VPS 上。第三方组件许可见安装包 licenses 目录。</p>
             <div class="flex flex-wrap gap-2 border-t border-line pt-3 text-[11px] text-faint">
               <span class="inline-flex items-center gap-1"><SlidersHorizontal :size="12" />内置 Xray</span>
               <span>·</span>
