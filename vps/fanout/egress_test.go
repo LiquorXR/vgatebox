@@ -195,6 +195,40 @@ func TestSlotHealthPersistsPrivateIndependentEvidenceWithoutCredentials(t *testi
 	}
 }
 
+func TestValidatedPoolKeepsSourceLabelAwayFromEgressType(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "profile.ovpn"), []byte("client"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	pool := validatedPoolFile{Nodes: []validatedPoolNode{
+		{Hostname: "vpn-home", ServerIP: "70.79.253.35", AdvertisedCountry: "JP"},
+		{Hostname: "public-vpn-2", ServerIP: "219.100.37.5", AdvertisedCountry: "JP"},
+	}}
+	for i := range pool.Nodes {
+		pool.Nodes[i].Protocols.OpenVPN.ProfileRef = "profile.ovpn"
+	}
+	path := filepath.Join(dir, "node_pool.json")
+	blob, _ := json.Marshal(pool)
+	if err := os.WriteFile(path, blob, 0600); err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := fetchNodesFromValidatedPool(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byHost := map[string]Node{}
+	for _, n := range nodes {
+		byHost[n.HostName] = n
+	}
+	// 没有 OpenVPN 画像时，来源仍是志愿者，但出口类型是 unknown，不能反过来说成自营。
+	if !byHost["vpn-home"].SourceResidential || byHost["vpn-home"].Residential {
+		t.Fatalf("volunteer source was conflated with egress type: %+v", byHost["vpn-home"])
+	}
+	if byHost["public-vpn-2"].SourceResidential || byHost["public-vpn-2"].Residential {
+		t.Fatalf("self-operated source was mislabeled: %+v", byHost["public-vpn-2"])
+	}
+}
+
 func TestValidatedPoolDoesNotBorrowSSTPImage(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "profile.ovpn"), []byte("client"), 0600); err != nil {

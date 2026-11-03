@@ -16,7 +16,7 @@ import ToggleSwitch from "@/components/ToggleSwitch.vue";
 import UiButton from "@/components/UiButton.vue";
 import { countryName, formatDateTime, formatLatency, formatMbps, truncate } from "@/lib/format";
 import { scheduleLabel, sourceLabel } from "@/lib/automation";
-import { checkStatusLabel, checkStatusTone, errorLabel, ipTypeLabel } from "@/lib/status";
+import { checkStatusLabel, checkStatusTone, errorLabel, ipTypeLabel, ipTypeLabels, ipTypeTone, sourceResidentialLabel } from "@/lib/status";
 import { toast, toastError } from "@/lib/toast";
 
 const PAGE_SIZE = 50;
@@ -28,6 +28,7 @@ const nodes = computed(() => view.value?.nodes || []);
 const search = ref("");
 const countryFilter = ref("");
 const statusFilter = ref("all");
+const typeFilter = ref("all");
 const page = ref(1);
 const selected = ref<Set<string>>(new Set());
 const parallelism = ref(2);
@@ -53,6 +54,11 @@ function effectiveResult(node: Node): CheckResult {
   return result.stale ? { ...result, status: "stale" } : result;
 }
 
+// 类型列优先使用最近一次检测的观测；没有检测结果时退回候选池里的证据。
+function nodeIPType(node: Node): string {
+  return effectiveResult(node).ip_type || node.ip_type || "unknown";
+}
+
 const countries = computed(() => {
   const map = new Map<string, string>();
   for (const node of nodes.value) {
@@ -65,6 +71,7 @@ const filtered = computed(() => {
   const term = search.value.trim().toLowerCase();
   return nodes.value.filter((node) => {
     if (countryFilter.value && node.country_code !== countryFilter.value) return false;
+    if (typeFilter.value !== "all" && nodeIPType(node) !== typeFilter.value) return false;
     if (statusFilter.value !== "all") {
       const result = effectiveResult(node);
       if (statusFilter.value === "passed" && result.status !== "passed") return false;
@@ -82,7 +89,7 @@ const filtered = computed(() => {
 const pageCount = computed(() => Math.max(1, Math.ceil(filtered.value.length / PAGE_SIZE)));
 const pageNodes = computed(() => filtered.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE));
 
-watch([search, countryFilter, statusFilter], () => {
+watch([search, countryFilter, statusFilter, typeFilter], () => {
   page.value = 1;
 });
 
@@ -291,6 +298,10 @@ const detailNode = ref<Node | null>(null);
             <option value="failed">未通过</option>
             <option value="not_tested">未检测 / 过期</option>
           </select>
+          <select v-model="typeFilter" name="node-type" class="h-9 min-w-32 rounded-lg border border-line-strong bg-surface px-2.5 text-xs outline-none focus:border-accent" aria-label="筛选 IP 类型">
+            <option value="all">所有 IP 类型</option>
+            <option v-for="(label, type) in ipTypeLabels" :key="type" :value="type">{{ label }}</option>
+          </select>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
@@ -339,7 +350,7 @@ const detailNode = ref<Node | null>(null);
           </div>
           <p v-else class="px-4 pt-2 text-[11px] text-faint sm:hidden">左右滑动查看完整列 →</p>
           <div v-if="filtered.length" class="overflow-x-auto">
-            <table class="w-full min-w-[900px] border-collapse text-left">
+            <table class="w-full min-w-[1000px] border-collapse text-left">
               <caption class="sr-only">VPN Gate 候选节点列表</caption>
               <thead>
                 <tr class="border-b border-line text-[11px] text-faint">
@@ -349,6 +360,7 @@ const detailNode = ref<Node | null>(null);
                   <th class="px-2 py-2 font-medium">来源节点</th>
                   <th class="px-2 py-2 font-medium">来源地区</th>
                   <th class="px-2 py-2 font-medium">实际出口</th>
+                  <th class="px-2 py-2 font-medium">IP 类型</th>
                   <th class="px-2 py-2 font-medium">检测结果</th>
                   <th class="px-2 py-2 font-medium">HTTPS 延迟</th>
                   <th class="px-2 py-2 font-medium">检测时间</th>
@@ -369,11 +381,14 @@ const detailNode = ref<Node | null>(null);
                   <td class="px-2 py-2.5 text-xs">
                     <span class="font-medium">{{ countryName(node.country_code) }}</span>
                     <span class="ml-1 text-[10px] text-faint">{{ node.country_code }}</span>
-                    <div class="text-[10px] text-faint">{{ node.residential ? "志愿者家宽" : "VPN Gate 自营" }}</div>
+                    <div class="text-[10px] text-faint">{{ sourceResidentialLabel(node.source_residential) }}</div>
                   </td>
                   <td class="px-2 py-2.5 text-xs">
                     <span class="block font-mono text-[11px]">{{ effectiveResult(node).actual_ip || node.expected_exit_ip || "—" }}</span>
-                    <span class="text-[10px] text-faint">{{ effectiveResult(node).country ? countryName(effectiveResult(node).country) : ipTypeLabel(node.ip_type) }}</span>
+                    <span class="text-[10px] text-faint">{{ effectiveResult(node).country ? countryName(effectiveResult(node).country) : "地区未知" }}</span>
+                  </td>
+                  <td class="px-2 py-2.5">
+                    <StatusBadge :label="ipTypeLabel(nodeIPType(node))" :tone="ipTypeTone(nodeIPType(node))" size="sm" />
                   </td>
                   <td class="px-2 py-2.5">
                     <StatusBadge :label="checkStatusLabel(effectiveResult(node).status)" :tone="checkStatusTone(effectiveResult(node).status)" size="sm" :pulse="effectiveResult(node).status === 'running'" />
@@ -482,8 +497,10 @@ const detailNode = ref<Node | null>(null);
           <div><dt class="text-faint">来源地区</dt><dd class="mt-0.5">{{ countryName(detailNode.country_code) }}（{{ detailNode.country_code }}）</dd></div>
           <div><dt class="text-faint">ASN</dt><dd class="mt-0.5">{{ detailNode.asn || "—" }}</dd></div>
           <div><dt class="text-faint">ISP</dt><dd class="mt-0.5">{{ detailNode.isp || "—" }}</dd></div>
-          <div><dt class="text-faint">候选类型</dt><dd class="mt-0.5">{{ detailNode.residential ? "志愿者家宽" : "VPN Gate 自营" }}</dd></div>
-          <div><dt class="text-faint">IP 类型</dt><dd class="mt-0.5">{{ ipTypeLabel(detailNode.ip_type) }}</dd></div>
+          <div><dt class="text-faint">来源类型</dt><dd class="mt-0.5">{{ sourceResidentialLabel(detailNode.source_residential) }}</dd></div>
+          <div><dt class="text-faint">IP 类型</dt><dd class="mt-0.5">{{ ipTypeLabel(nodeIPType(detailNode)) }}</dd></div>
+          <div><dt class="text-faint">类型依据</dt><dd class="mt-0.5">{{ detailNode.openvpn_egress?.reason || "—" }}</dd></div>
+          <div><dt class="text-faint">画像状态</dt><dd class="mt-0.5">{{ detailNode.openvpn_egress?.intelligence_status || "—" }}</dd></div>
           <div><dt class="text-faint">预期出口</dt><dd class="mt-0.5 font-mono">{{ detailNode.expected_exit_ip || "—" }}</dd></div>
           <div><dt class="text-faint">SSTP 候选</dt><dd class="mt-0.5">{{ detailNode.sstp_candidates?.length || 0 }} 个</dd></div>
           <div><dt class="text-faint">Ping</dt><dd class="tnum mt-0.5">{{ detailNode.ping ? `${detailNode.ping} ms` : "—" }}</dd></div>

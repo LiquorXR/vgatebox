@@ -4,12 +4,15 @@ export interface EgressProfile {
   city?: string;
   country_status?: string;
   intelligence_status?: string;
+  intelligence_error?: string;
   ip_type?: string;
   protocol?: string;
   provider?: string;
   asn?: string;
   isp?: string;
   expires_at?: string;
+  reason?: string;
+  confidence?: string;
   [key: string]: unknown;
 }
 
@@ -104,6 +107,9 @@ export interface Node {
   ping: number;
   speed_mbps: number;
   sessions: number;
+  // 来源标签：志愿者节点或 VPN Gate 自营，不等同于出口住宅类型。
+  source_residential?: boolean;
+  // 出口画像结论：strict_residential 或 likely_residential。
   residential: boolean;
   pool_node_id?: string;
 }

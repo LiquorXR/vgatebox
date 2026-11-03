@@ -48,28 +48,34 @@ func TestIsResidential(t *testing.T) {
 	}
 }
 
-// 解析 CSV 时就把家宽标记算好，别留给调用方各自判断。
-func TestParseNodeCSVMarksResidential(t *testing.T) {
+// 解析 CSV 时就把来源标签算好；出口画像的 Residential 仍留空等真实验活。
+func TestParseNodeCSVMarksSourceResidential(t *testing.T) {
 	nodes, err := parseNodeCSV(sampleNodeCSV("public-vpn-200"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	if nodes[0].SourceResidential {
+		t.Fatal("public-vpn- 开头的是自营机房，不该标成志愿者")
+	}
 	if nodes[0].Residential {
-		t.Fatal("public-vpn- 开头的是自营机房，不该标成家宽")
+		t.Fatal("CSV 阶段没有出口画像，不能标成住宅")
 	}
 	nodes, err = parseNodeCSV(sampleNodeCSV("vpn829571948"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !nodes[0].Residential {
-		t.Fatal("志愿者节点应标成家宽")
+	if !nodes[0].SourceResidential {
+		t.Fatal("志愿者节点应标成来源住宅")
+	}
+	if nodes[0].Residential {
+		t.Fatal("CSV 阶段没有出口画像，不能标成住宅")
 	}
 }
 
 var mixed = []Node{
-	{HostName: "public-vpn-1", CountryCode: "JP", Country: "Japan", SpeedMbps: 900, Residential: false},
-	{HostName: "jp-home", CountryCode: "JP", Country: "Japan", SpeedMbps: 300, Residential: true},
-	{HostName: "kr-dc", CountryCode: "KR", Country: "Korea", SpeedMbps: 500, Residential: false},
+	{HostName: "public-vpn-1", CountryCode: "JP", Country: "Japan", SpeedMbps: 900, SourceResidential: false},
+	{HostName: "jp-home", CountryCode: "JP", Country: "Japan", SpeedMbps: 300, SourceResidential: true},
+	{HostName: "kr-dc", CountryCode: "KR", Country: "Korea", SpeedMbps: 500, SourceResidential: false},
 }
 
 // 开着"只用家宽"时，机房节点再快也不该被挑中。
@@ -129,9 +135,9 @@ func TestResidentialOnlyDefaultsOn(t *testing.T) {
 // ---- 换节点：不能换回刚才那个 ----
 
 var pool = []Node{
-	{HostName: "jp1", CountryCode: "JP", SpeedMbps: 900, Residential: true},
-	{HostName: "jp2", CountryCode: "JP", SpeedMbps: 800, Residential: true},
-	{HostName: "jp3", CountryCode: "JP", SpeedMbps: 700, Residential: true},
+	{HostName: "jp1", CountryCode: "JP", SpeedMbps: 900, SourceResidential: true},
+	{HostName: "jp2", CountryCode: "JP", SpeedMbps: 800, SourceResidential: true},
+	{HostName: "jp3", CountryCode: "JP", SpeedMbps: 700, SourceResidential: true},
 }
 
 // 核心回归：换过的节点会记进历史，再挑时被跳过。
@@ -256,14 +262,14 @@ func TestCandidatesForKeepsCurrentFirstAndAvoidsSwapped(t *testing.T) {
 // ---- 每个国家各开几个 ----
 
 var manyRegions = []Node{
-	{HostName: "jp1", CountryCode: "JP", Country: "Japan", SpeedMbps: 900, Residential: true},
-	{HostName: "jp2", CountryCode: "JP", Country: "Japan", SpeedMbps: 800, Residential: true},
-	{HostName: "jp3", CountryCode: "JP", Country: "Japan", SpeedMbps: 700, Residential: true},
-	{HostName: "kr1", CountryCode: "KR", Country: "Korea", SpeedMbps: 600, Residential: true},
-	{HostName: "kr2", CountryCode: "KR", Country: "Korea", SpeedMbps: 500, Residential: true},
-	{HostName: "us1", CountryCode: "US", Country: "United States", SpeedMbps: 400, Residential: true},
-	{HostName: "dc1", CountryCode: "DE", Country: "Germany", SpeedMbps: 999, Residential: false},
-	{HostName: "none", CountryCode: "", Country: "", SpeedMbps: 300, Residential: true},
+	{HostName: "jp1", CountryCode: "JP", Country: "Japan", SpeedMbps: 900, SourceResidential: true},
+	{HostName: "jp2", CountryCode: "JP", Country: "Japan", SpeedMbps: 800, SourceResidential: true},
+	{HostName: "jp3", CountryCode: "JP", Country: "Japan", SpeedMbps: 700, SourceResidential: true},
+	{HostName: "kr1", CountryCode: "KR", Country: "Korea", SpeedMbps: 600, SourceResidential: true},
+	{HostName: "kr2", CountryCode: "KR", Country: "Korea", SpeedMbps: 500, SourceResidential: true},
+	{HostName: "us1", CountryCode: "US", Country: "United States", SpeedMbps: 400, SourceResidential: true},
+	{HostName: "dc1", CountryCode: "DE", Country: "Germany", SpeedMbps: 999, SourceResidential: false},
+	{HostName: "none", CountryCode: "", Country: "", SpeedMbps: 300, SourceResidential: true},
 }
 
 func TestPickEveryRegionOnePerCountry(t *testing.T) {

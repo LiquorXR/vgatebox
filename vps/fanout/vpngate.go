@@ -63,7 +63,11 @@ type Node struct {
 	SpeedMbps         float64        `json:"speed_mbps"`
 	Sessions          int            `json:"sessions"`
 	Config            string         `json:"-"` // 解码后的 .ovpn 内容
-	// Residential 表示这是志愿者的家庭宽带，不是 VPN Gate 自己的机房服务器。
+	// SourceResidential 是来源标签：志愿者节点，而不是 VPN Gate 自营机房。
+	// 它来自 isResidential(hostname, ip)，不代表出口 IP 已被画像确认为住宅。
+	SourceResidential bool `json:"source_residential"`
+	// Residential 是出口画像结论：strict_residential 或 likely_residential。
+	// 两者必须分开，否则 unknown 会被误显示成 VPN Gate 自营。
 	Residential bool `json:"residential"`
 }
 
@@ -202,15 +206,15 @@ func parseNodeCSV(body string) ([]Node, error) {
 		speed, _ := strconv.ParseFloat(get("Speed"), 64)
 		sessions, _ := strconv.Atoi(get("NumVpnSessions"))
 		nodes = append(nodes, Node{
-			HostName:    get("HostName"),
-			IP:          get("IP"),
-			Residential: isResidential(get("HostName"), get("IP")),
-			Country:     get("CountryLong"),
-			CountryCode: get("CountryShort"),
-			Ping:        ping,
-			SpeedMbps:   speed / 1e6,
-			Sessions:    sessions,
-			Config:      string(cfg),
+			HostName:          get("HostName"),
+			IP:                get("IP"),
+			SourceResidential: isResidential(get("HostName"), get("IP")),
+			Country:           get("CountryLong"),
+			CountryCode:       get("CountryShort"),
+			Ping:              ping,
+			SpeedMbps:         speed / 1e6,
+			Sessions:          sessions,
+			Config:            string(cfg),
 		})
 	}
 	if len(nodes) == 0 {

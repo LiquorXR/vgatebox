@@ -305,7 +305,8 @@ func (m *Manager) noNodesErrLocked(region string, filtered bool) error {
 }
 
 // nodePoolLocked 返回可以拿来挑的节点。开了"只用家宽"就把 vpngate
-// 自营机房的节点剔掉。调用方必须已持 m.mu。
+// 自营机房的节点剔掉；这里判断的是来源标签 SourceResidential，
+// 出口画像是否住宅由 Slot 策略另行判断。调用方必须已持 m.mu。
 //
 // 只影响"新挑节点"：已经跑起来的隧道不会因为打开这个开关而被换掉，
 // 否则改一下设置就把用户手上所有出口的 IP 全换了。
@@ -315,7 +316,7 @@ func (m *Manager) nodePoolLocked() []Node {
 	}
 	out := make([]Node, 0, len(m.nodes))
 	for _, n := range m.nodes {
-		if n.Residential {
+		if n.SourceResidential {
 			out = append(out, n)
 		}
 	}

@@ -14,9 +14,9 @@ func mgrWith(nodes []Node, running ...string) *Manager {
 const t_tmpdir = "/tmp"
 
 var sample = []Node{
-	{HostName: "jp1", CountryCode: "JP", Country: "Japan", SpeedMbps: 300, Ping: 10, Residential: true},
-	{HostName: "jp2", CountryCode: "JP", Country: "Japan", SpeedMbps: 200, Ping: 20, Residential: true},
-	{HostName: "kr1", CountryCode: "KR", Country: "Korea", SpeedMbps: 150, Ping: 30, Residential: true},
+	{HostName: "jp1", CountryCode: "JP", Country: "Japan", SpeedMbps: 300, Ping: 10, SourceResidential: true},
+	{HostName: "jp2", CountryCode: "JP", Country: "Japan", SpeedMbps: 200, Ping: 20, SourceResidential: true},
+	{HostName: "kr1", CountryCode: "KR", Country: "Korea", SpeedMbps: 150, Ping: 30, SourceResidential: true},
 }
 
 func TestPickNodesSkipsRunning(t *testing.T) {

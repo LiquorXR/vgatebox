@@ -81,6 +81,7 @@ func (m *Manager) Nodes() ([]Node, time.Time) {
 			out[i].IPType, out[i].ISP, out[i].ASN, out[i].ExpectedExitIP = "unknown", "", "", ""
 			out[i].Residential = false
 			out[i].OpenVPNStatus = "stale"
+			// SourceResidential 是来源标签，不随出口画像过期而改变。
 		}
 	}
 	return out, m.fetched
@@ -413,6 +414,7 @@ func (m *Manager) tryNode(t *Tunnel) error {
 	t.Node.OpenVPNEgress = &public
 	t.Node.ExpectedExitIP, t.Node.OpenVPNStatus, t.Node.IPType = ip, "passed", image.IPType
 	t.Node.ISP, t.Node.ASN = stringValue(image.ISP), stringValue(image.ASN)
+	// Residential 是出口画像结论；SourceResidential 保持节点来源标签不变。
 	t.Node.Residential = image.IPType == "strict_residential" || image.IPType == "likely_residential"
 	observed := t.Node
 	t.mu.Unlock()

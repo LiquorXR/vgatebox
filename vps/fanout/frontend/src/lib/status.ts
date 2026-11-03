@@ -117,6 +117,29 @@ export function ipTypeLabel(value: string | undefined | null): string {
   return ipTypeLabels[value] || value;
 }
 
+export function ipTypeTone(value: string | undefined | null): Tone {
+  switch (value) {
+    case "strict_residential":
+      return "ok";
+    case "likely_residential":
+      return "ok";
+    case "datacenter":
+      return "warn";
+    case "mobile":
+      return "info";
+    case "business_isp":
+      return "neutral";
+    default:
+      return "neutral";
+  }
+}
+
+export function sourceResidentialLabel(value: boolean | undefined | null): string {
+  if (value === true) return "志愿者节点";
+  if (value === false) return "VPN Gate 自营";
+  return "来源未知";
+}
+
 export function verifiedCountry(exit: Exit): string {
   const egress = exit.egress;
   if (!egress) return "";

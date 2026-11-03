@@ -115,6 +115,7 @@ func fetchNodesFromValidatedPool(poolPath string) ([]Node, error) {
 			CountryCode:       item.AdvertisedCountry,
 			Ping:              item.SourcePingMS,
 			SpeedMbps:         item.SourceScore,
+			SourceResidential: isResidential(item.Hostname, item.ServerIP),
 			Residential:       residential,
 			Config:            string(config),
 			PoolNodeID:        item.NodeID,
