@@ -160,7 +160,7 @@ const readyCount = computed(() => exits.value.filter((exit) => exit.status === "
               <UiButton :disabled="!url" @click="copyNodes"><Copy :size="14" />复制节点链接</UiButton>
             </div>
             <p v-if="!url" class="text-xs text-warn">当前没有选中任何订阅内容，请至少开启一个来源。</p>
-            <p v-if="format === 'clash'" class="text-[11px] leading-relaxed text-faint">Mihomo 仅支持 VLESS + XHTTP，且 Trojan 必须启用 TLS；不符合的入口会保留在 v2rayN 格式，Clash 订阅会跳过。</p>
+            <p v-if="format === 'clash'" class="text-[11px] leading-relaxed text-faint">Clash/Mihomo 订阅按 VLESS 输出；Mihomo 无法表达 VLESS + mKCP，这类入口会保留在 v2rayN 格式，Clash 订阅会跳过。REALITY 与 VLESS Encryption 需要较新的 Mihomo 内核。</p>
             <div class="rounded-lg border border-line bg-surface-2 px-3 py-2 text-[11px] leading-relaxed text-muted">
               当前范围：{{ counts.direct ? "VPS 本机直出 · " : "" }}{{ counts.custom }} 个自定义入口 · {{ counts.vpnInbounds }} 个 VPN Gate 入站（{{ counts.vpnExits }} 个就绪出口）。
             </div>

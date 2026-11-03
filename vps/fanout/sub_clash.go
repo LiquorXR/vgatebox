@@ -6,103 +6,52 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 )
-
-func decodeShareBase64(s string) ([]byte, error) {
-	for _, e := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
-		if b, err := e.DecodeString(s); err == nil {
-			return b, nil
-		}
-	}
-	return nil, fmt.Errorf("invalid_share_base64")
-}
-
-func normalizeVmessShare(link string) (string, error) {
-	if !strings.HasPrefix(link, "vmess://") || strings.Contains(strings.SplitN(strings.TrimPrefix(link, "vmess://"), "#", 2)[0], "@") {
-		return link, nil
-	}
-	b, err := decodeShareBase64(strings.SplitN(strings.TrimPrefix(link, "vmess://"), "#", 2)[0])
-	if err != nil {
-		return "", err
-	}
-	var v map[string]any
-	if json.Unmarshal(b, &v) != nil {
-		return "", fmt.Errorf("invalid_vmess_share")
-	}
-	value := func(k string) string {
-		if v[k] == nil {
-			return ""
-		}
-		return fmt.Sprint(v[k])
-	}
-	q := url.Values{"type": {value("net")}, "security": {"none"}, "sni": {value("sni")}, "host": {value("host")}, "path": {value("path")}, "alterId": {value("aid")}, "encryption": {value("scy")}, "fp": {value("fp")}}
-	if value("tls") == "tls" {
-		q.Set("security", "tls")
-	}
-	if value("net") == "grpc" {
-		q.Set("serviceName", value("path"))
-	}
-	u := url.URL{Scheme: "vmess", Host: net.JoinHostPort(value("add"), value("port")), User: url.User(value("id")), RawQuery: q.Encode(), Fragment: value("ps")}
-	return u.String(), nil
-}
 
 type clashUnsupportedError struct{ reason string }
 
 func (e *clashUnsupportedError) Error() string { return e.reason }
 
+// clashProxy 把一个 VLESS 分享链接转成 mihomo 出站配置。
+// 面板与第三方接入只生成 vless://，其他协议在导出前就被拒绝。
 func clashProxy(link string) (map[string]any, error) {
-	link, err := normalizeVmessShare(link)
-	if err != nil {
-		return nil, err
-	}
 	u, err := url.Parse(link)
 	if err != nil || u.User == nil || u.Hostname() == "" {
 		return nil, fmt.Errorf("invalid_share_link")
 	}
-	protoName := strings.ToLower(u.Scheme)
+	if !strings.EqualFold(u.Scheme, "vless") {
+		return nil, fmt.Errorf("unsupported_clash_protocol")
+	}
 	port, err := strconv.Atoi(u.Port())
 	if err != nil || port < 1 || port > 65535 {
 		return nil, fmt.Errorf("invalid_share_port")
 	}
-	q := u.Query()
-	protocol := protoName
-	switch protocol {
-	case "vless", "vmess", "trojan":
-	default:
-		return nil, fmt.Errorf("unsupported_clash_protocol")
+	uuid := u.User.Username()
+	if uuid == "" {
+		return nil, fmt.Errorf("missing_share_credential")
 	}
+	q := u.Query()
+
+	p := map[string]any{
+		"name":   u.Fragment,
+		"type":   "vless",
+		"server": u.Hostname(),
+		"port":   port,
+		"uuid":   uuid,
+		"udp":    true,
+	}
+
 	transport := strings.ToLower(strings.TrimSpace(q.Get("type")))
 	if transport == "" {
 		transport = "tcp"
 	}
-	p := map[string]any{"name": u.Fragment, "server": u.Hostname(), "port": port, "udp": true}
-	switch protocol {
-	case "vless":
-		p["type"], p["uuid"] = "vless", u.User.Username()
-	case "vmess":
-		p["type"], p["uuid"], p["cipher"], p["alterId"] = "vmess", u.User.Username(), "auto", 0
-		if a := q.Get("alterId"); a != "" {
-			n, e := strconv.Atoi(a)
-			if e != nil || n < 0 {
-				return nil, fmt.Errorf("invalid_vmess_alter_id")
-			}
-			p["alterId"] = n
-		}
-		if cipher := q.Get("encryption"); cipher != "" {
-			p["cipher"] = cipher
-		}
-	case "trojan":
-		p["type"], p["password"] = "trojan", u.User.Username()
-	}
-	if u.User.Username() == "" {
-		return nil, fmt.Errorf("missing_share_credential")
-	}
 	switch transport {
 	case "tcp", "raw":
+		p["network"] = "tcp"
 	case "ws":
 		p["network"] = "ws"
 		p["ws-opts"] = clashWSOpts(q, false)
@@ -113,9 +62,6 @@ func clashProxy(link string) (map[string]any, error) {
 		p["network"] = "grpc"
 		p["grpc-opts"] = map[string]any{"grpc-service-name": strings.TrimPrefix(q.Get("serviceName"), "/")}
 	case "xhttp":
-		if protocol != "vless" {
-			return nil, &clashUnsupportedError{reason: "Mihomo only supports XHTTP with VLESS"}
-		}
 		p["network"] = "xhttp"
 		p["xhttp-opts"] = clashXHTTPOpts(q)
 	case "mkcp", "kcp":
@@ -123,27 +69,18 @@ func clashProxy(link string) (map[string]any, error) {
 	default:
 		return nil, fmt.Errorf("unsupported_clash_transport")
 	}
+
 	security := strings.ToLower(strings.TrimSpace(q.Get("security")))
 	if security == "" {
 		security = "none"
-		if protocol == "trojan" {
-			security = "tls"
-		}
 	}
 	if security != "none" && security != "tls" && security != "reality" {
 		return nil, fmt.Errorf("unsupported_clash_security")
 	}
-	if protocol == "trojan" && security == "none" {
-		return nil, &clashUnsupportedError{reason: "Mihomo forces TLS for Trojan"}
-	}
 	if security != "none" {
 		p["tls"], p["skip-cert-verify"] = true, false
-		key := "servername"
-		if protocol == "trojan" {
-			key = "sni"
-		}
 		if sni := q.Get("sni"); sni != "" {
-			p[key] = sni
+			p["servername"] = sni
 		}
 		if fp := q.Get("fp"); fp != "" {
 			p["client-fingerprint"] = fp
@@ -184,26 +121,26 @@ func clashProxy(link string) (map[string]any, error) {
 			"support-x25519mlkem768": true,
 		}
 	}
-	if flow := q.Get("flow"); flow != "" {
-		if protocol != "vless" || flow != "xtls-rprx-vision" {
-			return nil, fmt.Errorf("unsupported_clash_flow")
-		}
-		// Mihomo 的 flow 只适用于 TCP/RAW；VLESS Encryption 下的跨传输
-		// Vision 在 Clash 中省略，仍保留 encryption 字段。
-		if transport == "tcp" || transport == "raw" {
-			p["flow"] = flow
+	// XHTTP 在 TLS/REALITY 下默认走 h2；显式写出与官方示例一致。
+	if transport == "xhttp" && security != "none" {
+		if _, ok := p["alpn"]; !ok {
+			p["alpn"] = []string{"h2"}
 		}
 	}
-	if protocol == "vless" {
-		if enc := strings.TrimSpace(q.Get("encryption")); enc != "" && enc != "none" {
-			p["encryption"] = enc
+	if flow := strings.TrimSpace(q.Get("flow")); flow != "" {
+		if flow != "xtls-rprx-vision" {
+			return nil, fmt.Errorf("unsupported_clash_flow")
 		}
+		// flow 是 VLESS 请求头里的 addons，与传输层无关。Xray 服务端在账号
+		// 配置了 Vision 时会拒绝没有 flow 的客户端，所以所有传输都要写出。
+		p["flow"] = flow
+	}
+	if enc := strings.TrimSpace(q.Get("encryption")); enc != "" && enc != "none" {
+		p["encryption"] = enc
 	}
 	// XUDP gives Mihomo a UDP path that also works over XHTTP; it is a
 	// separate wire encoding from the proxy protocol and is safe for TCP too.
-	if protocol == "vless" || protocol == "vmess" {
-		p["packet-encoding"] = "xudp"
-	}
+	p["packet-encoding"] = "xudp"
 	return p, nil
 }
 
@@ -245,8 +182,145 @@ func normalizeCertificatePin(raw string) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// JSON is a YAML 1.2 document and avoids injecting user names or credentials
-// into YAML syntax. Mihomo consumes this complete profile directly.
+// yamlField 是保持官方示例字段顺序的映射项；yamlMap 与 yamlSeq 让输出不必
+// 依赖 map 的随机遍历顺序，也不需要引入第三方 YAML 库。
+type yamlField struct {
+	key   string
+	value any
+}
+
+type yamlMap []yamlField
+
+type yamlSeq []yamlMap
+
+// clashProxyOrder 与 mihomo 官方 VLESS/TLS 配置示例的字段顺序一致。
+var clashProxyOrder = []string{
+	"name", "type", "server", "port", "uuid", "udp",
+	"flow", "packet-encoding", "encryption", "network",
+	"tls", "servername", "alpn", "fingerprint", "client-fingerprint",
+	"skip-cert-verify", "reality-opts", "ws-opts", "grpc-opts", "xhttp-opts",
+}
+
+// clashOptOrder 是嵌套配置块的字段顺序；strings.Split 之外的新字段会按字母
+// 顺序排在后面，保证输出仍然稳定。
+var clashOptOrder = map[string][]string{
+	"reality-opts": {"public-key", "short-id", "support-x25519mlkem768"},
+	"ws-opts":      {"path", "headers", "v2ray-http-upgrade"},
+	"grpc-opts":    {"grpc-service-name"},
+	"xhttp-opts":   {"path", "host", "mode"},
+	"headers":      {"Host"},
+}
+
+func clashYAMLMap(prefix string, m map[string]any) yamlMap {
+	order := clashOptOrder[prefix]
+	if prefix == "" {
+		order = clashProxyOrder
+	}
+	out := make(yamlMap, 0, len(m))
+	used := make(map[string]bool, len(m))
+	add := func(key string) {
+		value, ok := m[key]
+		if !ok {
+			return
+		}
+		used[key] = true
+		switch nested := value.(type) {
+		case map[string]any:
+			out = append(out, yamlField{key: key, value: clashYAMLMap(key, nested)})
+		case map[string]string:
+			converted := make(map[string]any, len(nested))
+			for k, v := range nested {
+				converted[k] = v
+			}
+			out = append(out, yamlField{key: key, value: clashYAMLMap(key, converted)})
+		default:
+			out = append(out, yamlField{key: key, value: value})
+		}
+	}
+	for _, key := range order {
+		add(key)
+	}
+	rest := make([]string, 0, len(m))
+	for key := range m {
+		if !used[key] {
+			rest = append(rest, key)
+		}
+	}
+	sort.Strings(rest)
+	for _, key := range rest {
+		add(key)
+	}
+	return out
+}
+
+// yamlQuote 输出 YAML 双引号标量。JSON 的字符串转义是 YAML 双引号语法的子集，
+// 因此节点名、密码里的冒号、井号、引号或换行不会破坏文档结构。
+func yamlQuote(s string) string {
+	blob, err := json.Marshal(s)
+	if err != nil {
+		return `""`
+	}
+	return string(blob)
+}
+
+func writeYAMLMap(b *strings.Builder, m yamlMap, indent int) {
+	pad := strings.Repeat(" ", indent)
+	for _, f := range m {
+		b.WriteString(pad)
+		writeYAMLField(b, f, indent)
+	}
+}
+
+func writeYAMLField(b *strings.Builder, f yamlField, indent int) {
+	b.WriteString(f.key)
+	b.WriteString(":")
+	switch value := f.value.(type) {
+	case string:
+		b.WriteString(" ")
+		b.WriteString(yamlQuote(value))
+		b.WriteString("\n")
+	case bool:
+		b.WriteString(" ")
+		b.WriteString(strconv.FormatBool(value))
+		b.WriteString("\n")
+	case int:
+		b.WriteString(" ")
+		b.WriteString(strconv.Itoa(value))
+		b.WriteString("\n")
+	case []string:
+		b.WriteString("\n")
+		for _, item := range value {
+			b.WriteString(strings.Repeat(" ", indent+2))
+			b.WriteString("- ")
+			b.WriteString(yamlQuote(item))
+			b.WriteString("\n")
+		}
+	case yamlMap:
+		b.WriteString("\n")
+		writeYAMLMap(b, value, indent+2)
+	case yamlSeq:
+		b.WriteString("\n")
+		for _, item := range value {
+			itemIndent := indent + 2
+			if len(item) == 0 {
+				b.WriteString(strings.Repeat(" ", itemIndent))
+				b.WriteString("- {}\n")
+				continue
+			}
+			b.WriteString(strings.Repeat(" ", itemIndent))
+			b.WriteString("- ")
+			writeYAMLField(b, item[0], itemIndent+2)
+			writeYAMLMap(b, item[1:], itemIndent+2)
+		}
+	default:
+		b.WriteString(" ")
+		b.WriteString(yamlQuote(fmt.Sprint(value)))
+		b.WriteString("\n")
+	}
+}
+
+// renderClash 输出 mihomo 官方示例形态的块状 YAML。所有字符串都经过转义，
+// 节点名或凭据不会注入 YAML 语法。
 func renderClash(links []string) ([]byte, []string, error) {
 	proxies := []map[string]any{}
 	names := []string{}
@@ -279,6 +353,29 @@ func renderClash(links []string) ([]byte, []string, error) {
 	if len(proxies) == 0 {
 		return nil, omitted, fmt.Errorf("没有 Mihomo 可表达的节点")
 	}
-	blob, err := json.MarshalIndent(map[string]any{"mode": "rule", "log-level": "warning", "ipv6": false, "proxies": proxies, "proxy-groups": []any{map[string]any{"name": "vgatebox", "type": "select", "proxies": names}}, "rules": []string{"MATCH,vgatebox"}}, "", "  ")
-	return blob, omitted, err
+
+	proxyItems := make(yamlSeq, 0, len(proxies))
+	for _, p := range proxies {
+		proxyItems = append(proxyItems, clashYAMLMap("", p))
+	}
+	doc := yamlMap{
+		{key: "mixed-port", value: 7890},
+		{key: "allow-lan", value: false},
+		{key: "mode", value: "rule"},
+		{key: "log-level", value: "warning"},
+		{key: "ipv6", value: false},
+		{key: "profile", value: yamlMap{
+			{key: "store-selected", value: true},
+		}},
+		{key: "proxies", value: proxyItems},
+		{key: "proxy-groups", value: yamlSeq{{
+			{key: "name", value: "vgatebox"},
+			{key: "type", value: "select"},
+			{key: "proxies", value: names},
+		}}},
+		{key: "rules", value: []string{"MATCH,vgatebox"}},
+	}
+	var b strings.Builder
+	writeYAMLMap(&b, doc, 0)
+	return []byte(b.String()), omitted, nil
 }

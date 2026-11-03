@@ -12,87 +12,364 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 )
 
-func clashRealityFixture(name string) string {
-	return "vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@203.0.113.1:443?type=tcp&security=reality&flow=xtls-rprx-vision&sni=example.com&fp=chrome&pbk=" + base64.RawURLEncoding.EncodeToString(make([]byte, 32)) + "&sid=12345678#" + url.PathEscape(name)
+type clashMatrixEntry struct {
+	network  string
+	security string
 }
 
-func TestClashProfilePreservesRealityOrderNamesAndNoDirectFallback(t *testing.T) {
-	links := []string{clashRealityFixture("VPS 本机直出"), clashRealityFixture("自定义 · 示例"), clashRealityFixture("🇯🇵 日本 01"), clashRealityFixture("DIRECT"), clashRealityFixture("VPS 本机直出")}
-	blob, omitted, err := renderClash(links)
+// clashMatrix 是面板允许创建的全部「传输 × 安全层」组合。
+func clashMatrix() []clashMatrixEntry {
+	securities := map[string][]string{
+		"tcp":         {"none", "tls", "reality"},
+		"ws":          {"none", "tls"},
+		"grpc":        {"none", "tls", "reality"},
+		"httpupgrade": {"none", "tls"},
+		"xhttp":       {"none", "tls", "reality"},
+	}
+	var out []clashMatrixEntry
+	for _, network := range []string{"tcp", "ws", "grpc", "httpupgrade", "xhttp"} {
+		for _, security := range securities[network] {
+			out = append(out, clashMatrixEntry{network: network, security: security})
+		}
+	}
+	return out
+}
+
+func clashRealityKey(t *testing.T) string {
+	t.Helper()
+	key, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes())
+}
+
+func clashLink(network, security, name, key string, extra url.Values) string {
+	q := url.Values{}
+	q.Set("type", network)
+	q.Set("security", security)
+	switch network {
+	case "ws", "httpupgrade", "xhttp":
+		q.Set("path", "/"+network)
+		q.Set("host", "cdn.example")
+	case "grpc":
+		q.Set("serviceName", "svc")
+	}
+	if security != "none" {
+		q.Set("sni", "example.com")
+		q.Set("fp", "chrome")
+	}
+	if security == "reality" {
+		q.Set("pbk", key)
+		q.Set("sid", "12345678")
+	}
+	for key, values := range extra {
+		for _, value := range values {
+			q.Add(key, value)
+		}
+	}
+	return "vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@203.0.113.1:443?" + q.Encode() + "#" + url.PathEscape(name)
+}
+
+var (
+	clashProxyNamePattern = regexp.MustCompile(`(?m)^  - name: (".*")$`)
+	clashGroupNamePattern = regexp.MustCompile(`(?m)^      - (".*")$`)
+)
+
+func clashProxiesSection(body string) string {
+	start := strings.Index(body, "\nproxies:\n")
+	if start < 0 {
+		return body
+	}
+	tail := body[start+1:]
+	if end := strings.Index(tail, "\nproxy-groups:\n"); end >= 0 {
+		return tail[:end]
+	}
+	return tail
+}
+
+func clashGroupSection(body string) string {
+	start := strings.Index(body, "\nproxy-groups:\n")
+	if start < 0 {
+		return ""
+	}
+	tail := body[start+1:]
+	if end := strings.Index(tail, "\nrules:\n"); end >= 0 {
+		return tail[:end]
+	}
+	return tail
+}
+
+func renderedNames(t *testing.T, pattern *regexp.Regexp, body string) []string {
+	t.Helper()
+	var out []string
+	for _, match := range pattern.FindAllStringSubmatch(body, -1) {
+		var name string
+		if err := json.Unmarshal([]byte(match[1]), &name); err != nil {
+			t.Fatalf("invalid quoted scalar %s: %v", match[1], err)
+		}
+		out = append(out, name)
+	}
+	return out
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// TestClashProfileMatchesDocumentedShape 固定默认节点的完整输出，确保顶层字段、
+// 字段顺序和官方 mihomo 配置示例一致。
+func TestClashProfileMatchesDocumentedShape(t *testing.T) {
+	key := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
+	link := "vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@203.0.113.1:443?type=tcp&security=reality&flow=xtls-rprx-vision&sni=example.com&fp=chrome&pbk=" + key + "&sid=12345678#VPS%20%E6%9C%AC%E6%9C%BA%E7%9B%B4%E5%87%BA"
+	blob, omitted, err := renderClash([]string{link})
 	if err != nil || len(omitted) != 0 {
 		t.Fatal(err, omitted)
 	}
-	var cfg struct {
-		Proxies []map[string]any `json:"proxies"`
-		Groups  []struct {
-			Proxies []string `json:"proxies"`
-			Type    string   `json:"type"`
-		} `json:"proxy-groups"`
-		Rules []string `json:"rules"`
+	want := `mixed-port: 7890
+allow-lan: false
+mode: "rule"
+log-level: "warning"
+ipv6: false
+profile:
+  store-selected: true
+proxies:
+  - name: "VPS 本机直出"
+    type: "vless"
+    server: "203.0.113.1"
+    port: 443
+    uuid: "fbaea75a-e91c-4ad9-9410-7e43aa967766"
+    udp: true
+    flow: "xtls-rprx-vision"
+    packet-encoding: "xudp"
+    network: "tcp"
+    tls: true
+    servername: "example.com"
+    client-fingerprint: "chrome"
+    skip-cert-verify: false
+    reality-opts:
+      public-key: "` + key + `"
+      short-id: "12345678"
+      support-x25519mlkem768: true
+proxy-groups:
+  - name: "vgatebox"
+    type: "select"
+    proxies:
+      - "VPS 本机直出"
+rules:
+  - "MATCH,vgatebox"
+`
+	if string(blob) != want {
+		t.Fatalf("unexpected profile:\n%s", blob)
 	}
-	if json.Unmarshal(blob, &cfg) != nil || len(cfg.Proxies) != 5 || len(cfg.Groups) != 1 {
-		t.Fatal("invalid profile")
+}
+
+func TestClashProfilePreservesOrderAndUniqueNames(t *testing.T) {
+	key := clashRealityKey(t)
+	links := []string{
+		clashLink("tcp", "reality", "VPS 本机直出", key, nil),
+		clashLink("tcp", "reality", "自定义 · 示例", key, nil),
+		clashLink("tcp", "reality", "🇯🇵 日本 01", key, nil),
+		clashLink("tcp", "reality", "DIRECT", key, nil),
+		clashLink("tcp", "reality", "VPS 本机直出", key, nil),
 	}
-	if cfg.Groups[0].Type != "select" || cfg.Rules[0] != "MATCH,vgatebox" {
+	body, omitted, err := renderClash(links)
+	if err != nil || len(omitted) != 0 {
+		t.Fatal(err, omitted)
+	}
+	names := renderedNames(t, clashProxyNamePattern, clashProxiesSection(string(body)))
+	want := []string{"VPS 本机直出", "自定义 · 示例", "🇯🇵 日本 01", "DIRECT · 2", "VPS 本机直出 · 2"}
+	if !equalStrings(names, want) {
+		t.Fatalf("proxy names changed: %q", names)
+	}
+	group := renderedNames(t, clashGroupNamePattern, clashGroupSection(string(body)))
+	if !equalStrings(group, want) {
+		t.Fatalf("group order changed: %q", group)
+	}
+	if !strings.Contains(string(body), "rules:\n  - \"MATCH,vgatebox\"\n") {
 		t.Fatal("implicit fallback added")
 	}
-	seen := map[string]bool{}
-	for i, p := range cfg.Proxies {
-		name := p["name"].(string)
-		if seen[name] || name == "DIRECT" {
-			t.Fatal("reserved or duplicate name")
-		}
-		seen[name] = true
-		if cfg.Groups[0].Proxies[i] != name || p["udp"] != true || p["skip-cert-verify"] != false || p["client-fingerprint"] != "chrome" || p["flow"] != "xtls-rprx-vision" || p["packet-encoding"] != "xudp" {
-			t.Fatal("transport or ordering changed")
-		}
-		reality := p["reality-opts"].(map[string]any)
-		if reality["short-id"] != "12345678" || reality["support-x25519mlkem768"] != true {
-			t.Fatal("REALITY credentials or ML-KEM compatibility lost")
-		}
+	if strings.Contains(string(body), "DIRECT\"") {
+		t.Fatal("reserved name leaked as a selectable proxy")
+	}
+}
+
+func TestClashQuotesNamesAndCredentials(t *testing.T) {
+	name := `Name: #[test] "quoted" \ end`
+	link := clashLink("tcp", "tls", name, "", nil)
+	body, _, err := renderClash([]string{link})
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := renderedNames(t, clashProxyNamePattern, clashProxiesSection(string(body)))
+	if len(names) != 1 || names[0] != name {
+		t.Fatalf("name was not escaped safely: %q", names)
+	}
+	if strings.Contains(string(body), `name: Name`) {
+		t.Fatal("unquoted scalar produced ambiguous YAML")
 	}
 }
 
 func TestClashTransportsPinAndCredentialsAreNotDowngraded(t *testing.T) {
-	links := []string{
-		"vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=ws&security=tls&path=%2Fws&host=cdn.example&pinSHA256=" + strings.Repeat("ab", 32) + "#Name%3A%20%23%5Btest%5D",
-		"trojan://" + url.User("p@ss:#/?").String() + "@host.example:443?security=tls&type=grpc&serviceName=service&sni=host.example#test",
-	}
-	p, err := clashProxy(links[0])
-	if err != nil || p["fingerprint"] != strings.Repeat("ab", 32) || p["skip-cert-verify"] != false {
+	pin := strings.Repeat("ab", 32)
+	link := "vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=ws&security=tls&path=%2Fws&host=cdn.example&pinSHA256=" + pin + "#pin"
+	p, err := clashProxy(link)
+	if err != nil || p["fingerprint"] != pin || p["skip-cert-verify"] != false {
 		t.Fatal("certificate pin lost", err)
 	}
-	p, err = clashProxy(links[1])
-	if err != nil || p["password"] != "p@ss:#/?" || p["network"] != "grpc" {
-		t.Fatal("credential escaping or transport failed", err)
+	ws := p["ws-opts"].(map[string]any)
+	if ws["path"] != "/ws" || ws["headers"].(map[string]string)["Host"] != "cdn.example" {
+		t.Fatal("websocket mapping lost", p)
 	}
-	for _, pair := range [][2]string{{"pbk=" + base64.RawURLEncoding.EncodeToString(make([]byte, 32)), "pbk=invalid"}, {"flow=xtls-rprx-vision", "flow=other"}, {"security=reality", "security=invalid"}} {
-		link := strings.Replace(clashRealityFixture("test"), pair[0], pair[1], 1)
-		if _, _, err := renderClash([]string{link}); err == nil {
-			t.Fatal("unsupported or invalid configuration accepted")
+	for _, link := range []string{
+		"vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=tcp&security=reality&pbk=invalid&sid=12345678&sni=example.com",
+		"vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=tcp&security=reality&pbk=" + base64.RawURLEncoding.EncodeToString(make([]byte, 32)) + "&sid=xyz&sni=example.com",
+		"vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=tcp&security=tls&flow=other",
+		"vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=tcp&security=invalid",
+		"vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=hysteria&security=tls",
+		"vmess://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=tcp",
+	} {
+		if _, err := clashProxy(link); err == nil {
+			t.Fatalf("unsupported or invalid configuration accepted: %s", link)
 		}
 	}
 }
 
-func TestClashStandardVmessShareAndScopedEndpoint(t *testing.T) {
-	jsonShare := `{"v":"2","ps":"VMess","add":"host.example","port":"443","id":"fbaea75a-e91c-4ad9-9410-7e43aa967766","aid":"0","net":"ws","path":"/proxy","tls":"tls","sni":"host.example"}`
-	p, err := clashProxy("vmess://" + base64.StdEncoding.EncodeToString([]byte(jsonShare)))
-	if err != nil || p["type"] != "vmess" || p["network"] != "ws" || p["tls"] != true {
-		t.Fatal("standard VMess rejected", err)
+func TestClashXHTTPAndHTTPUpgradeMappings(t *testing.T) {
+	key := clashRealityKey(t)
+	link := clashLink("xhttp", "reality", "XHTTP", key, nil)
+	p, err := clashProxy(link)
+	if err != nil {
+		t.Fatal(err)
 	}
+	xopts, ok := p["xhttp-opts"].(map[string]any)
+	if !ok || p["network"] != "xhttp" || xopts["path"] != "/xhttp" || p["udp"] != true || p["packet-encoding"] != "xudp" {
+		t.Fatal("xhttp mapping lost", p)
+	}
+	if opts, ok := p["alpn"].([]string); !ok || len(opts) != 1 || opts[0] != "h2" {
+		t.Fatalf("xhttp default alpn missing: %v", p["alpn"])
+	}
+	if p["reality-opts"].(map[string]any)["short-id"] != "12345678" {
+		t.Fatal("xhttp reality lost", p)
+	}
+
+	alpnLink := clashLink("xhttp", "tls", "XHTTP-ALPN", key, url.Values{"alpn": {"http/1.1"}})
+	p, err = clashProxy(alpnLink)
+	if err != nil || p["alpn"].([]string)[0] != "http/1.1" {
+		t.Fatal("explicit alpn lost", err, p["alpn"])
+	}
+
+	upgradeLink := clashLink("httpupgrade", "tls", "HTTPUpgrade", key, url.Values{"pcs": {strings.Repeat("ab", 32)}})
+	p, err = clashProxy(upgradeLink)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, ok := p["ws-opts"].(map[string]any)
+	if !ok || p["network"] != "ws" || ws["path"] != "/httpupgrade" || ws["v2ray-http-upgrade"] != true || p["fingerprint"] != strings.Repeat("ab", 32) {
+		t.Fatal("httpupgrade mapping lost", p)
+	}
+	if ws["headers"].(map[string]string)["Host"] != "cdn.example" {
+		t.Fatal("httpupgrade host lost", p)
+	}
+
+	mkcp := clashLink("mkcp", "none", "KCP", key, nil)
+	body, omitted, err := renderClash([]string{link, mkcp})
+	if err != nil || len(omitted) != 1 || !strings.Contains(string(body), `"XHTTP"`) || strings.Contains(string(body), `"KCP"`) {
+		t.Fatal("mKCP entry was not skipped alone", err, omitted, string(body))
+	}
+}
+
+func TestClashVLESSEncryptionAndFlow(t *testing.T) {
+	key := clashRealityKey(t)
+	enc := "mlkem768x25519plus.native.0rtt." + key
+	link := clashLink("tcp", "reality", "ENC", key, url.Values{"encryption": {enc}, "flow": {"xtls-rprx-vision"}})
+	p, err := clashProxy(link)
+	if err != nil || p["encryption"] != enc || p["flow"] != "xtls-rprx-vision" {
+		t.Fatalf("vless encryption or vision lost: %v %v", p["encryption"], p["flow"])
+	}
+
+	none := clashLink("tcp", "tls", "NONE", key, url.Values{"encryption": {"none"}})
+	p, err = clashProxy(none)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := p["encryption"]; ok {
+		t.Fatal("encryption=none should be omitted")
+	}
+}
+
+// flow 是 VLESS 请求头的一部分，Xray 在账号配置了 Vision 时会拒绝空 flow，
+// 因此所有传输都必须写着它。
+func TestClashFlowIsEmittedForEveryTransport(t *testing.T) {
+	key := clashRealityKey(t)
+	enc := "mlkem768x25519plus.native.0rtt." + key
+	for _, network := range []string{"tcp", "ws", "grpc", "httpupgrade", "xhttp"} {
+		link := clashLink(network, "tls", network, key, url.Values{"encryption": {enc}, "flow": {"xtls-rprx-vision"}})
+		p, err := clashProxy(link)
+		if err != nil {
+			t.Fatalf("%s: %v", network, err)
+		}
+		if p["flow"] != "xtls-rprx-vision" {
+			t.Fatalf("%s: vision flow dropped", network)
+		}
+	}
+}
+
+func TestClashTransportMatrixMappings(t *testing.T) {
+	key := clashRealityKey(t)
+	for _, tc := range clashMatrix() {
+		link := clashLink(tc.network, tc.security, tc.network+"-"+tc.security, key, nil)
+		p, err := clashProxy(link)
+		if err != nil {
+			t.Fatalf("%s/%s: %v", tc.network, tc.security, err)
+		}
+		wantNetwork := tc.network
+		if wantNetwork == "httpupgrade" {
+			wantNetwork = "ws"
+		}
+		if p["network"] != wantNetwork {
+			t.Fatalf("%s/%s: network = %v, want %s", tc.network, tc.security, p["network"], wantNetwork)
+		}
+		if tc.security == "none" {
+			if _, ok := p["tls"]; ok {
+				t.Fatalf("%s/%s: unexpected tls", tc.network, tc.security)
+			}
+			continue
+		}
+		if p["tls"] != true || p["skip-cert-verify"] != false {
+			t.Fatalf("%s/%s: tls or verification downgraded", tc.network, tc.security)
+		}
+		if tc.security == "reality" {
+			if _, ok := p["reality-opts"]; !ok {
+				t.Fatalf("%s/%s: reality options lost", tc.network, tc.security)
+			}
+		}
+	}
+}
+
+func TestClashSubscriptionEndpointAndAccess(t *testing.T) {
 	useSettings(t)
 	usePanel(t, &fakePanel{inbounds: []Inbound{{ID: 1, Enable: true}}})
 	m := NewManager(20, t.TempDir())
 	tok, _ := subToken()
 	w := httptest.NewRecorder()
 	handleSub(m)(w, httptest.NewRequest(http.MethodGet, "/sub?token="+tok+"&target=clash&bound=0", nil))
-	if w.Code != 200 || !strings.Contains(w.Header().Get("Content-Type"), "yaml") || !strings.Contains(w.Body.String(), `"proxies"`) {
-		t.Fatal("clash endpoint unavailable", w.Code)
+	if w.Code != 200 || !strings.Contains(w.Header().Get("Content-Type"), "yaml") || !strings.HasPrefix(w.Body.String(), "mixed-port: ") {
+		t.Fatalf("clash endpoint unavailable: %d %q", w.Code, w.Body.String())
 	}
 	w = httptest.NewRecorder()
 	handleSub(m)(w, httptest.NewRequest(http.MethodGet, "/sub?token=wrong&target=clash", nil))
@@ -106,88 +383,6 @@ func TestClashStandardVmessShareAndScopedEndpoint(t *testing.T) {
 	}
 }
 
-func TestClashXHTTPAndHTTPUpgradeMappings(t *testing.T) {
-	pbk := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
-	pin := strings.Repeat("ab", 32)
-	vlessXHTTP := "vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=xhttp&security=reality&sni=example.com&fp=chrome&pbk=" + pbk + "&sid=12345678&path=%2Fxhttp#XHTTP"
-	p, err := clashProxy(vlessXHTTP)
-	if err != nil {
-		t.Fatal(err)
-	}
-	xopts, ok := p["xhttp-opts"].(map[string]any)
-	if !ok || p["network"] != "xhttp" || xopts["path"] != "/xhttp" || p["udp"] != true || p["packet-encoding"] != "xudp" {
-		t.Fatal("xhttp mapping lost", p)
-	}
-	if p["reality-opts"].(map[string]any)["short-id"] != "12345678" {
-		t.Fatal("xhttp reality lost", p)
-	}
-
-	vlessHU := "vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=httpupgrade&security=tls&path=%2Fup&host=cdn.example&sni=host.example&pcs=" + pin + "#HTTPUpgrade"
-	p, err = clashProxy(vlessHU)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ws, ok := p["ws-opts"].(map[string]any)
-	if !ok || p["network"] != "ws" || ws["path"] != "/up" || ws["v2ray-http-upgrade"] != true || p["fingerprint"] != pin || p["udp"] != true {
-		t.Fatal("httpupgrade mapping lost", p)
-	}
-	if ws["headers"].(map[string]string)["Host"] != "cdn.example" {
-		t.Fatal("httpupgrade host lost", p)
-	}
-	for _, link := range []string{
-		"vmess://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=httpupgrade&security=tls&path=%2Fup&host=cdn.example#VMessUpgrade",
-		"trojan://public-test-password@host.example:443?type=httpupgrade&security=tls&path=%2Fup&host=cdn.example#TrojanUpgrade",
-		"vmess://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=tcp&security=reality&pbk=" + pbk + "&sid=12345678&sni=example.com#VMessReality",
-		"trojan://public-test-password@host.example:443?type=tcp&security=reality&pbk=" + pbk + "&sid=12345678&sni=example.com#TrojanReality",
-	} {
-		p, err := clashProxy(link)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(link, "type=httpupgrade") && p["ws-opts"].(map[string]any)["v2ray-http-upgrade"] != true {
-			t.Fatal("httpupgrade flag lost", p)
-		}
-		if strings.Contains(link, "security=reality") {
-			if _, ok := p["reality-opts"].(map[string]any); !ok {
-				t.Fatal("reality mapping lost", p)
-			}
-		}
-	}
-
-	vmessXHTTP := "vmess://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=xhttp&security=tls&sni=host.example#VMessXHTTP"
-	if _, err := clashProxy(vmessXHTTP); err == nil {
-		t.Fatal("VMess XHTTP should be marked unsupported")
-	}
-	trojanNone := "trojan://public-test-password@host.example:443?type=tcp&security=none#TrojanNone"
-	if _, err := clashProxy(trojanNone); err == nil {
-		t.Fatal("Trojan without TLS should be marked unsupported")
-	}
-	body, omitted, err := renderClash([]string{vlessXHTTP, vmessXHTTP})
-	if err != nil || len(omitted) != 1 || !strings.Contains(string(body), `"XHTTP"`) || strings.Contains(string(body), `"VMessXHTTP"`) {
-		t.Fatal("partial Clash export did not skip unsupported node", err, omitted, string(body))
-	}
-}
-
-func TestClashVLESSEncryption(t *testing.T) {
-	enc := "vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=tcp&security=tls&sni=host.example&encryption=mlkem768x25519plus.native.0rtt.KEY#ENC"
-	p, err := clashProxy(enc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p["encryption"] != "mlkem768x25519plus.native.0rtt.KEY" {
-		t.Fatalf("vless encryption lost: %v", p)
-	}
-
-	for _, link := range []string{
-		"vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=mkcp&security=tls#KCP",
-		"vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=hysteria&security=tls#HY",
-	} {
-		if _, err := clashProxy(link); err == nil {
-			t.Fatalf("unsupported VLESS transport should be omitted: %s", link)
-		}
-	}
-}
-
 func TestClashMihomoAcceptsGeneratedProfiles(t *testing.T) {
 	binary, err := filepath.Abs(filepath.Join("..", "..", "tools", "bin", "mihomo"))
 	if err != nil {
@@ -196,17 +391,24 @@ func TestClashMihomoAcceptsGeneratedProfiles(t *testing.T) {
 	if _, err := os.Stat(binary); err != nil {
 		t.Skip("install the pinned official Mihomo test client")
 	}
-	key, err := ecdh.X25519().GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
+	key := clashRealityKey(t)
+	enc := "mlkem768x25519plus.native.0rtt." + key
+	cases := [][]string{}
+	for _, tc := range clashMatrix() {
+		cases = append(cases, []string{clashLink(tc.network, tc.security, tc.network+"-"+tc.security, key, nil)})
 	}
-	pbk := base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes())
-	link := strings.Replace(clashRealityFixture("Reality"), base64.RawURLEncoding.EncodeToString(make([]byte, 32)), pbk, 1)
-	xhttp := strings.Replace(strings.Replace(link, "type=tcp", "type=xhttp&path=%2Fxhttp", 1), "&flow=xtls-rprx-vision", "", 1)
-	httpUpgrade := "vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=httpupgrade&security=tls&path=%2Fup&host=cdn.example&sni=host.example#HTTPUpgrade"
-	vmessUpgrade := "vmess://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=httpupgrade&security=tls&path=%2Fup&host=cdn.example&sni=host.example#VMessUpgrade"
-	trojanUpgrade := "trojan://public-test-password@host.example:443?type=httpupgrade&security=tls&path=%2Fup&host=cdn.example&sni=host.example#TrojanUpgrade"
-	for _, links := range [][]string{{link}, {xhttp}, {httpUpgrade}, {vmessUpgrade}, {trojanUpgrade}, {"vless://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?type=ws&security=tls&path=%2Fws&sni=host.example#WS"}, {"trojan://public-test-password@host.example:443?type=grpc&security=tls&sni=host.example&serviceName=service#RPC"}, {"vmess://fbaea75a-e91c-4ad9-9410-7e43aa967766@host.example:443?security=tls&type=tcp&encryption=auto#VMess"}} {
+	for _, network := range []string{"tcp", "ws", "grpc", "httpupgrade", "xhttp"} {
+		cases = append(cases, []string{clashLink(network, "tls", "enc-"+network, key, url.Values{
+			"encryption": {enc},
+			"flow":       {"xtls-rprx-vision"},
+		})})
+	}
+	cases = append(cases, []string{
+		clashLink("tcp", "reality", "one", key, nil),
+		clashLink("tcp", "reality", "two", key, nil),
+		clashLink("tcp", "reality", "three", key, nil),
+	})
+	for _, links := range cases {
 		dir := t.TempDir()
 		blob, omitted, err := renderClash(links)
 		if err != nil || len(omitted) != 0 {
@@ -220,10 +422,10 @@ func TestClashMihomoAcceptsGeneratedProfiles(t *testing.T) {
 		out, err := exec.CommandContext(ctx, binary, "-t", "-d", dir, "-f", path).CombinedOutput()
 		cancel()
 		if err != nil {
-			if len(out) > 1000 {
-				out = out[:1000]
+			if len(out) > 1200 {
+				out = out[:1200]
 			}
-			t.Fatalf("pinned Mihomo rejected public fixture: %v %s", err, out)
+			t.Fatalf("pinned Mihomo rejected public fixture %v: %v %s", links, err, out)
 		}
 	}
 }

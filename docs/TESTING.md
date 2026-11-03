@@ -45,7 +45,7 @@ Python 检查解析、证据一致性、异常响应、证书拒绝、订阅清�
 
 周期任务用受控时间和临时状态验证刷新默认 60 分钟/最低 30 分钟、检测默认 30 分钟/最低 15 分钟、开关、失败退避、重启保留、等待来源刷新完成与手动任务互斥；结果有效期按检测间隔和实测轮次计算，覆盖下一轮检测；Python 和 Go 共享刷新状态，避免系统定时器重复请求来源。测试不向 VPN Gate 做高频检测。
 
-Clash 输出用固定官方 Mihomo 测试内核验证配置，覆盖 VLESS 的 TCP、WebSocket、gRPC、HTTPUpgrade、XHTTP、mKCP 拒绝路径；旧 VMess/Trojan/Hysteria2 入口的迁移过滤也有单元测试，UDP 通过 SOCKS5 回环中继测试验证。Debian 12 隔离安装测试还使用真实订阅连接本机 VLESS/XHTTP/REALITY，校验 HTTPS 出口与内容，并确认选中代理失效时不回落 DIRECT。测试内核仅下载到 CI，不进入产品安装包。GUI 版本未提供，不将内核测试视为所有 Clash Verge 版本已验收。
+Clash 输出用固定官方 Mihomo 测试内核验证配置，覆盖 VLESS 的 13 个可表达的「传输 × 安全层」组合（TCP、gRPC、XHTTP 支持 none/tls/reality；WebSocket、HTTPUpgrade 支持 none/tls）、非 TCP 传输上的 Vision `flow`、VLESS Encryption 和 mKCP 拒绝路径；旧 VMess/Trojan/Hysteria2 入口的迁移过滤也有单元测试，UDP 通过 SOCKS5 回环中继测试验证。Debian 12 隔离安装测试还使用真实订阅连接本机 VLESS（TCP + REALITY + VLESS Encryption + Vision），校验 HTTPS 出口与内容，并确认选中代理失效时不回落 DIRECT。测试内核仅下载到 CI，不进入产品安装包。GUI 版本未提供，不将内核测试视为所有 Clash Verge 版本已验收。
 
 ## 记录与参考
 

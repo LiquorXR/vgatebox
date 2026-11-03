@@ -138,7 +138,7 @@ func (n *Native) InboundLinks(ids []int, publicHost string) ([]string, error) {
 	var out []string
 	for _, id := range ids {
 		ib := n.store.byID(id)
-		if ib == nil || ib.SocksSlot > 0 {
+		if ib == nil || ib.Protocol != "vless" || ib.SocksSlot > 0 {
 			continue
 		}
 		for _, c := range ib.Clients {

@@ -10,9 +10,9 @@
 
 ## 导入 Clash Verge
 
-在「订阅」选择「Clash Verge / Rev（Mihomo）」格式，再复制订阅链接，在客户端添加远程配置并更新。使用支持 VLESS、REALITY 和 XHTTP 的 Mihomo v1.19.33 或更新内核。v2rayN 保持默认格式（需使用支持 XHTTP 的近期版本）；之前复制的 Base64 链接不会自动变为 Clash 配置。
+在「订阅」选择「Clash Verge / Rev（Mihomo）」格式，再复制订阅链接，在客户端添加远程配置并更新。使用支持 VLESS、REALITY、VLESS Encryption 和 XHTTP 的 Mihomo v1.19.33 或更新内核。v2rayN 保持默认格式（需使用支持 XHTTP 和 VLESS Encryption 的近期版本）；之前复制的 Base64 链接不会自动变为 Clash 配置。
 
-Clash 输出是完整配置，支持本项目生成的 VLESS 的 TCP、WebSocket、gRPC、HTTPUpgrade、XHTTP；REALITY、TLS、UDP 按链接参数启用。REALITY 节点会写入 `support-x25519mlkem768: true`，以匹配固定 Xray 26.x 服务端的新握手要求。Mihomo 无法表示 VLESS + mKCP；VLESS + mKCP 仍保留在 Base64/v2rayN 订阅中。Clash 导出会跳过不支持项并在响应头标记。VLESS Encryption 需要较新的 Mihomo/v2rayN；旧客户端应关闭该入口的加密层。其他未支持的传输明确拒绝导出。原订阅的令牌、范围、名称、顺序和就绪校验保持一致。转换在本 VPS 内完成，不把订阅或密钥发送给第三方转换服务。
+Clash 输出是按 mihomo 官方配置示例的块状 YAML：顶层包含 `mixed-port`、`allow-lan`、`mode`、`log-level`、`ipv6` 和 `profile.store-selected`，出站字段顺序与 VLESS/TLS 文档页一致。支持本项目生成的 VLESS 的 TCP、WebSocket、gRPC、HTTPUpgrade、XHTTP；REALITY、TLS、UDP 按链接参数启用，Vision 在任意传输上都会写出 `flow`（Xray 服务端会拒绝缺少 flow 的 Vision 客户端）。REALITY 节点会写入 `support-x25519mlkem768: true`，以匹配固定 Xray 26.x 服务端的新握手要求。Mihomo 无法表示 VLESS + mKCP；这类入口仍保留在 Base64/v2rayN 订阅中，Clash 导出会跳过并在 `X-Vgatebox-Omitted` 响应头标记。其余无法转换的链接（非法端口、凭据、REALITY 参数等）会让整个 Clash 订阅返回错误，不生成不完整的配置。VLESS Encryption 需要较新的 Mihomo/v2rayN；旧客户端应关闭该入口的加密层。原订阅的令牌、范围、名称、顺序和就绪校验保持一致。转换在本 VPS 内完成，不把订阅或密钥发送给第三方转换服务。
 
 没有就绪入口时返回非成功状态，不生成假节点。不自动加入 DIRECT 后备，不降低证书验证，不把 unknown 标为住宅。用户仍可主动选择订阅内已开启的「VPS 本机直出」，它是通过 VPS 接入的独立节点。
 
