@@ -309,7 +309,10 @@ func (c *Console) automationTick(now time.Time) {
 	if source.Status == "running" && !localFinished && now.Sub(source.StartedAt) < sourceRefreshWindow {
 		return
 	}
-	if s.RefreshEnabled && runDue(source, s.RefreshMinutes, now) {
+	// A refresh that just finished locally (even when it failed before recording
+	// state) must not be retried on this same tick, or a broken builder would be
+	// spawned in a loop by its own completion callback.
+	if s.RefreshEnabled && !localFinished && runDue(source, s.RefreshMinutes, now) {
 		done, err := c.startPoolRefresh(true)
 		if err == nil && done != nil {
 			// A scheduled refresh completes the refresh phase immediately, so

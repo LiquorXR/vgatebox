@@ -569,12 +569,13 @@ func (c *Console) apiPoolRefresh(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(405)
 		return
 	}
-	done, err := c.startPoolRefresh(false)
-	if err != nil {
+	// A manual refresh does not wake the automatic scheduler: it only changes the
+	// pool. The scheduler's own tick picks up whatever is due next, so a manual
+	// attempt that fails before recording state cannot retrigger itself.
+	if _, err := c.startPoolRefresh(false); err != nil {
 		writeJSON(w, 503, map[string]string{"error": "管理服务正在停止"})
 		return
 	}
-	c.waitRefreshThenTick(done)
 	writeJSON(w, 202, map[string]string{"status": "running"})
 }
 
