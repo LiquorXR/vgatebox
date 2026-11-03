@@ -87,7 +87,7 @@ func TestOpenVPNEgressPythonBridgeWithoutCredentials(t *testing.T) {
 	cache := map[string]interface{}{provider + ":73.1.1.1": map[string]interface{}{
 		"raw": map[string]interface{}{"ip": "73.1.1.1", "country_code": "US",
 			"asn":     map[string]interface{}{"asn": "AS7922", "name": "Comcast", "type": "isp"},
-			"privacy": map[string]interface{}{"is_hosting": false}},
+			"privacy": map[string]interface{}{"is_hosting": false, "is_residential": true}},
 		"queried_at": time.Now().UTC().Format(time.RFC3339Nano),
 		"expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano),
 	}}
