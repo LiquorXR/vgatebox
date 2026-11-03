@@ -80,7 +80,7 @@ func TestChecksRetentionPrunesExpiredAndRemovedNodes(t *testing.T) {
 	c.m.mu.Lock()
 	c.m.observations["keep"] = CheckResult{Host: "keep", Status: "passed", CheckedAt: now}
 	c.m.observations["gone"] = CheckResult{Host: "gone", Status: "passed", CheckedAt: now}
-	c.m.observations["stale"] = CheckResult{Host: "keep", Status: "passed", CheckedAt: now.Add(-31 * time.Minute)}
+	c.m.observations["stale"] = CheckResult{Host: "keep", Status: "passed", CheckedAt: now.Add(-2 * time.Hour)}
 	c.m.localEvidence["keep"] = Node{HostName: "keep", Config: "fixture", OpenVPNStatus: "passed", ExpectedExitIP: image.IP, OpenVPNEgress: &image}
 	c.m.localEvidence["gone"] = Node{HostName: "gone", Config: "fixture", OpenVPNStatus: "passed", ExpectedExitIP: image.IP, OpenVPNEgress: &image}
 	c.m.localEvidence["expired"] = Node{HostName: "keep", Config: "fixture", OpenVPNStatus: "passed", ExpectedExitIP: expired.IP, OpenVPNEgress: &expired}

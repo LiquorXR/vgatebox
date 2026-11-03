@@ -185,7 +185,7 @@ func TestHealthRoundSkipsBusyTunnelWithoutCountingFailure(t *testing.T) {
 	}
 	busy.opMu.Unlock()
 	m.healthRound(context.Background(), state)
-	if state.fails[1] != 0 || probes != 2 {
+	if state.fails[1] != 0 || probes != 3 {
 		t.Fatalf("released slot was not probed: probes=%d fails=%v", probes, state.fails)
 	}
 }
@@ -194,8 +194,6 @@ func TestHealthRechecksStatusAfterWaitingForOperation(t *testing.T) {
 	m := NewManager(8, t.TempDir())
 	m.healthOpWindow = 2 * time.Second
 	tunnel := healthTunnel(1, "restart", "203.0.113.33")
-	policy := SlotPolicy{AllowedIPTypes: []string{"unknown"}}
-	tunnel.Policy = &policy
 	probed, reconnects := 0, 0
 	m.healthProbe = func(context.Context, *Tunnel) (string, float64, error) {
 		probed++

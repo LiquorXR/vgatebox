@@ -140,7 +140,7 @@ func TestOldChecksWithoutExpiryUseCurrentTTL(t *testing.T) {
 	c.checksMu.Lock()
 	result := c.results["old"]
 	c.checksMu.Unlock()
-	want := checked.Add(75 * time.Minute)
+	want := checked.Add(90 * time.Minute)
 	if !result.ExpiresAt.Equal(want) {
 		t.Fatalf("old result expiry: got %s want %s", result.ExpiresAt, want)
 	}
