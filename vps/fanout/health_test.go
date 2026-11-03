@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -163,9 +164,9 @@ func TestHealthRoundSkipsBusyTunnelWithoutCountingFailure(t *testing.T) {
 	m.healthOpWindow = 50 * time.Millisecond
 	busy, free := healthTunnel(1, "busy", "203.0.113.30"), healthTunnel(2, "free", "203.0.113.31")
 	m.tunnels[1], m.tunnels[2] = busy, free
-	probes, reconnects := 0, 0
+	probes, reconnects := atomic.Int32{}, 0
 	m.healthProbe = func(_ context.Context, tunnel *Tunnel) (string, float64, error) {
-		probes++
+		probes.Add(1)
 		return tunnel.ExitIP, 10, nil
 	}
 	m.healthReconnect = func(*Tunnel, string) { reconnects++ }
@@ -180,13 +181,13 @@ func TestHealthRoundSkipsBusyTunnelWithoutCountingFailure(t *testing.T) {
 	if state.fails[1] != 1 || state.fails[2] != 0 {
 		t.Fatalf("deferred round changed streaks: %v", state.fails)
 	}
-	if reconnects != 0 || probes != 1 {
-		t.Fatalf("deferred round acted on the busy slot: reconnects=%d probes=%d", reconnects, probes)
+	if reconnects != 0 || probes.Load() != 1 {
+		t.Fatalf("deferred round acted on the busy slot: reconnects=%d probes=%d", reconnects, probes.Load())
 	}
 	busy.opMu.Unlock()
 	m.healthRound(context.Background(), state)
-	if state.fails[1] != 0 || probes != 3 {
-		t.Fatalf("released slot was not probed: probes=%d fails=%v", probes, state.fails)
+	if state.fails[1] != 0 || probes.Load() != 3 {
+		t.Fatalf("released slot was not probed: probes=%d fails=%v", probes.Load(), state.fails)
 	}
 }
 
