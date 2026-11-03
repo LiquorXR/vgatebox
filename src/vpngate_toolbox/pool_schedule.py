@@ -6,7 +6,8 @@ from pathlib import Path
 from .common import ToolError, write_json
 
 DEFAULTS = {'refresh_enabled': True, 'refresh_minutes': 60,
-            'check_enabled': True, 'check_minutes': 60}
+            'check_enabled': True, 'check_minutes': 15}
+MINIMUM_MINUTES = {'refresh': 30, 'check': 15}
 
 
 def load_automation(directory):
@@ -17,7 +18,7 @@ def load_automation(directory):
         if not isinstance(raw, dict): raise ToolError('invalid_schedule_configuration')
         values.update(raw)
     for task in ('refresh', 'check'):
-        if type(values[task+'_enabled']) is not bool or type(values[task+'_minutes']) is not int or not 30 <= values[task+'_minutes'] <= 525600:
+        if type(values[task+'_enabled']) is not bool or type(values[task+'_minutes']) is not int or not MINIMUM_MINUTES[task] <= values[task+'_minutes'] <= 525600:
             raise ToolError('invalid_schedule_configuration')
     return values
 

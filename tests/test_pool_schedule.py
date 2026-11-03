@@ -29,7 +29,7 @@ class PoolScheduleTests(unittest.TestCase):
             return scheduled_pool(self.dir,self.output,scheduled,self.build,now=lambda:self.now)
 
     def test_defaults_one_hour_and_completion_gate_survives_restart(self):
-        self.assertEqual(load_automation(self.dir),{'refresh_enabled':True,'refresh_minutes':60,'check_enabled':True,'check_minutes':60})
+        self.assertEqual(load_automation(self.dir),{'refresh_enabled':True,'refresh_minutes':60,'check_enabled':True,'check_minutes':15})
         self.assertIsNotNone(self.run_pool())
         self.now+=timedelta(minutes=59);self.assertIsNone(self.run_pool())
         self.now+=timedelta(minutes=1);self.assertIsNotNone(self.run_pool())
@@ -42,6 +42,10 @@ class PoolScheduleTests(unittest.TestCase):
         self.assertIsNone(self.run_pool());self.assertEqual(self.calls,0)
         for bad in (29,0,True,30.5,'60'):
             cfg['refresh_minutes']=bad;(self.dir/'automation.json').write_text(json.dumps(cfg))
+            with self.assertRaises(ToolError):self.run_pool()
+        cfg['refresh_minutes']=60
+        for bad in (14,0,True,15.5,'15'):
+            cfg['check_minutes']=bad;(self.dir/'automation.json').write_text(json.dumps(cfg))
             with self.assertRaises(ToolError):self.run_pool()
         self.assertEqual(self.calls,0)
 
