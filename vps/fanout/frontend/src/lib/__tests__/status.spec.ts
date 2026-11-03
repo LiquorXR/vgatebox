@@ -25,12 +25,8 @@ describe("exit status helpers", () => {
     expect(exitStatusTone("blocked")).toBe("bad");
   });
 
-  it("keeps residential type and unknown visually distinct", () => {
+  it("keeps residential and unknown visually distinct", () => {
     expect(ipTypeTone("strict_residential")).toBe("ok");
-    expect(ipTypeTone("likely_residential")).toBe("ok");
-    expect(ipTypeTone("datacenter")).toBe("warn");
-    expect(ipTypeTone("mobile")).toBe("info");
-    expect(ipTypeTone("business_isp")).toBe("neutral");
     expect(ipTypeTone("unknown")).toBe("neutral");
     expect(ipTypeTone(undefined)).toBe("neutral");
   });

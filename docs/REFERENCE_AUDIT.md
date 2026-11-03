@@ -128,7 +128,7 @@ v0.1 保留真实协议握手机制，通过现有 Checker 获取标明来源的
 | --- | --- | --- |
 | VPN Gate CSV 抓取、配置解码、去重 | gate、CF-vpngate、fanout、AimiliVPN | 同一 Pool Builder：src/vpngate.py 与 pool.py，可在 Actions 或 VPS 本机运行 |
 | SSTP / PPP 与候选过滤 | Checker、CF-vpngate 低层 probe、EdgeTunnel | 现有 Worker 与最小适配器；共享协议包后续按需提取 |
-| IP 画像与“住宅”判断 | gate、Checker、CF-vpngate、fanout、AimiliVPN | 共享 classifier.py / intelligence adapter；区分 strict/likely，按实际协议出口保存证据；VPS 缺少画像 API 时保持 unknown |
+| IP 画像与“住宅”判断 | gate、Checker、CF-vpngate、fanout、AimiliVPN | 共享 classifier.py / intelligence adapter；只区分 strict/unknown，按实际协议出口保存证据；VPS 缺少画像 API 时保持 unknown |
 | 最终链路测试 | CF-vpngate、AimiliVPN 部分出口自检 | A 验证实际 VLESS；B 由目标 VPS 验证本机 Slot，复用比较规则 |
 | 节点选择、重连与多出口 | fanout、AimiliVPN | fanout 底座上的 Multi Exit Manager，读取本地或远程同结构 node_pool.json；Standalone 调用共享 Pool Builder，不保留第二套抓取/分类实现 |
 | 订阅、页面与 Xray 配置 | 多仓库各自生成 | consumers/exporters 与 WebUI |

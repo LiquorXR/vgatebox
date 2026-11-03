@@ -16,7 +16,5 @@
   "content_marker": "Example Domain",
   "edge_adapter": "edgetunnel-globalproxy-v1",
   "edge_port": 443,
-  "edge_base_path": "/",
-  "consumer_asns": ["AS7922", "AS20115", "AS7018", "AS4713", "AS2516", "AS4766"],
-  "consumer_isp_patterns": ["Comcast", "Spectrum", "Charter", "AT&T", "NTT", "KDDI", "Korea Telecom"]
+  "edge_base_path": "/"
 }

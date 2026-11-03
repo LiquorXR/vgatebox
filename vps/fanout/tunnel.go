@@ -35,20 +35,23 @@ type Tunnel struct {
 	previousPolicy *SlotPolicy
 	LatencyMS      float64 `json:"latency_ms,omitempty"`
 
-	ns                  string
-	listener            net.Listener
-	ovpn                *exec.Cmd
-	mu                  sync.Mutex
-	opMu                sync.Mutex
-	changeMu            sync.Mutex
-	workCtx             context.Context
-	cancelWork          context.CancelFunc
-	clients             map[net.Conn]bool
-	cooldown            map[string]time.Time
-	validating          bool // permits only the manager's own expected/actual probe
-	validationCred      *SocksCred
-	onProbePhase        func(string)
-	probeStage          string
+	ns             string
+	listener       net.Listener
+	ovpn           *exec.Cmd
+	mu             sync.Mutex
+	opMu           sync.Mutex
+	changeMu       sync.Mutex
+	workCtx        context.Context
+	cancelWork     context.CancelFunc
+	clients        map[net.Conn]bool
+	cooldown       map[string]time.Time
+	validating     bool // permits only the manager's own expected/actual probe
+	validationCred *SocksCred
+	onProbePhase   func(string)
+	probeStage     string
+	// Diagnostic candidate checks may skip the optional IP type lookup to
+	// avoid bulk provider calls. Production exits never set this.
+	skipEgressProfile   bool
 	networkIndex        *int
 	egress              *EgressProfile
 	egressExpectedIP    string

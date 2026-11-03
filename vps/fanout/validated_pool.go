@@ -94,6 +94,10 @@ func fetchNodesFromValidatedPool(poolPath string) ([]Node, error) {
 			image.IntelligenceStatus == "passed" && image.Provider != "" && image.QueriedAt != "" && image.RuleVersion != "" && image.IP != "" &&
 			image.IP == item.Protocols.OpenVPN.ExpectedExitIP && expiryErr == nil && expiry.After(time.Now()) {
 			ipType = image.IPType
+			if ipType != "strict_residential" {
+				ipType = "unknown"
+				image.IPType = "unknown"
+			}
 			if image.ISP != nil {
 				isp = *image.ISP
 			}
@@ -102,7 +106,7 @@ func fetchNodesFromValidatedPool(poolPath string) ([]Node, error) {
 			}
 			expected = image.IP
 		}
-		residential := ipType == "strict_residential" || ipType == "likely_residential"
+		residential := ipType == "strict_residential"
 		var publicImage *EgressProfile
 		if expected != "" {
 			image.Raw = nil

@@ -36,8 +36,20 @@ import {
 
 const ALL_TYPES = Object.keys(ipTypeLabels);
 
+function normalizeTypes(types: string[] | undefined): string[] {
+  const out = new Set<string>();
+  for (const type of types || []) {
+    if (type === "strict_residential" || type === "residential") out.add("strict_residential");
+    else out.add("unknown");
+  }
+  if (!out.size) out.add("unknown");
+  return [...out];
+}
+
 function clonePolicy(value: SlotPolicy): SlotPolicy {
-  return JSON.parse(JSON.stringify(value)) as SlotPolicy;
+  const copy = JSON.parse(JSON.stringify(value)) as SlotPolicy;
+  copy.allowed_ip_types = normalizeTypes(copy.allowed_ip_types);
+  return copy;
 }
 
 function defaultPolicy(country = ""): SlotPolicy {

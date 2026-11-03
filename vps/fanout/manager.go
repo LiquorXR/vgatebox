@@ -377,24 +377,37 @@ func (m *Manager) tryNode(t *Tunnel) error {
 	t.mu.Lock()
 	t.ExitIP = ip
 	t.mu.Unlock()
+	t.setValidating(true)
+	t.probePhase("verify_exit")
+	actual, latency, err := t.probeSocksExitIPWithLatency()
+	if err != nil {
+		t.setValidating(false)
+		return fmt.Errorf("固定 SOCKS5 出口验活失败: %w", err)
+	}
+	if actual != ip {
+		t.setValidating(false)
+		return fmt.Errorf("expected_exit_ip 与 actual_exit_ip 不一致: %s / %s", ip, actual)
+	}
+	// IPPure can only describe the caller, so this query must happen while the
+	// validation credential is active and the tunnel is still unopened.
 	t.probePhase("profile")
-	image := lookupOpenVPNEgressContext(t.workContext(), m.evidenceDir, ip)
+	var image EgressProfile
+	if t.skipEgressProfile {
+		image = unknownOpenVPNEgress(ip, "ip_type_check_disabled")
+		image.Protocol = "openvpn"
+	} else {
+		image = m.lookupEgressProfile(t, ip)
+	}
+	t.setValidating(false)
+	if !t.skipEgressProfile && ippureEnabled() && image.IntelligenceStatus != "passed" {
+		return fmt.Errorf("IPPure 画像不可用: %s", image.IntelligenceError)
+	}
 	if !m.tunnelActive(t) {
 		return fmt.Errorf("画像查询期间 Slot 已停止")
 	}
 	policy := t.policySnapshot()
 	if err := policy.checkImage(image); err != nil {
 		return err
-	}
-	t.setValidating(true)
-	t.probePhase("verify_exit")
-	actual, latency, err := t.probeSocksExitIPWithLatency()
-	t.setValidating(false)
-	if err != nil {
-		return fmt.Errorf("固定 SOCKS5 出口验活失败: %w", err)
-	}
-	if actual != ip {
-		return fmt.Errorf("expected_exit_ip 与 actual_exit_ip 不一致: %s / %s", ip, actual)
 	}
 	if err := policy.checkLatency(latency); err != nil {
 		return err
@@ -415,7 +428,7 @@ func (m *Manager) tryNode(t *Tunnel) error {
 	t.Node.ExpectedExitIP, t.Node.OpenVPNStatus, t.Node.IPType = ip, "passed", image.IPType
 	t.Node.ISP, t.Node.ASN = stringValue(image.ISP), stringValue(image.ASN)
 	// Residential 是出口画像结论；SourceResidential 保持节点来源标签不变。
-	t.Node.Residential = image.IPType == "strict_residential" || image.IPType == "likely_residential"
+	t.Node.Residential = image.IPType == "strict_residential"
 	observed := t.Node
 	t.mu.Unlock()
 	m.mu.Lock()

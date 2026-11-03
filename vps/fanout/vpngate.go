@@ -66,7 +66,7 @@ type Node struct {
 	// SourceResidential 是来源标签：志愿者节点，而不是 VPN Gate 自营机房。
 	// 它来自 isResidential(hostname, ip)，不代表出口 IP 已被画像确认为住宅。
 	SourceResidential bool `json:"source_residential"`
-	// Residential 是出口画像结论：strict_residential 或 likely_residential。
+	// Residential 是出口画像结论：strict_residential，或 unknown。
 	// 两者必须分开，否则 unknown 会被误显示成 VPN Gate 自营。
 	Residential bool `json:"residential"`
 }

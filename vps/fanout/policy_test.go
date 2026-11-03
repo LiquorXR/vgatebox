@@ -18,7 +18,7 @@ import (
 )
 
 func syntheticPolicy() SlotPolicy {
-	return SlotPolicy{Country: "US", AllowedIPTypes: []string{"strict_residential", "likely_residential"},
+	return SlotPolicy{Country: "US", AllowedIPTypes: []string{"strict_residential"},
 		PreferredISP: []string{"Comcast"}, AllowedISP: []string{"Comcast", "Spectrum"}, BlockedISP: []string{"Hosting Co"},
 		AllowedASN: []string{"AS7922", "AS20115"}, BlockedASN: []string{"AS64500"}, MaximumLatencyMS: 250}
 }
@@ -111,7 +111,7 @@ func TestSlotPolicyPreferenceRanksWithoutBecomingAllowList(t *testing.T) {
 		{HostName: "preferred", CountryCode: "US", SpeedMbps: 50, OpenVPNStatus: "passed", ExpectedExitIP: a.IP, OpenVPNEgress: &a},
 		{HostName: "unknown", CountryCode: "US", SpeedMbps: 1000, Ping: 1},
 	}
-	p := SlotPolicy{Country: "US", AllowedIPTypes: []string{"likely_residential"}, PreferredISP: []string{"Comcast"}}
+	p := SlotPolicy{Country: "US", AllowedIPTypes: []string{"strict_residential"}, PreferredISP: []string{"Comcast"}}
 	got := m.policyCandidates(p, nil, 0)
 	if len(got) != 3 || got[0].HostName != "preferred" {
 		t.Fatalf("preference excluded candidates or did not rank: %+v", got)
@@ -401,7 +401,7 @@ func TestSlotPolicyAPIAuthStrictJSONAndPersistence(t *testing.T) {
 
 func TestSlotPolicyCandidateCooldownAndProfileRefresh(t *testing.T) {
 	m := NewManager(3, t.TempDir())
-	p := SlotPolicy{Country: "US", AllowedIPTypes: []string{"likely_residential"}}
+	p := SlotPolicy{Country: "US", AllowedIPTypes: []string{"strict_residential"}}
 	m.nodes = []Node{{HostName: "old", CountryCode: "US", Config: "new-profile"}, {HostName: "next", CountryCode: "US"}}
 	image := testEgressImage()
 	bad := image

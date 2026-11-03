@@ -45,7 +45,7 @@ def publish(pool: dict, output: Path, runtime: Path, environment: dict, settings
     generated_at = utc_now()
     view = {"schema_version": 1, "generated_at": generated_at, "scope": "tcp_ipv4_ws", "no_fallback_control": guard, "nodes": valid}
     write_json(output / "mode_a_validated.json", view)
-    residential = {**view, "nodes": [node for node in valid if node["protocols"]["sstp"]["egress"]["ip_type"] in ("strict_residential", "likely_residential")]}
+    residential = {**view, "nodes": [node for node in valid if node["protocols"]["sstp"]["egress"]["ip_type"] == "strict_residential"]}
     write_json(output / "residential.json", residential)
     write_json(output / "cf_manifest.json", build_cf_manifest(valid, generated_at, settings, environment))
     atomic_write(output / "nodes.txt", ("\n".join(candidates) + ("\n" if candidates else "")).encode())

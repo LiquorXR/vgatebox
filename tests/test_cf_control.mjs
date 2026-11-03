@@ -14,7 +14,7 @@ const manifest = {
     node_id: 'vpngate-us-001', hostname: 'public-vpn-1.opengw.net', country: 'US',
     sstp_host: 'public-vpn-1.opengw.net', sstp_port: 443,
     expected_exit_ip: '73.1.1.1', actual_exit_ip: '73.1.1.1',
-    asn: 'AS7922', isp: 'Comcast', ip_type: 'likely_residential', latency_ms: 120,
+    asn: 'AS7922', isp: 'Comcast', ip_type: 'strict_residential', latency_ms: 120,
     verified_at: new Date(Date.now() - 60_000).toISOString(), expires_at: future,
   }],
 };

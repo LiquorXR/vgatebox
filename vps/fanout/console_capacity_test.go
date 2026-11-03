@@ -258,6 +258,15 @@ func TestConsoleCheckSettingsValidateAndRetainCorruption(t *testing.T) {
 			t.Fatal("user count rejected", n)
 		}
 	}
+	w := httptest.NewRecorder()
+	c.apiCheckSettings(w, httptest.NewRequest("POST", "/", strings.NewReader(`{"parallelism":2,"ip_type_check":true}`)))
+	if w.Code != 200 || !c.checkIPType {
+		t.Fatal("candidate type check setting rejected")
+	}
+	again, err := newConsole(NewManager(maximumSlots, c.m.workDir))
+	if err != nil || !again.checkIPType {
+		t.Fatal("candidate type check setting not persisted", err)
+	}
 	p := filepath.Join(c.m.workDir, "check-settings.json")
 	os.WriteFile(p, []byte(`{"parallelism":-5}`), 0600)
 	if _, err := newConsole(NewManager(maximumSlots, c.m.workDir)); err == nil {

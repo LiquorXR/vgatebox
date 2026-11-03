@@ -28,16 +28,15 @@ type SlotPolicy struct {
 
 var policyASN = regexp.MustCompile(`^AS[0-9]+$`)
 var policyCountry = regexp.MustCompile(`^[A-Z]{2}$`)
-var allIPTypes = []string{"strict_residential", "likely_residential", "mobile", "datacenter", "business_isp", "unknown"}
 
 func defaultSlotPolicy(country string) SlotPolicy {
 	return defaultSlotPolicyForMode(country, residentialOnly())
 }
 
 func defaultSlotPolicyForMode(country string, residential bool) SlotPolicy {
-	types := append([]string(nil), allIPTypes...)
-	if residential {
-		types = []string{"strict_residential", "likely_residential"}
+	types := []string{"strict_residential"}
+	if !residential {
+		types = append(types, "unknown")
 	}
 	return SlotPolicy{Country: strings.ToUpper(strings.TrimSpace(country)), AllowedIPTypes: types}
 }
@@ -59,7 +58,35 @@ func normalizePolicy(p SlotPolicy) (SlotPolicy, error) {
 	if p.MaximumLatencyMS < 0 || p.MaximumLatencyMS > 120000 {
 		return p, fmt.Errorf("延迟上限必须为 0..120000 毫秒，0 表示不限")
 	}
-	lists := []*[]string{&p.AllowedIPTypes, &p.PreferredISP, &p.AllowedISP, &p.BlockedISP, &p.AllowedASN, &p.BlockedASN}
+	if len(p.AllowedIPTypes) > 100 {
+		return p, fmt.Errorf("策略列表最多 100 项")
+	}
+	types := make([]string, 0, 2)
+	seenTypes := map[string]bool{}
+	for _, text := range p.AllowedIPTypes {
+		value := strings.TrimSpace(text)
+		if value == "" || len(value) > 200 || strings.ContainsAny(value, "\r\n\x00") {
+			return p, fmt.Errorf("策略列表包含无效值")
+		}
+		switch strings.ToLower(value) {
+		case "residential", "strict_residential":
+			value = "strict_residential"
+		case "unknown", "likely_residential", "mobile", "datacenter", "business_isp":
+			// Legacy non-strict values are retained as the only remaining fallback.
+			value = "unknown"
+		default:
+			return p, fmt.Errorf("未知 IP 类型: %s", value)
+		}
+		if !seenTypes[value] {
+			seenTypes[value] = true
+			types = append(types, value)
+		}
+	}
+	if len(types) == 0 {
+		return p, fmt.Errorf("至少允许一种 IP 类型；unknown 必须显式允许")
+	}
+	p.AllowedIPTypes = types
+	lists := []*[]string{&p.PreferredISP, &p.AllowedISP, &p.BlockedISP, &p.AllowedASN, &p.BlockedASN}
 	for i, ptr := range lists {
 		if len(*ptr) > 100 {
 			return p, fmt.Errorf("策略列表最多 100 项")
@@ -70,16 +97,7 @@ func normalizePolicy(p SlotPolicy) (SlotPolicy, error) {
 			if value == "" || len(value) > 200 || strings.ContainsAny(value, "\r\n\x00") {
 				return p, fmt.Errorf("策略列表包含无效值")
 			}
-			if i == 0 {
-				value = strings.ToLower(value)
-				if value == "residential" {
-					value = "strict_residential"
-				}
-				if !containsFold(allIPTypes, value) {
-					return p, fmt.Errorf("未知 IP 类型: %s", value)
-				}
-			}
-			if i >= 4 {
+			if i >= 3 {
 				value = strings.ToUpper(value)
 				if !policyASN.MatchString(value) {
 					return p, fmt.Errorf("ASN 必须使用 AS 加数字")
@@ -90,9 +108,6 @@ func normalizePolicy(p SlotPolicy) (SlotPolicy, error) {
 			}
 		}
 		*ptr = out
-	}
-	if len(p.AllowedIPTypes) == 0 {
-		return p, fmt.Errorf("至少允许一种 IP 类型；unknown 必须显式允许")
 	}
 	for _, pair := range [][2][]string{{p.AllowedISP, p.BlockedISP}, {p.AllowedASN, p.BlockedASN}} {
 		for _, value := range pair[0] {

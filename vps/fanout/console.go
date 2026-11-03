@@ -51,6 +51,7 @@ type Console struct {
 	check            *CheckRun
 	results          map[string]CheckResult
 	checkParallelism int
+	checkIPType      bool
 	// Test seams exercise intent/persistence without creating real namespaces.
 	start  func(Node, SlotPolicy) (*Tunnel, error)
 	remove func(int) error
@@ -495,6 +496,7 @@ func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {
 	}
 	check := c.check
 	parallelism := c.checkParallelism
+	checkIPType := c.checkIPType
 	c.checksMu.Unlock()
 	var checkView any
 	if check != nil {
@@ -540,7 +542,7 @@ func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 200, map[string]any{"version": version, "capacity": c.m.maxSlots, "target": target, "target_configured": plan != nil, "suggested_target": suggestedTarget, "allocated": len(view.Exits), "ready": ready, "stopped": stopped, "waiting": max(0, target-ready-stopped), "candidates": len(nodes), "pool_read_at": fetched, "pool_generated_at": generated, "pool_source": publicPoolSource(pool.Source), "automation": c.automationView(time.Now().UTC()), "default_server_name": serverName, "plan": plan, "plan_error": planErr, "refresh": refresh, "check": checkView, "check_settings": map[string]int{"parallelism": parallelism}, "results": results, "regions": c.m.Regions(), "memory": memory})
+	writeJSON(w, 200, map[string]any{"version": version, "capacity": c.m.maxSlots, "target": target, "target_configured": plan != nil, "suggested_target": suggestedTarget, "allocated": len(view.Exits), "ready": ready, "stopped": stopped, "waiting": max(0, target-ready-stopped), "candidates": len(nodes), "pool_read_at": fetched, "pool_generated_at": generated, "pool_source": publicPoolSource(pool.Source), "automation": c.automationView(time.Now().UTC()), "default_server_name": serverName, "plan": plan, "plan_error": planErr, "refresh": refresh, "check": checkView, "check_settings": map[string]any{"parallelism": parallelism, "ip_type_check": checkIPType}, "results": results, "regions": c.m.Regions(), "memory": memory})
 }
 
 func (c *Console) apiPoolRefresh(w http.ResponseWriter, r *http.Request) {

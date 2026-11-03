@@ -6,7 +6,7 @@ import re
 from .common import ToolError, public_ipv4, utc_now
 
 
-RULE_VERSION = "residential-1"
+RULE_VERSION = "residential-2"
 
 
 def flag(value):
@@ -22,7 +22,6 @@ def classify(raw: dict, settings: dict, provider: str, expected_ip: str) -> dict
     hosting = flag(privacy.get("is_hosting"))
     mobile = flag(privacy.get("is_mobile", raw.get("is_mobile")))
     residential = flag(privacy.get("is_residential", raw.get("is_residential")))
-    kind = str(network.get("type") or company.get("type") or raw.get("network_type") or "").lower()
     kinds = {str(value).lower() for value in (network.get("type"), company.get("type"), raw.get("network_type")) if value}
     asn = str(network.get("asn") or "").upper()
     if asn.isdigit():
@@ -39,26 +38,18 @@ def classify(raw: dict, settings: dict, provider: str, expected_ip: str) -> dict
         country = None
     else:
         country = country.upper()
-    consumer = asn in settings["consumer_asns"] or bool(isp and any(pattern.casefold() in isp.casefold() for pattern in settings["consumer_isp_patterns"]))
-    dc = hosting is True or bool(kinds.intersection(("hosting", "datacenter", "data center")))
-    mob = mobile is True or bool(kinds.intersection(("mobile", "cellular")))
-    business = bool(kinds.intersection(("business", "enterprise", "education", "government")))
-    conflict = sum((dc, mob, business)) > 1 or (residential is True and (dc or mob or business))
-    ip_type, reason, confidence = "unknown", "insufficient_fields", "unknown"
+    non_residential = bool(kinds.intersection(("hosting", "datacenter", "data center", "mobile", "cellular", "business", "enterprise", "education", "government")))
+    conflict = residential is True and (hosting is True or mobile is True or non_residential)
     if conflict:
-        reason = "conflicting_network_evidence"
-    elif dc:
-        ip_type, reason, confidence = "datacenter", "explicit_hosting", "high"
-    elif mob:
-        ip_type, reason, confidence = "mobile", "explicit_mobile", "high"
-    elif business:
-        ip_type, reason, confidence = "business_isp", "explicit_business", "high"
-    elif residential is True and hosting is False and country and asn and isp:
+        ip_type, reason, confidence = "unknown", "conflicting_network_evidence", "unknown"
+    elif residential is True and hosting is not True and mobile is not True and country and asn and isp:
         ip_type, reason, confidence = "strict_residential", "explicit_residential", "high"
-    elif residential is not False and hosting is False and kind == "isp" and consumer and country and asn and isp:
-        ip_type, reason, confidence = "likely_residential", "consumer_isp_no_hosting", "medium"
-    elif kind == "isp" and hosting is False and country and asn and isp:
-        ip_type, reason, confidence = "business_isp", "isp_residential_unproven", "low"
+    elif residential is False:
+        ip_type, reason, confidence = "unknown", "explicit_not_residential", "high"
+    elif not (country and asn and isp):
+        ip_type, reason, confidence = "unknown", "insufficient_fields", "unknown"
+    else:
+        ip_type, reason, confidence = "unknown", "residential_unproven", "unknown"
     city = raw.get("city")
     if isinstance(city, dict):
         names = city.get("names")

@@ -9,7 +9,13 @@ import (
 )
 
 type checkSettings struct {
-	Parallelism int `json:"parallelism"`
+	Parallelism int  `json:"parallelism"`
+	IPTypeCheck bool `json:"ip_type_check"`
+}
+
+type checkSettingsRequest struct {
+	Parallelism int   `json:"parallelism"`
+	IPTypeCheck *bool `json:"ip_type_check"`
 }
 
 func validateCheckParallelism(n int) error {
@@ -21,6 +27,7 @@ func validateCheckParallelism(n int) error {
 
 func (c *Console) loadCheckSettings() error {
 	c.checkParallelism = defaultCheckParallelism
+	c.checkIPType = false
 	c.m.connectBudget.setLimit(defaultCheckParallelism)
 	blob, err := os.ReadFile(filepath.Join(c.m.workDir, "check-settings.json"))
 	if os.IsNotExist(err) {
@@ -34,26 +41,28 @@ func (c *Console) loadCheckSettings() error {
 		return fmt.Errorf("检测设置损坏，保留原文件")
 	}
 	c.checkParallelism = s.Parallelism
+	c.checkIPType = s.IPTypeCheck
 	c.m.connectBudget.setLimit(s.Parallelism)
 	return nil
 }
 
 // Caller holds checksMu; atomic persistence precedes publication.
-func (c *Console) saveCheckSettings(n int) error {
+func (c *Console) saveCheckSettings(n int, ipTypeCheck bool) error {
 	if err := validateCheckParallelism(n); err != nil {
 		return err
 	}
-	blob, _ := json.Marshal(checkSettings{Parallelism: n})
+	blob, _ := json.Marshal(checkSettings{Parallelism: n, IPTypeCheck: ipTypeCheck})
 	if err := atomicConfigWrite(filepath.Join(c.m.workDir, "check-settings.json"), blob); err != nil {
 		return fmt.Errorf("检测设置保存失败")
 	}
 	c.checkParallelism = n
+	c.checkIPType = ipTypeCheck
 	c.m.connectBudget.setLimit(n)
 	return nil
 }
 
 func (c *Console) apiCheckSettings(w http.ResponseWriter, r *http.Request) {
-	var in checkSettings
+	var in checkSettingsRequest
 	if err := readConsoleJSON(w, r, &in); err != nil {
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
@@ -64,9 +73,13 @@ func (c *Console) apiCheckSettings(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 503, map[string]string{"error": "管理服务正在停止"})
 		return
 	}
-	if err := c.saveCheckSettings(in.Parallelism); err != nil {
+	ipTypeCheck := c.checkIPType
+	if in.IPTypeCheck != nil {
+		ipTypeCheck = *in.IPTypeCheck
+	}
+	if err := c.saveCheckSettings(in.Parallelism, ipTypeCheck); err != nil {
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, 200, in)
+	writeJSON(w, 200, checkSettings{Parallelism: in.Parallelism, IPTypeCheck: ipTypeCheck})
 }

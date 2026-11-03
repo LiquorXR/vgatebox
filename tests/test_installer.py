@@ -153,6 +153,7 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(json.loads((self.l.work / 'settings.json').read_text())['port'], 8899)
         self.assertEqual((self.l.lib / 'scripts/toolbox.py').read_text(), 'new')
         self.assertEqual((self.l.work / 'bin/xray').read_text(), 'new')
+        self.assertIn('IPPURE_ENABLED=1', self.l.path('etc/vgatebox/intelligence.env').read_text())
         self.assertTrue(self.r.active(d.UNITS[0]))
         self.assertTrue(self.r.enabled(d.UNITS[1]))
         self.assertEqual(self.job()['status'], 'completed')

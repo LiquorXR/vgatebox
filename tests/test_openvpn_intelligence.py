@@ -23,7 +23,7 @@ TEMPLATE = 'https://intelligence.example.com/{ip}'
 
 def observation(ip=IP):
     return {'ip': ip, 'country_code': 'US', 'asn': {'asn': 'AS7922', 'name': 'Comcast', 'type': 'isp'},
-            'privacy': {'is_hosting': False}}
+            'privacy': {'is_hosting': False, 'is_residential': True}}
 
 
 class OpenVPNIntelligenceTests(unittest.TestCase):
@@ -64,9 +64,9 @@ class OpenVPNIntelligenceTests(unittest.TestCase):
         image = profile_openvpn_exit(IP, SETTINGS, self.cache, lookup)
         self.assertEqual(calls, [(TEMPLATE.replace('{ip}', IP), {'X-API-Key': 'test-secret'})])
         self.assertEqual(image['protocol'], 'openvpn')
-        self.assertEqual(image['ip_type'], 'likely_residential')
-        self.assertEqual(image['confidence'], 'medium')
-        self.assertEqual(image['reason'], 'consumer_isp_no_hosting')
+        self.assertEqual(image['ip_type'], 'strict_residential')
+        self.assertEqual(image['confidence'], 'high')
+        self.assertEqual(image['reason'], 'explicit_residential')
         self.assertEqual(image['raw'], observation())
         for field in ('provider', 'queried_at', 'expires_at', 'rule_version', 'identity_assurance'):
             self.assertTrue(image[field])
@@ -127,7 +127,7 @@ class OpenVPNIntelligenceTests(unittest.TestCase):
                     {**observation(), 'privacy': {'is_residential': True, 'is_hosting': True}}):
             self.cache.unlink(missing_ok=True)
             image = profile_openvpn_exit(IP, SETTINGS, self.cache, lambda *a, **k: raw)
-            self.assertNotIn(image['ip_type'], ('strict_residential', 'likely_residential'))
+            self.assertEqual(image['ip_type'], 'unknown')
 
     def test_private_baseline_rejected_before_query(self):
         for ip in ('127.0.0.1', '10.0.0.1', '::1', 'invalid'):
@@ -146,7 +146,7 @@ class OpenVPNIntelligenceTests(unittest.TestCase):
         for value in ([], {'bad': 'entry'}):
             self.cache.write_text(json.dumps(value))
             image = profile_openvpn_exit(IP, SETTINGS, self.cache, lambda *a, **k: observation())
-            self.assertEqual(image['ip_type'], 'likely_residential')
+            self.assertEqual(image['ip_type'], 'strict_residential')
 
     def test_sstp_profiles_its_measured_ip_and_keeps_protocol(self):
         image = profile_measured_exit(IP, SETTINGS, self.cache, 'sstp', lambda *a, **k: observation())

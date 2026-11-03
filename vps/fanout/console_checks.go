@@ -47,6 +47,7 @@ type CheckRun struct {
 	Done        int           `json:"done"`
 	Total       int           `json:"total"`
 	Parallelism int           `json:"parallelism"`
+	IPTypeCheck bool          `json:"ip_type_check"`
 	cancel      context.CancelFunc
 	ctx         context.Context
 	wake        chan struct{}
@@ -64,7 +65,8 @@ func (j *CheckRun) view() any {
 		Done        int           `json:"done"`
 		Total       int           `json:"total"`
 		Parallelism int           `json:"parallelism"`
-	}{j.ID, j.Status, j.Kind, append([]CheckResult(nil), j.Items...), j.Done, j.Total, j.Parallelism}
+		IPTypeCheck bool          `json:"ip_type_check"`
+	}{j.ID, j.Status, j.Kind, append([]CheckResult(nil), j.Items...), j.Done, j.Total, j.Parallelism, j.IPTypeCheck}
 }
 
 func checkFailure(err error, ctx context.Context) string {
@@ -82,6 +84,8 @@ func checkFailure(err error, ctx context.Context) string {
 		return "openvpn_failed"
 	case strings.Contains(text, "画像"):
 		return "evidence_unavailable"
+	case strings.Contains(text, "不在允许列表"):
+		return "policy_type_mismatch"
 	case strings.Contains(text, "出口") && strings.Contains(text, "不一致"):
 		return "exit_ip_mismatch"
 	case strings.Contains(text, "namespace") || strings.Contains(text, "netns"):
@@ -91,10 +95,22 @@ func checkFailure(err error, ctx context.Context) string {
 	}
 }
 
+// A candidate check may skip the optional type profile to avoid bulk provider
+// calls. Production connections never carry this context value.
+type checkIPTypeContextKey struct{}
+
+func checkIPTypeFromContext(ctx context.Context) bool {
+	if value, ok := ctx.Value(checkIPTypeContextKey{}).(bool); ok {
+		return value
+	}
+	return true
+}
+
 // Each worker reserves a distinct diagnostic Slot outside user capacity. The
 // job uses the saved operator limit and shares its dial budget with production recovery.
 func (c *Console) probeCandidate(parent context.Context, node Node, slot int, progress func(string)) CheckResult {
 	result := CheckResult{Protocol: "openvpn", Host: node.HostName, Status: "failed", IPType: "unknown", ProfileSHA: profileDigest(node.Config)}
+	checkIPType := checkIPTypeFromContext(parent)
 	if slot > diagnosticFirstSlot || slot < -networkLinkCount {
 		result.Code = "probe_environment_failed"
 		return result
@@ -148,14 +164,14 @@ func (c *Console) probeCandidate(parent context.Context, node Node, slot int, pr
 		result.Code = "probe_environment_failed"
 		return result
 	}
-	policy := SlotPolicy{AllowedIPTypes: []string{"strict_residential", "likely_residential", "mobile", "datacenter", "business_isp", "unknown"}}
+	policy := SlotPolicy{AllowedIPTypes: []string{"strict_residential", "unknown"}}
 	index := lease.networkIndex
 	manifest, _ := json.Marshal(diagnosticResource{Config: node.Config, Slot: slot, NetworkIndex: index, Node: node})
 	if err := atomicConfigWrite(filepath.Join(dir, "diagnostic.json"), manifest); err != nil {
 		result.Code = "probe_environment_failed"
 		return result
 	}
-	t := &Tunnel{networkIndex: &index, Slot: slot, Port: port, Node: node, Status: "starting", Cred: cred, Policy: &policy, workCtx: ctx, cancelWork: cancel, onProbePhase: progress}
+	t := &Tunnel{networkIndex: &index, Slot: slot, Port: port, Node: node, Status: "starting", Cred: cred, Policy: &policy, workCtx: ctx, cancelWork: cancel, onProbePhase: progress, skipEgressProfile: !checkIPType}
 	helper := NewManager(1, dir)
 	helper.connectBudget = c.m.connectBudget
 	helper.evidenceDir = c.m.evidenceDir
@@ -177,6 +193,9 @@ func (c *Console) probeCandidate(parent context.Context, node Node, slot int, pr
 	result.ActualIP = t.ExitIP
 	result.LatencyMS = t.LatencyMS
 	if t.egress != nil {
+		public := *t.egress
+		public.Raw = nil
+		result.Egress = &public
 		if verifiedProfileCountry(*t.egress) != "" {
 			result.Country = stringValue(t.egress.Country)
 		}
@@ -247,7 +266,7 @@ func (c *Console) checkExit(ctx context.Context, slot int, expectedHost string, 
 }
 
 type CheckRequest struct {
-	scheduled bool
+	scheduled   bool
 	Kind        string   `json:"kind"`
 	Hosts       []string `json:"hosts"`
 	Slots       []int    `json:"slots"`
@@ -313,6 +332,7 @@ func (c *Console) startCheck(in CheckRequest) (*CheckRun, error) {
 	if c.ctx.Err() != nil {
 		return nil, fmt.Errorf("管理服务正在停止")
 	}
+	checkIPType := c.checkIPType
 	if in.Parallelism == 0 {
 		in.Parallelism = c.checkParallelism
 	}
@@ -355,7 +375,7 @@ func (c *Console) startCheck(in CheckRequest) (*CheckRun, error) {
 		j.mu.Unlock()
 	}
 	if in.Parallelism != c.checkParallelism {
-		if err := c.saveCheckSettings(in.Parallelism); err != nil {
+		if err := c.saveCheckSettings(in.Parallelism, checkIPType); err != nil {
 			return nil, err
 		}
 	}
@@ -364,8 +384,11 @@ func (c *Console) startCheck(in CheckRequest) (*CheckRun, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(c.ctx)
-	if err:=c.automationCheckStarted(in.scheduled);err!=nil {cancel();return nil,err}
-	job := &CheckRun{ID: hex.EncodeToString(buf), Status: "running", Kind: "checks", Items: items, Total: len(items), Parallelism: in.Parallelism, cancel: cancel, ctx: ctx, finished: make(chan struct{}), wake: make(chan struct{}, 1), nodes: byHost}
+	if err := c.automationCheckStarted(in.scheduled); err != nil {
+		cancel()
+		return nil, err
+	}
+	job := &CheckRun{ID: hex.EncodeToString(buf), Status: "running", Kind: "checks", Items: items, Total: len(items), Parallelism: in.Parallelism, IPTypeCheck: checkIPType, cancel: cancel, ctx: ctx, finished: make(chan struct{}), wake: make(chan struct{}, 1), nodes: byHost}
 	c.check = job
 	go c.runChecks(ctx, job)
 	return job, nil
@@ -374,13 +397,15 @@ func (c *Console) startCheck(in CheckRequest) (*CheckRun, error) {
 // One dispatcher owns all running diagnostic identities. Manual items can join
 // a batch and take the next free permit without exceeding its configured limit.
 func (c *Console) runChecks(ctx context.Context, j *CheckRun) {
-	dispatchCheckRun(ctx, j, &c.checksMu, func(index, slot int, item CheckResult, node Node) { c.runCheckItem(ctx, j, index, item, node, slot) },func(){c.automationCheckFinished(j)})
+	dispatchCheckRun(ctx, j, &c.checksMu, func(index, slot int, item CheckResult, node Node) { c.runCheckItem(ctx, j, index, item, node, slot) }, func() { c.automationCheckFinished(j) })
 }
 
 func dispatchCheckRun(ctx context.Context, j *CheckRun, ownerMu *sync.Mutex, runItem func(int, int, CheckResult, Node), onComplete ...func()) {
 	defer close(j.finished)
 	defer j.cancel()
-	if len(onComplete)>0 {defer onComplete[0]()}
+	if len(onComplete) > 0 {
+		defer onComplete[0]()
+	}
 	finished := make(chan int, j.Parallelism)
 	active := map[int]bool{}
 	cancelSignal := ctx.Done()
@@ -471,7 +496,8 @@ func (c *Console) runCheckItem(ctx context.Context, j *CheckRun, index int, item
 			}
 		}
 		if !reused {
-			result = c.probe(ctx, node, slot, progress)
+			probeCtx := context.WithValue(ctx, checkIPTypeContextKey{}, j.IPTypeCheck)
+			result = c.probe(probeCtx, node, slot, progress)
 		}
 	}
 	result.CheckedAt = time.Now().UTC()

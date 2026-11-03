@@ -52,26 +52,38 @@ curl -fsSL https://github.com/LiquorXR/vgatebox/releases/latest/download/install
 
 「节点池 → 周期任务」分别设置候选清单刷新和批量检测，默认 60 分钟，最低 30 分钟，可独立关闭。管理器与 `vgatebox-pool.timer` 共用到期记录和构建锁，不重复请求；定时器每 30 分钟检查一次，仅在设定周期到期时获取来源。管理进程每三十秒读取新快照。`vgatebox refresh` 或候选页手动刷新不受自动开关和周期限制，触发真实采集，失败保留上一份完整快照。来源配置在 `/etc/vgatebox/pool.json`。抓取阶段完整解析官方当次公开响应；数量取决于当次供给，不等于全球所有 VPN Gate，也不等于实测可用数量。
 
+节点池检测并发设置旁有「检测 IP 类型」开关，默认关闭；手动候选检测和周期候选检测共用该设置。关闭时候选检测不查询 IPPure，结果类型为 `unknown`。出口建连、自动重连和手动换 IP 不受该开关影响，始终查询 IP 类型并执行 Slot 策略。
+
 ## OpenVPN 出口画像
 
-每次建连时，将 namespace 内两个 HTTPS Echo 得到的基线 IP 交给同一 Python intelligence adapter 和 classifier，再独立检查固定 SOCKS 端口的 actual IP。只有 expected、画像 IP、actual 三者一致才发布该 Slot 的运行证据；画像查询本身不证明隧道或公开订阅可用。
+每次建连时，将 namespace 内两个 HTTPS Echo 得到的基线 IP 交给 intelligence adapter（默认 IPPure 走 Go 内置查询，自定义 provider 走 Python adapter）和 classifier，再独立检查固定 SOCKS 端口的 actual IP。只有 expected、画像 IP、actual 三者一致才发布该 Slot 的运行证据；画像查询本身不证明隧道或公开订阅可用。
 
-画像服务可选，默认没有配置。查询失败、字段不足或证据过期时，类型显示 `unknown`，不继承 SSTP 画像或来源主机的住宅标签。API 返回部分字段时，缺失布尔值仍为 null；国家、ASN、ISP 和类型以实际 OpenVPN 出口为对象。管理页在 Slot 下展示实际画像，候选表中的国家和延迟明确标为来源信息。
+画像服务可选；安装器默认写入 IPPure 配置（`IPPURE_ENABLED=1`），设为 `0` 可关闭。查询失败、字段不足或证据过期时，类型显示 `unknown`，不继承 SSTP 画像或来源主机的住宅标签。API 返回部分字段时，缺失布尔值仍为 null；国家、ASN、ISP 和类型以实际 OpenVPN 出口为对象。管理页在 Slot 下展示实际画像，候选表中的国家和延迟明确标为来源信息。
 
 候选列表把来源标签与出口类型分开：`source_residential` 只表示志愿者节点或 VPN Gate 自营机房；出口是否住宅看 `residential` 和 `ip_type`。开启「只使用志愿者家宽」只过滤来源，不会把 `unknown` 反标成自营。
 
+默认启用 IPPure（`IPPURE_ENABLED=1`）：`profile-openvpn` 完成后，管理器经该出口的 SOCKS 端口请求 `https://my.ippure.com/v1/info`，只有返回的 `ip` 与实测出口一致且 `isResidential=true`、国家/ASN/ISP 齐全时，才标记为 `strict_residential`；`false` 或缺失保持 `unknown`。IPPure 是 beta 服务，条款限制高频/批量自动化，部署后请按实际使用量评估并自行测试。当前 IPPure 路径覆盖 VPN Gate/OpenVPN 候选与出口；原始 SSTP 和第三方 SOCKS5 仍走自定义画像入口。
+
 国家另有独立查询：默认按实测出口 IP 请求 `https://api.country.is/{ip}`，正常验证 HTTPS 并精确匹配返回 IP，国家证据有效一天。国家可知不等于住宅类型可知，缺少可信分类画像时仍为 unknown。私有环境文件中的 `COUNTRY_URL_TEMPLATE` 可替换兼容服务（返回 `ip` 与两位 `country`）或设空关闭；失败短暂退避，显示地区未知，不使用来源国家补证。国家查询不发送 `INTELLIGENCE_TOKEN`，也不启用本项目暂停中的 CF 部署。
 
-部署时可在 `/etc/vgatebox/intelligence.env` 写入简单的 `KEY=VALUE` 配置，文件只供管理员读取（0600）：
+部署时可在 `/etc/vgatebox/intelligence.env` 写入简单的 `KEY=VALUE` 配置，文件只供管理员读取（0600）。安装器默认生成：
+
+```ini
+IPPURE_ENABLED=1
+IPPURE_URL=https://my.ippure.com/v1/info
+IPPURE_TIMEOUT_SECONDS=15
+```
+
+IPPure 默认走 Go 内置查询，必须经出口 SOCKS 端口，不能像普通画像服务那样直接按任意 IP 请求。要改用自定义画像服务，先设 `IPPURE_ENABLED=0`，再配置：
 
 ```ini
 INTELLIGENCE_URL_TEMPLATE=https://<画像服务主机>/lookup/{ip}
 INTELLIGENCE_TOKEN=
 ```
 
-URL 必须是 HTTPS、包含 `{ip}`，响应格式与现有 adapter 一致，例如包含 `ip`、`country_code`、`asn.asn/name/type` 和 `privacy.is_hosting/is_residential`。可选 token 通过 `X-API-Key` 请求头传递，使用正常 HTTPS 证书验证；配置和 token 不进入订阅或管理页。配置变更在下一次建连时读取，不自动中断当前 Slot，也不需要 Cloudflare 或 Actions 凭据。
+自定义 URL 必须是 HTTPS、包含 `{ip}`，响应格式与现有 adapter 一致，例如包含 `ip`、`country_code`、`asn.asn/name/type` 和 `privacy.is_hosting/is_residential`。可选 token 通过 `X-API-Key` 请求头传递，使用正常 HTTPS 证书验证；配置和 token 不进入订阅或管理页。配置变更在下一次建连时读取，不自动中断当前 Slot，也不需要 Cloudflare 或 Actions 凭据。
 
-缓存位于管理工作目录 `intelligence/cache.json`，由 provider/IP 共同索引，多个 Slot 使用文件锁串行更新；默认有效期为 `pool.json` 的 `intelligence_ttl_seconds`（24 小时）。缓存保留原查询时间，复用时重新执行统一分类规则，不以缓存命中延长有效期。画像进程最多等待 40 秒（含缓存锁等待），超时显示画像不可用。当前版本不会为持续运行的 Slot 自动定时重查画像；到期在 API/UI 中显示 stale/unknown，下一次建连重新查询。
+缓存位于管理工作目录 `intelligence/cache.json`，由 provider/IP 共同索引，多个 Slot 使用文件锁串行更新；默认有效期为 `pool.json` 的 `intelligence_ttl_seconds`（24 小时）。缓存保留原查询时间，复用时重新执行统一分类规则，不以缓存命中延长有效期。画像进程最多等待 40 秒（含缓存锁等待），超时显示画像不可用。当前版本不会为持续运行的 Slot 自动定时重查画像；到期在 API/UI 中显示 stale/unknown，下一次建连重新查询。IPPure 默认路径目前每次建连查询，不写入该 Python adapter 缓存。
 
 `slot_health.json` 保存本机运行快照：Slot、节点标识、配置 SHA256、固定端口、独立 expected/actual、验证时间及画像证据。文件为 0600，包含原始画像响应，但不含 SOCKS 凭据；管理 API 不返回原始响应。该文件不是历史审计日志，状态保存时会替换；重启恢复不将磁盘画像视为 live/healthy，必须重新验活。
 
@@ -95,7 +107,7 @@ python3 scripts/toolbox.py --config config/settings.json --env-file /path/intell
 ```json
 {
   "country": "US",
-  "allowed_ip_types": ["strict_residential", "likely_residential"],
+  "allowed_ip_types": ["strict_residential", "unknown"],
   "preferred_isp": ["Comcast"],
   "allowed_isp": ["Comcast", "Spectrum"],
   "blocked_isp": [],
@@ -105,7 +117,7 @@ python3 scripts/toolbox.py --config config/settings.json --env-file /path/intell
 }
 ```
 
-国家留空表示不限；允许类型不能为空，旧 `residential` 值仅兼容为 strict。ISP 和 ASN 的允许/阻止列表为空表示不设该限制，ISP 使用完整名称匹配并忽略大小写，ASN 使用 `AS` 加数字。允许与阻止列表不能包含同一值。preferred ISP 只影响有新鲜实际画像的候选排序，不排除其他 ISP；想限制范围需使用 allowed 列表。
+国家留空表示不限；允许类型不能为空，当前只有 `strict_residential`（住宅 IP）和 `unknown`（类型未知）两项。旧 `residential` 值兼容为 strict；旧 `likely_residential`、`mobile`、`datacenter`、`business_isp` 值统一归入 unknown。ISP 和 ASN 的允许/阻止列表为空表示不设该限制，ISP 使用完整名称匹配并忽略大小写，ASN 使用 `AS` 加数字。允许与阻止列表不能包含同一值。preferred ISP 只影响有新鲜实际画像的候选排序，不排除其他 ISP；想限制范围需使用 allowed 列表。
 
 最终国家、类型、ISP、ASN 以本轮真实 OpenVPN 出口画像为准。缺字段不能满足相应硬限制，包含黑名单的策略也不能用缺字段宣称“未命中”；手动指定节点使用相同验活流程。来源国家仅供初筛。未配置画像服务时，不限国家且显式允许 unknown 的技术策略仍可验活；固定国家、ISP/ASN 或住宅类型策略若缺少所需证据会等待，不能用来源信息补齐。
 

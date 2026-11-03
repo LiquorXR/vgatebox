@@ -28,6 +28,7 @@ type EgressProfile struct {
 	Hosting            *bool            `json:"hosting"`
 	Mobile             *bool            `json:"mobile"`
 	Residential        *bool            `json:"residential"`
+	FraudScore         *int             `json:"fraud_score,omitempty"`
 	Proxy              *bool            `json:"proxy"`
 	VPN                *bool            `json:"vpn"`
 	Abuse              *bool            `json:"abuse"`
@@ -99,7 +100,7 @@ func decodeMeasuredEgress(blob []byte, ip, protocol string) EgressProfile {
 		return unknown("intelligence_response_mismatch")
 	}
 	switch image.IPType {
-	case "strict_residential", "likely_residential", "mobile", "datacenter", "business_isp", "unknown":
+	case "strict_residential", "unknown":
 	default:
 		return unknown("intelligence_invalid_type")
 	}

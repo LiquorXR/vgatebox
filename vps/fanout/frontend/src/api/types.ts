@@ -13,6 +13,9 @@ export interface EgressProfile {
   expires_at?: string;
   reason?: string;
   confidence?: string;
+  fraud_score?: number;
+  residential?: boolean | null;
+  hosting?: boolean | null;
   [key: string]: unknown;
 }
 
@@ -109,7 +112,7 @@ export interface Node {
   sessions: number;
   // 来源标签：志愿者节点或 VPN Gate 自营，不等同于出口住宅类型。
   source_residential?: boolean;
-  // 出口画像结论：strict_residential 或 likely_residential。
+  // 出口画像结论：strict_residential 或 unknown。
   residential: boolean;
   pool_node_id?: string;
 }
@@ -153,6 +156,7 @@ export interface CheckRunView {
   done: number;
   total: number;
   parallelism: number;
+  ip_type_check?: boolean;
 }
 
 export interface RefreshView {
@@ -229,7 +233,7 @@ export interface ConsoleSummary {
   plan_error: string;
   refresh: RefreshView;
   check: CheckRunView | null;
-  check_settings: { parallelism: number };
+  check_settings: { parallelism: number; ip_type_check: boolean };
   results: Record<string, CheckResult>;
   regions: RegionStat[];
   memory: Record<string, number>;

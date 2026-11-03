@@ -176,9 +176,9 @@ class SourceTests(unittest.TestCase):
 
 
 class ClassifierTests(unittest.TestCase):
-    def test_strict_and_likely_are_separate(self):
+    def test_residential_requires_explicit_evidence(self):
         raw = image()
-        self.assertEqual(classify(raw, SETTINGS, "test", EXIT)["ip_type"], "likely_residential")
+        self.assertEqual(classify(raw, SETTINGS, "test", EXIT)["ip_type"], "unknown")
         raw["privacy"]["is_residential"] = True
         self.assertEqual(classify(raw, SETTINGS, "test", EXIT)["ip_type"], "strict_residential")
 
@@ -191,17 +191,17 @@ class ClassifierTests(unittest.TestCase):
         self.assertIsNone(result["hosting"])
         self.assertIsNone(result["proxy"])
 
-    def test_company_hosting_blocks_consumer_label(self):
+    def test_company_hosting_blocks_residential_label(self):
         raw = image()
         raw["company"] = {"type": "hosting"}
-        self.assertEqual(classify(raw, SETTINGS, "test", EXIT)["ip_type"], "datacenter")
+        self.assertEqual(classify(raw, SETTINGS, "test", EXIT)["ip_type"], "unknown")
         raw["privacy"]["is_residential"] = True
         self.assertEqual(classify(raw, SETTINGS, "test", EXIT)["ip_type"], "unknown")
 
-    def test_explicit_negative_residential_is_not_likely(self):
+    def test_explicit_negative_residential_is_not_residential(self):
         raw = image()
         raw["privacy"]["is_residential"] = False
-        self.assertNotEqual(classify(raw, SETTINGS, "test", EXIT)["ip_type"], "likely_residential")
+        self.assertEqual(classify(raw, SETTINGS, "test", EXIT)["ip_type"], "unknown")
 
     def test_intelligence_must_describe_queried_ip(self):
         with self.assertRaisesRegex(ToolError, "intelligence_ip_mismatch"):

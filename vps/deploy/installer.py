@@ -243,6 +243,10 @@ class Installer:
             p=self.l.path(dest);p.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(self.stage/src,p);p.chmod(mode)
         config=self.l.path('etc/vgatebox/pool.json');config.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
         if not config.exists():shutil.copyfile(self.stage/'config/settings.json',config);config.chmod(0o600)
+        intel=self.l.path('etc/vgatebox/intelligence.env')
+        if not intel.exists():
+            intel.write_text('IPPURE_ENABLED=1\nIPPURE_URL=https://my.ippure.com/v1/info\nIPPURE_TIMEOUT_SECONDS=15\n')
+            intel.chmod(0o600)
         env=self.l.path('etc/default/vgatebox-fanout');env.parent.mkdir(parents=True,exist_ok=True)
         if not env.exists():env.write_text('FANOUT_VALIDATED_POOL_FILE=/var/lib/vgatebox/pool/node_pool.json\nFANOUT_SLOT_PORT_BASE=17928\n');env.chmod(0o600)
         settings=self.l.work/'settings.json'

@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/vue-query";
 import { computed, reactive, ref, watch } from "vue";
 import { api, post } from "@/api/client";
 import { keys, useConsoleQuery, useNodesQuery } from "@/api/queries";
-import type { AutomationView, CheckResult, Node } from "@/api/types";
+import type { AutomationView, CheckResult, EgressProfile, Node } from "@/api/types";
 import DialogShell from "@/components/DialogShell.vue";
 import EmptyState from "@/components/EmptyState.vue";
 import PageHeader from "@/components/PageHeader.vue";
@@ -33,12 +33,22 @@ const page = ref(1);
 const selected = ref<Set<string>>(new Set());
 const parallelism = ref(2);
 const parallelismDirty = ref(false);
+const ipTypeCheck = ref(false);
+const ipTypeCheckDirty = ref(false);
 const submitting = reactive(new Set<string>());
 
 watch(
   () => summary.value?.check_settings?.parallelism,
   (value) => {
     if (value && !parallelismDirty.value) parallelism.value = value;
+  },
+  { immediate: true },
+);
+
+watch(
+  () => summary.value?.check_settings?.ip_type_check,
+  (value) => {
+    if (typeof value === "boolean" && !ipTypeCheckDirty.value) ipTypeCheck.value = value;
   },
   { immediate: true },
 );
@@ -55,8 +65,15 @@ function effectiveResult(node: Node): CheckResult {
 }
 
 // 类型列优先使用最近一次检测的观测；没有检测结果时退回候选池里的证据。
+// 旧持久化结果可能带已移除的类型，统一归入类型未知。
 function nodeIPType(node: Node): string {
-  return effectiveResult(node).ip_type || node.ip_type || "unknown";
+  const value = effectiveResult(node).ip_type || node.ip_type;
+  return value === "strict_residential" ? "strict_residential" : "unknown";
+}
+
+// 检测结果里的画像是本次临时隧道刚测到的，优先于候选池里的旧快照。
+function nodeEgress(node: Node): EgressProfile | null | undefined {
+  return effectiveResult(node).egress || node.openvpn_egress;
 }
 
 const countries = computed(() => {
@@ -155,14 +172,18 @@ const cancelMutation = useMutation({
   onError: (error) => toastError(error, "取消失败"),
 });
 
-const parallelismMutation = useMutation({
-  mutationFn: () => post("api/console/check/settings", { parallelism: Number(parallelism.value) }),
+const checkSettingsMutation = useMutation({
+  mutationFn: () => post("api/console/check/settings", {
+    parallelism: Number(parallelism.value),
+    ip_type_check: ipTypeCheck.value,
+  }),
   onSuccess: () => {
     parallelismDirty.value = false;
-    toast("检测并发已保存", { tone: "success" });
+    ipTypeCheckDirty.value = false;
+    toast("检测设置已保存", { tone: "success" });
     void queryClient.invalidateQueries({ queryKey: keys.console });
   },
-  onError: (error) => toastError(error, "保存并发失败"),
+  onError: (error) => toastError(error, "保存检测设置失败"),
 });
 
 function checkSelected() {
@@ -312,7 +333,11 @@ const detailNode = ref<Node | null>(null);
           <UiButton v-if="checkRunning" size="sm" variant="ghost" :loading="cancelMutation.isPending.value" @click="cancelMutation.mutate()">
             <X :size="13" />取消检测
           </UiButton>
-          <div class="ml-auto flex items-center gap-1.5">
+          <div class="ml-auto flex items-center gap-3">
+            <label class="flex items-center gap-1.5 text-[11px] text-muted" title="开启后手动和自动候选检测会查询 IPPure；出口换 IP 始终检查类型">
+              <ToggleSwitch v-model="ipTypeCheck" label="检测 IP 类型" @update:model-value="ipTypeCheckDirty = true" />
+              检测 IP 类型
+            </label>
             <label class="flex items-center gap-1.5 text-[11px] text-muted">
               检测并发
               <input
@@ -324,7 +349,7 @@ const detailNode = ref<Node | null>(null);
                 @input="parallelismDirty = true"
               />
             </label>
-            <UiButton size="sm" :disabled="!parallelismDirty" :loading="parallelismMutation.isPending.value" @click="parallelismMutation.mutate()">保存</UiButton>
+            <UiButton size="sm" :disabled="!parallelismDirty && !ipTypeCheckDirty" :loading="checkSettingsMutation.isPending.value" @click="checkSettingsMutation.mutate()">保存</UiButton>
           </div>
         </div>
 
@@ -499,8 +524,10 @@ const detailNode = ref<Node | null>(null);
           <div><dt class="text-faint">ISP</dt><dd class="mt-0.5">{{ detailNode.isp || "—" }}</dd></div>
           <div><dt class="text-faint">来源类型</dt><dd class="mt-0.5">{{ sourceResidentialLabel(detailNode.source_residential) }}</dd></div>
           <div><dt class="text-faint">IP 类型</dt><dd class="mt-0.5">{{ ipTypeLabel(nodeIPType(detailNode)) }}</dd></div>
-          <div><dt class="text-faint">类型依据</dt><dd class="mt-0.5">{{ detailNode.openvpn_egress?.reason || "—" }}</dd></div>
-          <div><dt class="text-faint">画像状态</dt><dd class="mt-0.5">{{ detailNode.openvpn_egress?.intelligence_status || "—" }}</dd></div>
+          <div><dt class="text-faint">类型依据</dt><dd class="mt-0.5">{{ nodeEgress(detailNode)?.reason || "—" }}</dd></div>
+          <div><dt class="text-faint">画像状态</dt><dd class="mt-0.5">{{ nodeEgress(detailNode)?.intelligence_status || "—" }}</dd></div>
+          <div><dt class="text-faint">画像来源</dt><dd class="mt-0.5">{{ nodeEgress(detailNode)?.provider || "—" }}</dd></div>
+          <div v-if="nodeEgress(detailNode)?.fraud_score !== undefined && nodeEgress(detailNode)?.fraud_score !== null"><dt class="text-faint">风险分</dt><dd class="tnum mt-0.5">{{ nodeEgress(detailNode)?.fraud_score }}</dd></div>
           <div><dt class="text-faint">预期出口</dt><dd class="mt-0.5 font-mono">{{ detailNode.expected_exit_ip || "—" }}</dd></div>
           <div><dt class="text-faint">SSTP 候选</dt><dd class="mt-0.5">{{ detailNode.sstp_candidates?.length || 0 }} 个</dd></div>
           <div><dt class="text-faint">Ping</dt><dd class="tnum mt-0.5">{{ detailNode.ping ? `${detailNode.ping} ms` : "—" }}</dd></div>

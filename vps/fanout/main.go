@@ -19,6 +19,7 @@ import (
 var version = "dev"
 
 func main() {
+	loadEnvFile(envOr("FANOUT_INTELLIGENCE_ENV_FILE", "/etc/vgatebox/intelligence.env"))
 	var (
 		webPort  = flag.Int("web", 8899, "Web 管理端口")
 		maxSlots = flag.Int("max", maximumSlots, "管理员设置的出口容量（默认使用实例地址容量）")
@@ -29,6 +30,9 @@ func main() {
 	showVersion := flag.Bool("version", false, "显示版本后退出")
 	checkState := flag.Bool("check-state", false, "只读检查内置模式状态副本的迁移配置，不启动服务")
 	flag.Parse()
+	if ippureEnabled() {
+		log.Printf("IP 类型画像：IPPure 已启用")
+	}
 	if *maxSlots < 1 || *maxSlots > maximumSlots {
 		log.Fatalf("出口容量范围为 1-%d", maximumSlots)
 	}

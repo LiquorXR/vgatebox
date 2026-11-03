@@ -15,9 +15,9 @@ func testEgressImage() EgressProfile {
 	country, asn, isp := "US", "AS7922", "Comcast"
 	no := false
 	return EgressProfile{IP: "73.1.1.1", Protocol: "openvpn", Country: &country, ASN: &asn, ISP: &isp,
-		IPType: "likely_residential", Hosting: &no, Confidence: "medium", Reason: "consumer_isp_no_hosting",
+		IPType: "strict_residential", Hosting: &no, Confidence: "high", Reason: "explicit_residential",
 		Provider: "independent_https_fixture", QueriedAt: time.Now().UTC().Format(time.RFC3339Nano),
-		ExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano), RuleVersion: "residential-1",
+		ExpiresAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano), RuleVersion: "residential-2",
 		IntelligenceStatus: "passed", Raw: json.RawMessage(`{"ip":"73.1.1.1","fixture":true}`)}
 }
 
@@ -45,7 +45,7 @@ func TestOpenVPNEgressRejectsWrongProtocolIPAndStaleEvidence(t *testing.T) {
 		})
 	}
 	blob, _ := json.Marshal(testEgressImage())
-	if got := decodeOpenVPNEgress(blob, "73.1.1.1"); got.IPType != "likely_residential" {
+	if got := decodeOpenVPNEgress(blob, "73.1.1.1"); got.IPType != "strict_residential" {
 		t.Fatalf("valid image lost: %+v", got)
 	}
 }
@@ -96,7 +96,7 @@ func TestOpenVPNEgressPythonBridgeWithoutCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	image = lookupOpenVPNEgressWith(dir, "73.1.1.1", func(cmd *exec.Cmd) ([]byte, error) { return cmd.Output() })
-	if image.IPType != "likely_residential" || !image.CacheUsed || image.Raw == nil || image.Provider != provider {
+	if image.IPType != "strict_residential" || !image.CacheUsed || image.Raw == nil || image.Provider != provider {
 		t.Fatalf("positive bridge failed: %+v", image)
 	}
 }
@@ -239,7 +239,7 @@ func TestValidatedPoolDoesNotBorrowSSTPImage(t *testing.T) {
 	item.Protocols.OpenVPN.ProfileRef = "profile.ovpn"
 	item.Protocols.SSTP.Status = "passed"
 	item.Protocols.SSTP.ExpectedExitIP = "73.1.1.1"
-	item.Protocols.SSTP.Egress.IPType = "likely_residential"
+	item.Protocols.SSTP.Egress.IPType = "strict_residential"
 	item.Protocols.SSTP.Egress.ISP = "SSTP ISP"
 	item.Protocols.SSTP.Egress.ASN = "AS7922"
 	path := filepath.Join(dir, "node_pool.json")
@@ -263,7 +263,7 @@ func TestValidatedPoolDoesNotBorrowSSTPImage(t *testing.T) {
 	item.Protocols.OpenVPN.ExpectedExitIP = "73.1.1.1"
 	item.Protocols.OpenVPN.Egress = testEgressImage()
 	got = load()
-	if got.IPType != "likely_residential" || got.ISP != "Comcast" || !got.Residential {
+	if got.IPType != "strict_residential" || got.ISP != "Comcast" || !got.Residential {
 		t.Fatalf("fresh OpenVPN image lost: %+v", got)
 	}
 	for _, mutate := range []func(){

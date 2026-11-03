@@ -73,6 +73,7 @@ export const errorLabels: Record<string, string> = {
   probe_environment_failed: "检测环境初始化失败",
   https_unreachable: "HTTPS 暂不可达",
   exit_not_ready: "出口尚未就绪",
+  policy_type_mismatch: "IP 类型不符合策略",
   policy_latency_exceeded: "超过延迟上限",
   cancelled: "已取消",
   pool_refresh_failed_previous_pool_retained: "来源刷新失败，保留旧清单",
@@ -104,11 +105,7 @@ export function errorLabel(code: string | undefined | null): string {
 }
 
 export const ipTypeLabels: Record<string, string> = {
-  strict_residential: "确认住宅",
-  likely_residential: "疑似住宅",
-  mobile: "移动网络",
-  datacenter: "数据中心",
-  business_isp: "企业 ISP",
+  strict_residential: "住宅 IP",
   unknown: "类型未知",
 };
 
@@ -118,20 +115,7 @@ export function ipTypeLabel(value: string | undefined | null): string {
 }
 
 export function ipTypeTone(value: string | undefined | null): Tone {
-  switch (value) {
-    case "strict_residential":
-      return "ok";
-    case "likely_residential":
-      return "ok";
-    case "datacenter":
-      return "warn";
-    case "mobile":
-      return "info";
-    case "business_isp":
-      return "neutral";
-    default:
-      return "neutral";
-  }
+  return value === "strict_residential" ? "ok" : "neutral";
 }
 
 export function sourceResidentialLabel(value: boolean | undefined | null): string {
