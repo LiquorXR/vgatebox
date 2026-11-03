@@ -139,6 +139,7 @@ func main() {
 
 	go console.watch()
 	go console.watchAutomation()
+	go console.watchChecksPersistence()
 	go console.sstp.watch()
 
 	go mgr.WatchHealth(console.ctx)

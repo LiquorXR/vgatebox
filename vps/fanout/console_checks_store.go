@@ -83,8 +83,14 @@ func (c *Console) retainChecksLocked(now time.Time) {
 	}
 	changed := false
 	for host, result := range c.results {
-		if result.CheckedAt.IsZero() || result.CheckedAt.After(now) || now.Sub(result.CheckedAt) > retention ||
-			(len(allowed) > 0 && !allowed[host]) {
+		// Age is only known for a completed observation; an entry without one is
+		// kept until its host leaves the pool instead of being dropped silently.
+		if !result.CheckedAt.IsZero() && (result.CheckedAt.After(now) || now.Sub(result.CheckedAt) > retention) {
+			delete(c.results, host)
+			changed = true
+			continue
+		}
+		if len(allowed) > 0 && !allowed[host] {
 			delete(c.results, host)
 			changed = true
 		}

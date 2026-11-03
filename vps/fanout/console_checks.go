@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -398,8 +399,14 @@ func (c *Console) startCheck(in CheckRequest) (*CheckRun, error) {
 // One dispatcher owns all running diagnostic identities. Manual items can join
 // a batch and take the next free permit without exceeding its configured limit.
 func (c *Console) runChecks(ctx context.Context, j *CheckRun) {
-	defer c.flushChecks()
-	dispatchCheckRun(ctx, j, &c.checksMu, func(index, slot int, item CheckResult, node Node) { c.runCheckItem(ctx, j, index, item, node, slot) }, func() { c.automationCheckFinished(j) })
+	// The final flush must complete before j.finished closes, so a finished task
+	// is durable and tests or shutdown never race a late write.
+	dispatchCheckRun(ctx, j, &c.checksMu, func(index, slot int, item CheckResult, node Node) { c.runCheckItem(ctx, j, index, item, node, slot) }, func() {
+		c.automationCheckFinished(j)
+		if err := c.flushChecks(); err != nil {
+			log.Printf("检测结果写入失败: %v", err)
+		}
+	})
 }
 
 func dispatchCheckRun(ctx context.Context, j *CheckRun, ownerMu *sync.Mutex, runItem func(int, int, CheckResult, Node), onComplete ...func()) {

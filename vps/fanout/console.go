@@ -124,7 +124,6 @@ func newConsole(m *Manager) (*Console, error) {
 	}
 	c.loadThirdPartyManager()
 	m.console = c
-	go c.watchChecksPersistence()
 	return c, nil
 }
 
@@ -524,7 +523,7 @@ func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {
 			if v.ExpiresAt.IsZero() && !expiry.IsZero() {
 				v.ExpiresAt = expiry
 			}
-			if v.ProfileSHA != profileDigest(n.Config) || (!expiry.IsZero() && !now.Before(expiry)) {
+			if v.CheckedAt.IsZero() || v.ProfileSHA != profileDigest(n.Config) || (!expiry.IsZero() && !now.Before(expiry)) {
 				v.Stale = true
 			}
 			results[n.HostName] = v
