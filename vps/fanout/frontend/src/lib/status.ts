@@ -78,6 +78,7 @@ export const errorLabels: Record<string, string> = {
   cancelled: "已取消",
   pool_refresh_failed_previous_pool_retained: "来源刷新失败，保留旧清单",
   allocation_failed: "出口分配等待重试",
+  no_volunteer_candidates: "没有可用的志愿者家宽节点",
   default_initialization_failed: "默认出口初始化等待重试",
   auto_binding_failed: "接入绑定等待重试",
   tcp_unreachable: "TCP 端口暂不可达",

@@ -106,7 +106,7 @@ func TestMigrationMissingStateOnlyAcceptsInstallationsWithoutSlots(t *testing.T)
 func TestMigrationV031PreparationPreservesBindingsWithoutRevivingHealth(t *testing.T) {
 	dir := migrationFixture(t)
 	blob, _ := os.ReadFile(statePath(dir))
-	state, err := decodePersistedState(blob, 3, false)
+	state, err := decodePersistedState(blob, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,18 +189,18 @@ func TestMigrationRejectsInvalidStateBeforePublishingAnySlots(t *testing.T) {
 }
 
 func TestMigrationLegacyDefaultsAndMissingCredentialPair(t *testing.T) {
-	for _, strict := range []bool{false, true} {
-		state, err := decodePersistedState([]byte(`{"tunnels":[{"slot":1,"port":17928,"stopped":true,"country_code":"jp"}]}`), 3, strict)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if state.Tunnels[0].Policy.Country != "JP" || containsFold(state.Tunnels[0].Policy.AllowedIPTypes, "unknown") == strict {
-			t.Fatal("legacy policy ignored saved defaults")
-		}
-		tunnels, err := prepareRestoredTunnels(state, nil)
-		if err != nil || validateCred(tunnels[0].Cred) != nil || tunnels[0].Status != "stopped" {
-			t.Fatal("complete legacy omission did not receive valid private credentials")
-		}
+	state, err := decodePersistedState([]byte(`{"tunnels":[{"slot":1,"port":17928,"stopped":true,"country_code":"jp"}]}`), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The volunteer-source switch no longer changes the default IP-type policy,
+	// so legacy Slots always default to strict_residential + unknown.
+	if state.Tunnels[0].Policy.Country != "JP" || !containsFold(state.Tunnels[0].Policy.AllowedIPTypes, "unknown") {
+		t.Fatal("legacy policy ignored source-independent defaults")
+	}
+	tunnels, err := prepareRestoredTunnels(state, nil)
+	if err != nil || validateCred(tunnels[0].Cred) != nil || tunnels[0].Status != "stopped" {
+		t.Fatal("complete legacy omission did not receive valid private credentials")
 	}
 }
 

@@ -229,10 +229,15 @@ func (c *Console) reconcile() error {
 		}
 		ts = ts[1:]
 	}
+	noVolunteers := false
 	for len(c.m.Tunnels()) < p.Count {
 		node := Node{CountryCode: p.Policy.Country, Country: p.Policy.Country}
 		if candidates := c.m.policyCandidates(p.Policy, nil, 0); len(candidates) > 0 {
 			node = candidates[0]
+		} else if residentialOnly() {
+			if volunteers, total := c.m.volunteerPoolStats(); total > 0 && volunteers == 0 {
+				noVolunteers = true
+			}
 		}
 		if _, err := c.start(node, p.Policy); err != nil {
 			c.planError = "allocation_failed"
@@ -243,7 +248,12 @@ func (c *Console) reconcile() error {
 		c.planError = "auto_binding_failed"
 		return err
 	}
-	c.planError = ""
+	if noVolunteers {
+		c.planError = "no_volunteer_candidates"
+		log.Printf("自动选点等待: 节点池没有志愿者家宽节点；可在设置里关闭「只使用志愿者家宽」")
+	} else {
+		c.planError = ""
+	}
 	invalidateInbounds()
 	return nil
 }

@@ -117,7 +117,7 @@ func (m *Manager) restoreState() (int, error) {
 		return 0, err
 	}
 
-	st, err := decodePersistedState(blob, m.maxSlots, residentialOnly())
+	st, err := decodePersistedState(blob, m.maxSlots)
 	if err != nil {
 		return 0, err
 	}
@@ -146,7 +146,7 @@ func (m *Manager) restoreState() (int, error) {
 
 // Shared by real startup and the offline checker. No file writes, workers,
 // random credentials or global settings changes occur during validation.
-func decodePersistedState(blob []byte, maxSlots int, residential bool) (*persistedState, error) {
+func decodePersistedState(blob []byte, maxSlots int) (*persistedState, error) {
 	var st *persistedState
 	if err := json.Unmarshal(blob, &st); err != nil || st == nil {
 		return nil, fmt.Errorf("解析状态文件失败")
@@ -163,7 +163,7 @@ func decodePersistedState(blob []byte, maxSlots int, residential bool) (*persist
 		}
 		seen[p.Slot] = true
 		ports[p.Port] = true
-		policy := defaultSlotPolicyForMode(p.CountryCode, residential)
+		policy := defaultSlotPolicy(p.CountryCode)
 		if p.Policy != nil {
 			policy = *p.Policy
 		}

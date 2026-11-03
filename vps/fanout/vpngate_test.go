@@ -17,89 +17,38 @@ func sampleNodeCSV(host string) string {
 		"*\n"
 }
 
-// 直连能用时不该碰反代。
-func TestFetchNodesUsesDirectWhenHealthy(t *testing.T) {
+// 生产路径消费共享 Pool Builder 的快照；这个直连读取只用于解析和错误分支。
+func TestFetchNodesUsesDirectSource(t *testing.T) {
 	direct := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, sampleNodeCSV("direct-node"))
 	}))
 	defer direct.Close()
-	mirrorHit := false
-	mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mirrorHit = true
-		fmt.Fprint(w, sampleNodeCSV("mirror-node"))
-	}))
-	defer mirror.Close()
 
-	t.Setenv("FANOUT_VPNGATE_MIRROR", mirror.URL)
 	nodes, err := fetchNodesWith(direct.URL, 5*time.Second)
 	if err != nil {
 		t.Fatalf("直连应该成功: %v", err)
 	}
-	if nodes[0].HostName != "direct-node" {
-		t.Fatalf("拿到的不是直连结果: %s", nodes[0].HostName)
-	}
-	if mirrorHit {
-		t.Fatal("直连成功时不应该请求反代")
+	if len(nodes) != 1 || nodes[0].HostName != "direct-node" {
+		t.Fatalf("拿到的不是直连结果: %+v", nodes)
 	}
 }
 
-// 直连被拦截时回落到反代，并带上访问密钥。
-func TestFetchNodesFallsBackToMirror(t *testing.T) {
-	direct := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "blocked", http.StatusForbidden)
-	}))
-	defer direct.Close()
-	gotKey := ""
-	mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotKey = r.Header.Get("X-Fanout-Key")
-		fmt.Fprint(w, sampleNodeCSV("mirror-node"))
-	}))
-	defer mirror.Close()
-
-	t.Setenv("FANOUT_VPNGATE_MIRROR", mirror.URL)
-	t.Setenv("FANOUT_VPNGATE_MIRROR_KEY", "test-key")
-	nodes, err := fetchNodesWith(direct.URL, 5*time.Second)
-	if err != nil {
-		t.Fatalf("反代应该兜住: %v", err)
-	}
-	if nodes[0].HostName != "mirror-node" {
-		t.Fatalf("没走反代: %s", nodes[0].HostName)
-	}
-	if gotKey != "test-key" {
-		t.Fatalf("反代请求没带密钥: %q", gotKey)
-	}
-}
-
-// 直连返回 200 但内容是被劫持的门户页，也要回落。
-func TestFetchNodesFallsBackOnGarbageBody(t *testing.T) {
-	direct := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "<html><body>请先登录网络</body></html>")
-	}))
-	defer direct.Close()
-	mirror := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, sampleNodeCSV("mirror-node"))
-	}))
-	defer mirror.Close()
-
-	t.Setenv("FANOUT_VPNGATE_MIRROR", mirror.URL)
-	nodes, err := fetchNodesWith(direct.URL, 5*time.Second)
-	if err != nil {
-		t.Fatalf("内容异常时应该回落: %v", err)
-	}
-	if nodes[0].HostName != "mirror-node" {
-		t.Fatalf("没走反代: %s", nodes[0].HostName)
-	}
-}
-
-// 反代被显式关掉时，直连失败就直接报错。
-func TestFetchNodesMirrorDisabled(t *testing.T) {
-	direct := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "blocked", http.StatusForbidden)
-	}))
-	defer direct.Close()
-
-	t.Setenv("FANOUT_VPNGATE_MIRROR", "")
-	if _, err := fetchNodesWith(direct.URL, 5*time.Second); err == nil {
-		t.Fatal("关掉反代后应该直接失败")
+// 被拦截或内容被劫持时直接报错，不再回退任何第三方反代。
+func TestFetchNodesRejectsBlockedAndGarbageSources(t *testing.T) {
+	for name, handler := range map[string]http.HandlerFunc{
+		"forbidden": func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "blocked", http.StatusForbidden)
+		},
+		"garbage": func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, "<html><body>请先登录网络</body></html>")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(handler)
+			defer server.Close()
+			if _, err := fetchNodesWith(server.URL, 5*time.Second); err == nil {
+				t.Fatal("异常来源应直接失败")
+			}
+		})
 	}
 }

@@ -46,10 +46,6 @@ type validatedPoolNode struct {
 			} `json:"egress"`
 		} `json:"sstp"`
 	} `json:"protocols"`
-	ModeA struct {
-		Status     string `json:"status"`
-		VerifiedAt string `json:"verified_at"`
-	} `json:"mode_a"`
 }
 
 func fetchNodesFromValidatedPool(poolPath string) ([]Node, error) {
@@ -131,8 +127,6 @@ func fetchNodesFromValidatedPool(poolPath string) ([]Node, error) {
 			SSTPStatus:        item.Protocols.SSTP.Status,
 			SSTPCandidates:    append([]SstpEndpoint(nil), item.Protocols.SSTP.Candidates...),
 			OpenVPNStatus:     item.Protocols.OpenVPN.Status,
-			FullChainVerified: item.ModeA.Status == "passed",
-			LastVerified:      item.ModeA.VerifiedAt,
 		})
 	}
 	if len(nodes) == 0 {

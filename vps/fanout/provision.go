@@ -145,6 +145,11 @@ func (m *Manager) planProvision(req ProvisionRequest) ([]Node, SlotPolicy, error
 		return nil, p, fmt.Errorf("数量超出空闲 Slot 数量")
 	}
 	candidates := m.policyCandidates(p, nil, 0)
+	if len(candidates) == 0 && residentialOnly() {
+		if volunteers, total := m.volunteerPoolStats(); total > 0 && volunteers == 0 {
+			return nil, p, fmt.Errorf("没有可用的志愿者家宽节点；可在设置里关闭「只使用志愿者家宽」，或等待来源刷新")
+		}
+	}
 	if !req.EveryRegion {
 		out := make([]Node, 0, req.Count)
 		for _, n := range candidates {
@@ -304,12 +309,13 @@ func (m *Manager) noNodesErrLocked(region string, filtered bool) error {
 	return fmt.Errorf("没有可用的空闲节点，试试重新拉取列表%s", tail)
 }
 
-// nodePoolLocked 返回可以拿来挑的节点。开了"只用家宽"就把 vpngate
-// 自营机房的节点剔掉；这里判断的是来源标签 SourceResidential，
+// nodePoolLocked 返回可以拿来挑的节点。开了「只使用志愿者家宽」就把
+// VPN Gate 自营机房的节点剔掉；这里判断的是来源标签 SourceResidential，
 // 出口画像是否住宅由 Slot 策略另行判断。调用方必须已持 m.mu。
 //
-// 只影响"新挑节点"：已经跑起来的隧道不会因为打开这个开关而被换掉，
-// 否则改一下设置就把用户手上所有出口的 IP 全换了。
+// 这条过滤覆盖所有自动选点：控制台补齐、批量开出口、初始出口、健康重连
+// 和手动换节点。已经跑起来的隧道不会因为打开开关而被换掉；重连时当前节点
+// 仍由 candidatesFor 单独放在首位用于恢复。
 func (m *Manager) nodePoolLocked() []Node {
 	if !residentialOnly() {
 		return m.nodes
@@ -321,6 +327,20 @@ func (m *Manager) nodePoolLocked() []Node {
 		}
 	}
 	return out
+}
+
+// volunteerPoolStats reports how many candidates survive the source filter.
+// total includes every pool entry, so callers can tell "pool empty" from
+// "pool non-empty but no volunteer nodes".
+func (m *Manager) volunteerPoolStats() (volunteers, total int) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, n := range m.nodes {
+		if n.SourceResidential {
+			volunteers++
+		}
+	}
+	return volunteers, len(m.nodes)
 }
 
 // RegionStat 是某个地区的可用节点概况，用于新建向导里的地区选择。
@@ -343,7 +363,7 @@ func (m *Manager) Regions() []RegionStat {
 	}
 
 	byCode := map[string]*RegionStat{}
-	for _, n := range m.nodes {
+	for _, n := range m.nodePoolLocked() {
 		if used[n.HostName] || n.CountryCode == "" {
 			continue
 		}

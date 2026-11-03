@@ -1,16 +1,12 @@
 # 第三方依赖与参考边界
 
-本项目的 Python 解析器、分类器、HTTP 适配、订阅生成、Xray 测试编排、测试和工作流为本项目新编写的实现，按 GPL-3.0-only 发布，完整许可见 [LICENSE](LICENSE)。没有复制 gate、CF-vpngate、AimiliVPN 的实现代码。项目整体基于 [hanhaoops/xnvgatebox](https://github.com/hanhaoops/xnvgatebox)（GPL-3.0）修改，上游版权归原作者，许可证全文保留。
-
-独立 Worker 部署准备工具：`scripts/prepare_workers.py` 校验固定提交与 SHA256，将两份上游程序分别放到忽略的 `runtime/deploy/checker`、`runtime/deploy/edge`，保留原文件、完整 LICENSE、来源、修改说明和生成文件摘要。两个程序不合并。Checker 的新增入口按 GPL-3.0-only；独立 EdgeTunnel 的新增入口按 GPL-2.0-only，完整许可见 [worker/edge/LICENSE](worker/edge/LICENSE)。根目录 GPL v3 不覆盖该明确标注 GPL v2 的独立组件。部署准备不代表 Cloudflare 部署或真实链路验收完成。
+本项目的 Python 解析器、分类器、HTTP 适配、Xray 会话辅助、测试和工作流为本项目新编写的实现，按 GPL-3.0-only 发布，完整许可见 [LICENSE](LICENSE)。没有复制 gate、CF-vpngate、AimiliVPN 的实现代码。项目整体基于 [hanhaoops/xnvgatebox](https://github.com/hanhaoops/xnvgatebox)（GPL-3.0）修改，上游版权归原作者，许可证全文保留。
 
 | 组件 | 本轮使用方式 | 许可 / 来源 |
 | --- | --- | --- |
 | VPN Gate 官方 CSV | 运行时读取公开节点与配置数据；配置作为未执行的数据保存 | [官方入口](https://www.vpngate.net/en/)，使用范围依官方项目说明 |
 | vpngate-list-mirror | 用户可选；由自己的 VPS 获取索引和固定提交的原始 CSV，不复用代码或检测结论；导入配置采用指令白名单 | [第三方仓库](https://github.com/GeorgeXie2333/vpngate-list-mirror)，数据使用范围依原发布方说明；不宣称官方认证 |
 | sstp-client | CentOS 安装时从固定版本 1.0.20 源码构建本机 RPM，匹配系统 PPP；独立进程运行，不修改上游源码 | [上游](https://gitlab.com/sstp-project/sstp-client/-/tree/1.0.20)、GPL-2.0-or-later；安装保留 COPYING，归档 SHA256 固定于安装脚本 |
-| CheckSocks5 | 独立部署准备；新增认证与 SSTP API 边界；调用其 HTTP 接口 | GPL v3；固定提交 `2f31cf9a242444eb22905d888d4d8871b0625b3a`，保留完整 LICENSE 和 README |
-| EdgeTunnel | 独立部署准备；强制 SSTP/globalproxy、关闭管理页面和 UDP；生成对应 VLESS/WS 参数 | GPL v2；固定提交 `af4f9837e1843e34159018713bc8749ccec3004d`，保留完整 LICENSE 和上游源文件；不与 GPL v3 Checker 合并 |
 | Xray-core | 下载官方 v26.10.31 二进制，按归档 SHA256 验证后本地执行；二进制不纳入 Git | [官方发布](https://github.com/XTLS/Xray-core/releases/tag/v26.10.31)、[MPL-2.0](https://github.com/XTLS/Xray-core/blob/v26.10.31/LICENSE)；安装器保留归档内 LICENSE / README |
 | Mihomo | 仅 CI 兼容测试从官方 v1.19.33 固定 SHA256 下载，不复制其代码、不随 VPS 包安装或发布测试内核 | [官方发布](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.33)、[GPL-3.0](https://github.com/MetaCubeX/mihomo/blob/v1.19.33/LICENSE)；客户端使用其自己的内核 |
 | GitHub 官方 Actions | 固定提交引用 checkout、setup-python、upload-artifact | 官方仓库许可；固定提交写在工作流中 |
@@ -18,4 +14,4 @@
 | 新控制台运行时 | `vps/fanout/frontend` 使用 Vue 3、Vue Router、TanStack Vue Query、Reka UI、Lucide 和 Zod；只调用本项目 API，不包含上游实现代码 | MIT / ISC；版本锁定在 `frontend/package-lock.json`，构建产物随 GPL-3.0-only 程序分发 |
 | 新控制台构建与测试 | Vite、Tailwind CSS、`@vitejs/plugin-vue`、TypeScript、`vue-tsc`、Vitest、happy-dom、Playwright | MIT / Apache-2.0；只在构建和 CI 使用（Playwright 浏览器仅下载到 CI），不进入 VPS 运行时 |
 
-完整的五项目许可证证据和源码行为见 [REFERENCE_AUDIT.md](docs/REFERENCE_AUDIT.md)。GPL 许可正文是标准许可文本，不是 Checker 实现代码的复用。
+完整的上游来源和固定版本见各组件链接。GPL 许可正文是标准许可文本，不是上游实现代码的复用。

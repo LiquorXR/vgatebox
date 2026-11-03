@@ -3,7 +3,6 @@
 .env.*
 !.env.example
 .venv/
-.wrangler/
 __pycache__/
 *.py[cod]
 *.egg-info/

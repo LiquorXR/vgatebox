@@ -118,7 +118,7 @@ func checkMigrationState(dir string, maxSlots, defaultPort int) migrationReport 
 		var original *persistedState
 		if json.Unmarshal(blob, &original) != nil || original == nil {
 			issue("state.json", "invalid_state")
-		} else if state, err := decodePersistedState(blob, maxSlots, settings.residentialOnly()); err != nil {
+		} else if state, err := decodePersistedState(blob, maxSlots); err != nil {
 			issue("state.json", "invalid_state")
 		} else {
 			for i, p := range state.Tunnels {

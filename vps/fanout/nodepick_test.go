@@ -1,9 +1,21 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
+
+// Production defaults the volunteer-only switch to on. Most fixtures model an
+// unfiltered pool, so tests opt into the filter explicitly with
+// withResidentialOnly instead of depending on the ambient default.
+func TestMain(m *testing.M) {
+	webSettingsMu.Lock()
+	off := false
+	webSettingsCur.ResidentialOnly = &off
+	webSettingsMu.Unlock()
+	os.Exit(m.Run())
+}
 
 // withResidentialOnly 临时改"只用家宽"开关，不落盘，测完自动还原。
 func withResidentialOnly(t *testing.T, v *bool) {
@@ -110,17 +122,19 @@ func TestPickNodesIncludesHostingWhenOff(t *testing.T) {
 	}
 }
 
-// 地区统计列出来源候选，不将旧 hostname 标记当作真实出口类型证据。
+// 地区统计与实际可分配一致：开着来源过滤时，机房节点不再计入。
 func TestRegionsIncludesUnverifiedCandidates(t *testing.T) {
 	withResidentialOnly(t, boolPtr(true))
 	m := mgrWith(mixed)
+	seen := map[string]int{}
 	for _, r := range m.Regions() {
-		if r.Code == "JP" && r.Available != 2 {
-			t.Fatalf("JP 有两个待验候选，实际 %d", r.Available)
-		}
-		if r.Code == "KR" && r.Available != 1 {
-			t.Fatal("仅旧来源标记不能替代真实画像验活")
-		}
+		seen[r.Code] = r.Available
+	}
+	if seen["JP"] != 1 {
+		t.Fatalf("JP 只剩一个志愿者候选，实际 %d", seen["JP"])
+	}
+	if _, ok := seen["KR"]; ok {
+		t.Fatal("只有机房节点的地区不应计入可分配数量")
 	}
 }
 
@@ -129,6 +143,56 @@ func TestResidentialOnlyDefaultsOn(t *testing.T) {
 	withResidentialOnly(t, nil)
 	if !residentialOnly() {
 		t.Fatal("没配过时应默认只用家宽")
+	}
+}
+
+// 自动选点必须尊重来源开关：控制台补齐、批量开出口、重连都走 policyCandidates。
+func TestPolicyCandidatesSkipsHostingWhenResidentialOnly(t *testing.T) {
+	withResidentialOnly(t, boolPtr(true))
+	m := mgrWith(mixed)
+	got := m.policyCandidates(defaultSlotPolicy(""), nil, 0)
+	if len(got) != 1 || got[0].HostName != "jp-home" {
+		t.Fatalf("volunteer-only pool leaked hosting nodes: %+v", got)
+	}
+}
+
+func TestPolicyCandidatesIncludesHostingWhenSourceFilterOff(t *testing.T) {
+	withResidentialOnly(t, boolPtr(false))
+	m := mgrWith(mixed)
+	if got := m.policyCandidates(defaultSlotPolicy(""), nil, 0); len(got) != 3 {
+		t.Fatalf("source filter off should keep every node: %+v", got)
+	}
+}
+
+func TestCandidatesForKeepsHostingCurrentNodeButFiltersAlternatives(t *testing.T) {
+	withResidentialOnly(t, boolPtr(true))
+	m := mgrWith(mixed)
+	policy := defaultSlotPolicy("")
+	tn := &Tunnel{Slot: 1, Node: mixed[2], Status: "up", Policy: &policy} // kr-dc hosting source
+	m.tunnels[1] = tn
+	got := m.candidatesFor(tn)
+	if len(got) == 0 || got[0].HostName != "kr-dc" {
+		t.Fatalf("current node must stay first for recovery: %+v", got)
+	}
+	for _, n := range got[1:] {
+		if !n.SourceResidential {
+			t.Fatalf("alternative hosting node leaked into a volunteer-only reconnect: %+v", got)
+		}
+	}
+}
+
+func TestDefaultSlotPolicyKeepsSourceFilterDecoupled(t *testing.T) {
+	withResidentialOnly(t, boolPtr(true))
+	if !containsFold(defaultSlotPolicy("").AllowedIPTypes, "unknown") {
+		t.Fatal("source switch must not force a strict-only IP policy")
+	}
+}
+
+func TestPlanProvisionReportsEmptyVolunteerPool(t *testing.T) {
+	withResidentialOnly(t, boolPtr(true))
+	m := mgrWith([]Node{{HostName: "public-vpn-1", CountryCode: "JP", SourceResidential: false}})
+	if _, _, err := m.planProvision(ProvisionRequest{Count: 1}); err == nil || !strings.Contains(err.Error(), "志愿者") {
+		t.Fatalf("empty volunteer pool was not reported: %v", err)
 	}
 }
 

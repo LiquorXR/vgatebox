@@ -242,7 +242,7 @@ const themeOptions: { value: ThemeChoice; label: string }[] = [
             <label class="flex items-start justify-between gap-4 rounded-lg border border-line p-3">
               <span>
                 <span class="block text-sm font-medium">只使用志愿者家宽</span>
-                <span class="mt-0.5 block text-[11px] leading-relaxed text-muted">开启后跳过 VPN Gate 自营机房节点；缺少可信画像时仍显示类型未知。</span>
+                <span class="mt-0.5 block text-[11px] leading-relaxed text-muted">影响自动选点（新建、补齐、重连、换节点），不影响节点池列表和手动指定节点；没有志愿者节点时会等待。</span>
               </span>
               <ToggleSwitch v-model="form.residential_only" label="只使用志愿者家宽" />
             </label>

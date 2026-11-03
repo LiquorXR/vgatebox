@@ -29,19 +29,17 @@ npm run test:e2e
 ```sh
 python3 scripts/install_xray.py
 python3 -m unittest discover -s tests -v
-node tests/test_worker_guards.mjs
-node tests/test_cf_control.mjs
 ```
 
-Python 检查解析、证据一致性、异常响应、证书拒绝、订阅清理、私密性、锁和进程清理。Node 检查保留的 Worker 边界；新控制台的纯逻辑由 Vitest 检查。Linux Go 测试包含网络隔离、出口生命周期、阻断及并发检查。合成测试与真实 VPN 节点验收分别记录，不因前者通过而认定后者可用。
+Python 检查解析、证据一致性、异常响应、证书拒绝、订阅清理、私密性、锁和进程清理。新控制台的纯逻辑由 Vitest 检查。Linux Go 测试包含网络隔离、出口生命周期、阻断及并发检查。合成测试与真实 VPN 节点验收分别记录，不因前者通过而认定后者可用。
 
 ## GitHub Actions
 
-- `test.yml`：Python 3.9/3.12 与 Node 回归。
+- `test.yml`：Python 3.9/3.12、前端类型检查/单测/E2E。
 - `vps.yml`：Linux Go/race、卸载验证、完整包构建及多发行版安装矩阵。
 - 手动运行 `vps.yml` 时可选 `live_mirror`，在一次性 Linux 环境运行生产 Builder，自行请求公开镜像索引与固定提交 CSV；不发布候选、不连接 VPN、不替代用户 VPS 验收。
 - `release-vps.yml`：手动发布通过测试的完整包，核对来源、版本与文件摘要。
-- `update.yml`：仅手动构建共享候选池，不定时运行、不部署 Cloudflare。
+- `update.yml`：仅手动构建共享候选池，不定时运行。
 
 多发行版测试在一次性特权容器中运行真正的 systemd、发行版包管理器和安装器，执行安装、实际订阅 HTTPS 访问、更新保留与卸载。测试入口仅允许在 GitHub 一次性 runner 上运行；它不覆盖独立 VPS 的内核、SELinux 或服务商防火墙。范围见 [系统兼容性](LINUX_SUPPORT.md)。
 

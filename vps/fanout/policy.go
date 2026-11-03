@@ -29,8 +29,12 @@ type SlotPolicy struct {
 var policyASN = regexp.MustCompile(`^AS[0-9]+$`)
 var policyCountry = regexp.MustCompile(`^[A-Z]{2}$`)
 
+// defaultSlotPolicy is the policy for a Slot that never carried one. It is
+// independent of the volunteer-source switch: that switch only filters which
+// nodes may be picked, while IP-type requirements stay an explicit per-Slot
+// decision.
 func defaultSlotPolicy(country string) SlotPolicy {
-	return defaultSlotPolicyForMode(country, residentialOnly())
+	return defaultSlotPolicyForMode(country, false)
 }
 
 func defaultSlotPolicyForMode(country string, residential bool) SlotPolicy {
@@ -214,7 +218,7 @@ func (m *Manager) policyCandidates(p SlotPolicy, avoid map[string]bool, exceptSl
 		t.mu.Unlock()
 	}
 	out := []Node{}
-	for _, n := range m.nodes {
+	for _, n := range m.nodePoolLocked() {
 		if local, ok := m.localEvidence[n.HostName]; ok && local.Config == n.Config && freshCandidateImage(local) != nil {
 			n = local
 		}

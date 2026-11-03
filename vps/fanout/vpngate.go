@@ -16,27 +16,6 @@ import (
 
 const vpngateAPI = "https://www.vpngate.net/api/iphone/"
 
-// vpngateMirror 是直连拿不到节点列表时的兜底（Cloudflare Worker 反代）。
-// 用 FANOUT_VPNGATE_MIRROR 可以换成自己的地址，设成空字符串就只走直连。
-const vpngateMirror = "https://p.xy.kg/vpngate"
-
-// mirrorKey 只是让反代不被爬虫和端口扫描白嫖，不是安全边界。
-const mirrorKey = "8rhIFzFKRJMFAe-xP5OQPclDEvSjKlHo"
-
-func mirrorURL() string {
-	if v, ok := os.LookupEnv("FANOUT_VPNGATE_MIRROR"); ok {
-		return strings.TrimSpace(v)
-	}
-	return vpngateMirror
-}
-
-func mirrorAccessKey() string {
-	if v, ok := os.LookupEnv("FANOUT_VPNGATE_MIRROR_KEY"); ok {
-		return strings.TrimSpace(v)
-	}
-	return mirrorKey
-}
-
 // Node 是一个 VPN Gate 节点。
 type SstpEndpoint struct {
 	Host string `json:"host"`
@@ -56,8 +35,6 @@ type Node struct {
 	ExpectedExitIP    string         `json:"expected_exit_ip,omitempty"`
 	SSTPStatus        string         `json:"sstp_status,omitempty"`
 	OpenVPNStatus     string         `json:"openvpn_status,omitempty"`
-	FullChainVerified bool           `json:"full_chain_verified"`
-	LastVerified      string         `json:"last_verified,omitempty"`
 	OpenVPNEgress     *EgressProfile `json:"openvpn_egress,omitempty"`
 	Ping              int            `json:"ping"`
 	SpeedMbps         float64        `json:"speed_mbps"`
@@ -110,21 +87,9 @@ func fetchNodes(timeout time.Duration) ([]Node, error) {
 	return nil, fmt.Errorf("请配置 FANOUT_VALIDATED_POOL_FILE；本项目只消费共享 Pool Builder 的 node_pool.json")
 }
 
-// fetchNodesWith 把直连地址拆成参数，方便测试两条分支。
+// fetchNodesWith 用直连地址读取一次节点列表，方便测试解析和错误分支。
 func fetchNodesWith(direct string, timeout time.Duration) ([]Node, error) {
-	nodes, err := fetchNodesFrom(direct, "", timeout)
-	if err == nil {
-		return nodes, nil
-	}
-	mirror := mirrorURL()
-	if mirror == "" {
-		return nil, err
-	}
-	nodes, mirrorErr := fetchNodesFrom(mirror, mirrorAccessKey(), timeout)
-	if mirrorErr != nil {
-		return nil, fmt.Errorf("直连失败(%v)；反代也失败: %w", err, mirrorErr)
-	}
-	return nodes, nil
+	return fetchNodesFrom(direct, "", timeout)
 }
 
 func fetchNodesFrom(url, key string, timeout time.Duration) ([]Node, error) {

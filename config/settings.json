@@ -4,17 +4,7 @@
   "mirror_fallback": {"enabled": true, "max_age_hours": 24},
   "countries": [],
   "candidate_limit": 50,
-  "sstp_concurrency": 4,
-  "xray_concurrency": 2,
   "node_timeout_seconds": 30,
-  "chain_timeout_seconds": 45,
-  "chain_ttl_seconds": 3600,
   "intelligence_ttl_seconds": 86400,
-  "intelligence_query_limit": 50,
-  "echo_urls": ["https://api.ipify.org", "https://ipv4.icanhazip.com"],
-  "content_url": "https://www.example.com/",
-  "content_marker": "Example Domain",
-  "edge_adapter": "edgetunnel-globalproxy-v1",
-  "edge_port": 443,
-  "edge_base_path": "/"
+  "intelligence_query_limit": 50
 }

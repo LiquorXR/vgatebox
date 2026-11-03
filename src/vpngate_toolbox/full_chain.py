@@ -1,4 +1,4 @@
-"""Run the exact generated VLESS profile, with verified HTTPS through SOCKS only."""
+"""Xray session helper used by the native VPS acceptance checks."""
 from __future__ import annotations
 
 import json
@@ -10,8 +10,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from .common import ToolError, https_url, public_ipv4, utc_now, expires_at, write_json
-from .subscription import Connection, connection_from_link
+from .common import ToolError, https_url, public_ipv4, write_json
 
 
 def child_environment():
@@ -21,7 +20,9 @@ def child_environment():
 
 
 class XraySession:
-    def __init__(self, connection: Connection, binary: str, timeout: int):
+    """Run one temporary Xray client and expose its local SOCKS endpoint."""
+
+    def __init__(self, connection, binary: str, timeout: int):
         self.connection = connection
         self.binary = str(Path(binary).resolve())
         self.deadline = time.monotonic() + timeout
@@ -121,57 +122,3 @@ def parse_echo(data: bytes) -> str:
     except (ValueError, UnicodeError, AttributeError):
         raise ToolError("invalid_echo_response") from None
     return public_ipv4(text)
-
-
-def verify(connection: Connection, expected_ip: str, settings: dict, binary: str, session_factory=XraySession) -> dict:
-    started = time.monotonic()
-    evidence = {"status": "failed", "expected_exit_ip": expected_ip, "actual_exit_ips": [],
-                "config_sha256": connection.sha256, "verified_at": utc_now(),
-                "scope": "tcp_ipv4_ws", "echo_urls": settings["echo_urls"],
-                "baseline_assurance": "preliminary_checker_tls_T1"}
-    try:
-        expected_ip = public_ipv4(expected_ip)
-        # Parse what will actually be delivered to users; path is never rewritten for tests.
-        published = connection_from_link(connection.link())
-        if published.sha256 != connection.sha256:
-            raise ToolError("subscription_config_mismatch")
-        with session_factory(published, binary, settings["chain_timeout_seconds"]) as session:
-            for _ in range(2):
-                for url in settings["echo_urls"]:
-                    actual = parse_echo(session.get(url))
-                    evidence["actual_exit_ips"].append(actual)
-                    if actual != expected_ip:
-                        raise ToolError("exit_ip_mismatch")
-            if settings["content_marker"].encode() not in session.get(settings["content_url"]):
-                raise ToolError("content_check_failed")
-        evidence.update({"status": "passed", "actual_exit_ip": expected_ip,
-                         "expires_at": expires_at(settings["chain_ttl_seconds"])})
-    except ToolError as exc:
-        evidence["failure_code"] = str(exc)
-    evidence["latency_ms"] = round((time.monotonic() - started) * 1000)
-    return evidence
-
-
-def verify_no_fallback(connection: Connection, settings: dict, binary: str, session_factory=XraySession) -> dict:
-    """With a nonexistent SSTP backend even Worker-accessible HTTPS must fail."""
-    evidence = {"status": "failed", "verified_at": utc_now(), "blocked_requests": 0}
-    # An invalid backend can close during target TLS handshake (curl 35).
-    # Certificate verification failures (60/77) are never acceptable evidence.
-    # Final positive tests still require normal verified HTTPS and exact IPs.
-    transport_failures = {"curl_failed_7", "curl_failed_28", "curl_failed_35", "curl_failed_52", "curl_failed_55", "curl_failed_56", "curl_failed_97"}
-    try:
-        with session_factory(connection, binary, settings["chain_timeout_seconds"]) as session:
-            for url in settings["echo_urls"]:
-                try:
-                    session.get(url)
-                except ToolError as exc:
-                    if str(exc) not in transport_failures:
-                        raise
-                    evidence["blocked_requests"] += 1
-                else:
-                    raise ToolError("invalid_sstp_direct_fallback_detected")
-        evidence["status"] = "passed"
-        evidence["expires_at"] = expires_at(settings["chain_ttl_seconds"])
-    except ToolError as exc:
-        evidence["failure_code"] = str(exc)
-    return evidence

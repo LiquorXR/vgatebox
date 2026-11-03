@@ -60,11 +60,11 @@ curl -fsSL https://github.com/LiquorXR/vgatebox/releases/latest/download/install
 
 画像服务可选；安装器默认写入 IPPure 配置（`IPPURE_ENABLED=1`），设为 `0` 可关闭。查询失败、字段不足或证据过期时，类型显示 `unknown`，不继承 SSTP 画像或来源主机的住宅标签。API 返回部分字段时，缺失布尔值仍为 null；国家、ASN、ISP 和类型以实际 OpenVPN 出口为对象。管理页在 Slot 下展示实际画像，候选表中的国家和延迟明确标为来源信息。
 
-候选列表把来源标签与出口类型分开：`source_residential` 只表示志愿者节点或 VPN Gate 自营机房；出口是否住宅看 `residential` 和 `ip_type`。开启「只使用志愿者家宽」只过滤来源，不会把 `unknown` 反标成自营。
+候选列表把来源标签与出口类型分开：`source_residential` 只表示志愿者节点或 VPN Gate 自营机房；出口是否住宅看 `residential` 和 `ip_type`。开启「只使用志愿者家宽」会过滤所有自动选点（新建、补齐、重连、换节点），不会把 `unknown` 反标成自营；节点池列表和手动指定节点不受影响，没有志愿者节点时出口会等待并显示原因。
 
 默认启用 IPPure（`IPPURE_ENABLED=1`）：`profile-openvpn` 完成后，管理器经该出口的 SOCKS 端口请求 `https://my.ippure.com/v1/info`，只有返回的 `ip` 与实测出口一致且 `isResidential=true`、国家/ASN/ISP 齐全时，才标记为 `strict_residential`；`false` 或缺失保持 `unknown`。IPPure 是 beta 服务，条款限制高频/批量自动化，部署后请按实际使用量评估并自行测试。当前 IPPure 路径覆盖 VPN Gate/OpenVPN 候选与出口；原始 SSTP 和第三方 SOCKS5 仍走自定义画像入口。
 
-国家另有独立查询：默认按实测出口 IP 请求 `https://api.country.is/{ip}`，正常验证 HTTPS 并精确匹配返回 IP，国家证据有效一天。国家可知不等于住宅类型可知，缺少可信分类画像时仍为 unknown。私有环境文件中的 `COUNTRY_URL_TEMPLATE` 可替换兼容服务（返回 `ip` 与两位 `country`）或设空关闭；失败短暂退避，显示地区未知，不使用来源国家补证。国家查询不发送 `INTELLIGENCE_TOKEN`，也不启用本项目暂停中的 CF 部署。
+国家另有独立查询：默认按实测出口 IP 请求 `https://api.country.is/{ip}`，正常验证 HTTPS 并精确匹配返回 IP，国家证据有效一天。国家可知不等于住宅类型可知，缺少可信分类画像时仍为 unknown。私有环境文件中的 `COUNTRY_URL_TEMPLATE` 可替换兼容服务（返回 `ip` 与两位 `country`）或设空关闭；失败短暂退避，显示地区未知，不使用来源国家补证。国家查询不发送 `INTELLIGENCE_TOKEN`。
 
 部署时可在 `/etc/vgatebox/intelligence.env` 写入简单的 `KEY=VALUE` 配置，文件只供管理员读取（0600）。安装器默认生成：
 
@@ -96,7 +96,7 @@ python3 scripts/toolbox.py --config config/settings.json --env-file /path/intell
 
 此命令的 JSON 包含原始画像响应，应保存为私有证据。自定义安装路径可通过管理器环境变量 `FANOUT_TOOLBOX_SCRIPT`、`FANOUT_POOL_CONFIG`、`FANOUT_INTELLIGENCE_ENV_FILE` 指定。
 
-“只用家宽”开关现在定义新建 Slot 的默认允许类型：开启时只允许 `strict_residential`，关闭时允许 `strict_residential` 和 `unknown`。已经保存的 Slot 策略不随这个全局开关变化。未验证候选可以进入真实探测，但不会因来源名称、SSTP 标签或仅配置画像服务就被认定符合策略。
+“只用家宽”开关只决定自动选点的来源范围，不再改变 Slot 的默认 IP 类型策略：缺少可信画像时默认仍允许 `unknown`，需要严格住宅请在出口策略里勾选类型。已经保存的 Slot 策略不随这个全局开关变化。未验证候选可以进入真实探测，但不会因来源名称、SSTP 标签或仅配置画像服务就被认定符合策略。
 
 ## Slot 策略与生命周期
 
@@ -164,7 +164,7 @@ python3 scripts/toolbox.py --config config/settings.json --env-file /path/intell
 - 内置模式管理页提供“回滚内置配置”，对应受登录保护的 `GET /api/config/rollback`（是否可回滚）及 `POST /api/config/rollback`。只保留上一次成功修改的内置配置，Slot 健康变化不覆盖历史；成功回滚后可切回前一份。恢复会影响入站和客户端凭据，可能让旧链接重新有效，且会重启整个 Xray、中断其他连接。它不回滚 Slot 策略，也不写任何外部面板。
 - Slot 策略编辑提供“恢复上次策略”，对应 `POST /api/slot/policy/rollback?slot=N`。每 Slot 保留上一次策略到 `state.json`，重启后仍可恢复。恢复策略和保存新策略走同一路径：先阻断、重新选点并验活；停止状态继续停止。不会恢复旧画像或历史 healthy，无合格节点仍等待。SOCKS 凭据变更失败也会尝试补偿旧运行配置，补偿失败保持阻断。
 
-事务按上述文件组划分，不是跨运行进程、全部文件和外部系统的一次性原子提交；不提供任意历史版本、安装包、CF 或外部面板回滚。进程启动后短暂存活加静态解析只用于发现启动错误，不能替代真实客户端链路验收。普通回归保留合成故障测试；显式启用的 Linux 实测还验证了真实 Xray 拒绝、监听冲突、文件提交/回滚失败及 SIGKILL 恢复，使用一次性副本，不修改安装服务。结果及运行方法见迁移验证文档。
+事务按上述文件组划分，不是跨运行进程、全部文件和外部系统的一次性原子提交；不提供任意历史版本、安装包或外部面板回滚。进程启动后短暂存活加静态解析只用于发现启动错误，不能替代真实客户端链路验收。普通回归保留合成故障测试；显式启用的 Linux 实测还验证了真实 Xray 拒绝、监听冲突、文件提交/回滚失败及 SIGKILL 恢复，使用一次性副本，不修改安装服务。结果及运行方法见迁移验证文档。
 
 ## 升级前离线检查
 

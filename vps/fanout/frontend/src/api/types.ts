@@ -100,8 +100,6 @@ export interface Node {
   sstp_candidates?: SstpEndpoint[];
   sstp_status?: string;
   openvpn_status?: string;
-  full_chain_verified?: boolean;
-  last_verified?: string;
   openvpn_egress?: EgressProfile;
   ping: number;
   speed_mbps: number;

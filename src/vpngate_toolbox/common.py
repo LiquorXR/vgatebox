@@ -82,7 +82,7 @@ class HttpsRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         https_url(newurl)
         # Avoid forwarding credentials to a redirected host.
-        sensitive_headers = {"authorization", "x-api-key", "cf-access-client-id", "cf-access-client-secret"}
+        sensitive_headers = {"authorization", "x-api-key"}
         if (urllib.parse.urlsplit(req.full_url).netloc != urllib.parse.urlsplit(newurl).netloc
                 and sensitive_headers.intersection(key.lower() for key in req.headers)):
             raise ServiceError("cross_host_redirect_rejected")
