@@ -29,7 +29,7 @@ class PoolScheduleTests(unittest.TestCase):
             return scheduled_pool(self.dir,self.output,scheduled,self.build,now=lambda:self.now)
 
     def test_defaults_one_hour_and_completion_gate_survives_restart(self):
-        self.assertEqual(load_automation(self.dir),{'refresh_enabled':True,'refresh_minutes':60,'check_enabled':True,'check_minutes':15})
+        self.assertEqual(load_automation(self.dir),{'refresh_enabled':True,'refresh_minutes':60,'check_enabled':True,'check_minutes':30})
         self.assertIsNotNone(self.run_pool())
         self.now+=timedelta(minutes=59);self.assertIsNone(self.run_pool())
         self.now+=timedelta(minutes=1);self.assertIsNotNone(self.run_pool())

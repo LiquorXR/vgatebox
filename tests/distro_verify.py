@@ -88,7 +88,7 @@ if sys.argv[1] == 'save':
     assert summary['suggested_target']==6 and not summary['target_configured']
     c.request('GET',base+'/api/console/automation',headers={'Cookie':cookie})
     r=c.getresponse();autom=json.loads(r.read());assert r.status==200
-    assert autom['settings']=={'refresh_enabled':True,'refresh_minutes':60,'check_enabled':True,'check_minutes':15}
+    assert autom['settings']=={'refresh_enabled':True,'refresh_minutes':60,'check_enabled':True,'check_minutes':30}
     c.request('POST',base+'/api/console/automation',json.dumps({'refresh_enabled':True,'refresh_minutes':60,'check_enabled':False,'check_minutes':90}),{'Cookie':cookie,'Content-Type':'application/json'})
     r=c.getresponse();r.read();assert r.status==200
     c.request('GET', base+'/api/console/source-settings', headers={'Cookie': cookie})

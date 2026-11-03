@@ -23,7 +23,7 @@ func TestCheckSettingsTTLDefaultsPersistAndValidate(t *testing.T) {
 	w := httptest.NewRecorder()
 	c.apiCheckSettings(w, httptest.NewRequest("GET", "/", nil))
 	body := w.Body.String()
-	if w.Code != 200 || !strings.Contains(body, `"check_result_ttl_minutes":0`) || !strings.Contains(body, `"check_result_ttl_effective_minutes":30`) ||
+	if w.Code != 200 || !strings.Contains(body, `"check_result_ttl_minutes":0`) || !strings.Contains(body, `"check_result_ttl_effective_minutes":90`) ||
 		!strings.Contains(body, `"observation_ttl_minutes":30`) || !strings.Contains(body, `"ippure_ttl_hours":24`) {
 		t.Fatalf("wrong TTL defaults: %s", body)
 	}
@@ -51,6 +51,8 @@ func TestCheckSettingsTTLDefaultsPersistAndValidate(t *testing.T) {
 	}
 	for _, body := range []string{
 		`{"parallelism":2,"ip_type_check":false,"check_result_ttl_minutes":1441}`,
+		`{"parallelism":2,"ip_type_check":false,"check_result_ttl_minutes":29}`,
+		`{"parallelism":2,"ip_type_check":false,"check_result_ttl_minutes":40}`,
 		`{"parallelism":2,"ip_type_check":false,"observation_ttl_minutes":0}`,
 		`{"parallelism":2,"ip_type_check":false,"ippure_ttl_hours":0}`,
 	} {

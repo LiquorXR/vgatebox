@@ -403,6 +403,9 @@ func (c *Console) runChecks(ctx context.Context, j *CheckRun) {
 	// is durable and tests or shutdown never race a late write.
 	dispatchCheckRun(ctx, j, &c.checksMu, func(index, slot int, item CheckResult, node Node) { c.runCheckItem(ctx, j, index, item, node, slot) }, func() {
 		c.automationCheckFinished(j)
+		// The finished batch is the best cycle sample; refresh derived TTLs so
+		// ordering observations survive the next round too.
+		c.applyTTLSettings(time.Now().UTC())
 		if err := c.flushChecks(); err != nil {
 			log.Printf("检测结果写入失败: %v", err)
 		}

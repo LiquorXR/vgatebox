@@ -229,7 +229,7 @@ const consoleData = {
     integrity_verified: true,
   },
   automation: {
-    settings: { refresh_enabled: true, refresh_minutes: 60, check_enabled: true, check_minutes: 15 },
+    settings: { refresh_enabled: true, refresh_minutes: 60, check_enabled: true, check_minutes: 30 },
     refresh: {
       enabled: true,
       minutes: 60,
@@ -242,7 +242,7 @@ const consoleData = {
     },
     check: {
       enabled: true,
-      minutes: 15,
+      minutes: 30,
       status: "completed",
       running: false,
       finished_at: now,
@@ -261,9 +261,10 @@ const consoleData = {
     parallelism: 2,
     ip_type_check: false,
     check_result_ttl_minutes: 0,
-    check_result_ttl_effective_minutes: 30,
+    check_result_ttl_effective_minutes: 90,
     observation_ttl_minutes: 30,
-    observation_ttl_effective_minutes: 30,
+    observation_ttl_effective_minutes: 90,
+    check_cycle_seconds: 1500,
     ippure_ttl_hours: 24,
     ippure_cache: { entries: 0, hits: 0, queries: 0 },
   },

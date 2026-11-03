@@ -23,6 +23,17 @@ func (b *connectBudget) setLimit(limit int) {
 	b.limit = limit
 	b.signal()
 }
+
+// limitValue reports the configured parallelism for read-only callers such as
+// batch-duration estimation. It never changes the budget.
+func (b *connectBudget) limitValue() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.limit < 1 {
+		return 1
+	}
+	return b.limit
+}
 func (b *connectBudget) acquire(ctx context.Context, production bool) (func(), error) {
 	b.mu.Lock()
 	if production {

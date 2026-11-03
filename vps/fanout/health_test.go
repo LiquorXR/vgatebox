@@ -70,7 +70,7 @@ func TestHealthChecksSlowTunnelWithoutBlockingOthers(t *testing.T) {
 	}
 	done := make(chan struct{})
 	go func() {
-		m.healthRound(context.Background(), map[int]int{})
+		m.healthRound(context.Background(), newHealthRoundState())
 		close(done)
 	}()
 	for i := 0; i < 2; i++ {
@@ -105,7 +105,7 @@ func TestHealthProbeTimeoutAndTwoFailureReconnect(t *testing.T) {
 	}
 	reconnects := 0
 	m.healthReconnect = func(*Tunnel, string) { reconnects++ }
-	fails := map[int]int{}
+	fails := newHealthRoundState()
 	start := time.Now()
 	m.healthRound(context.Background(), fails)
 	if elapsed := time.Since(start); elapsed > 250*time.Millisecond {
@@ -135,7 +135,7 @@ func TestHealthBlocksImmediatelyOnExitChangeAndExpiredPolicy(t *testing.T) {
 		return "198.51.100.99", 10, nil
 	}
 	m.healthReconnect = func(*Tunnel, string) { reconnects++ }
-	m.healthRound(context.Background(), map[int]int{})
+	m.healthRound(context.Background(), newHealthRoundState())
 	if probes != 1 || reconnects != 1 || tunnel.Status != "blocked" {
 		t.Fatalf("exit change was not blocked immediately: probes=%d reconnects=%d status=%s", probes, reconnects, tunnel.Status)
 	}
@@ -152,9 +152,80 @@ func TestHealthBlocksImmediatelyOnExitChangeAndExpiredPolicy(t *testing.T) {
 		probes++
 		return stale.ExitIP, 10, nil
 	}
-	m.healthRound(context.Background(), map[int]int{})
+	m.healthRound(context.Background(), newHealthRoundState())
 	if probes != 0 || reconnects != 1 || stale.Status != "blocked" {
 		t.Fatalf("expired policy was not blocked immediately: probes=%d reconnects=%d status=%s", probes, reconnects, stale.Status)
+	}
+}
+
+func TestHealthRoundSkipsBusyTunnelWithoutCountingFailure(t *testing.T) {
+	m := NewManager(8, t.TempDir())
+	m.healthOpWindow = 50 * time.Millisecond
+	busy, free := healthTunnel(1, "busy", "203.0.113.30"), healthTunnel(2, "free", "203.0.113.31")
+	m.tunnels[1], m.tunnels[2] = busy, free
+	probes, reconnects := 0, 0
+	m.healthProbe = func(_ context.Context, tunnel *Tunnel) (string, float64, error) {
+		probes++
+		return tunnel.ExitIP, 10, nil
+	}
+	m.healthReconnect = func(*Tunnel, string) { reconnects++ }
+	busy.opMu.Lock()
+	state := newHealthRoundState()
+	state.fails[1] = 1 // an existing streak must survive an unobserved round
+	start := time.Now()
+	m.healthRound(context.Background(), state)
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("busy slot stretched the round: %s", elapsed)
+	}
+	if state.fails[1] != 1 || state.fails[2] != 0 {
+		t.Fatalf("deferred round changed streaks: %v", state.fails)
+	}
+	if reconnects != 0 || probes != 1 {
+		t.Fatalf("deferred round acted on the busy slot: reconnects=%d probes=%d", reconnects, probes)
+	}
+	busy.opMu.Unlock()
+	m.healthRound(context.Background(), state)
+	if state.fails[1] != 0 || probes != 2 {
+		t.Fatalf("released slot was not probed: probes=%d fails=%v", probes, state.fails)
+	}
+}
+
+func TestHealthRechecksStatusAfterWaitingForOperation(t *testing.T) {
+	m := NewManager(8, t.TempDir())
+	m.healthOpWindow = 2 * time.Second
+	tunnel := healthTunnel(1, "restart", "203.0.113.33")
+	policy := SlotPolicy{AllowedIPTypes: []string{"unknown"}}
+	tunnel.Policy = &policy
+	probed, reconnects := 0, 0
+	m.healthProbe = func(context.Context, *Tunnel) (string, float64, error) {
+		probed++
+		return tunnel.ExitIP, 10, nil
+	}
+	m.healthReconnect = func(*Tunnel, string) { reconnects++ }
+	tunnel.opMu.Lock()
+	done := make(chan healthState, 1)
+	go func() {
+		state, _ := m.checkTunnelHealth(context.Background(), tunnel)
+		done <- state
+	}()
+	time.Sleep(50 * time.Millisecond)
+	tunnel.mu.Lock()
+	tunnel.Status = "starting" // a swap started while the probe waited
+	tunnel.mu.Unlock()
+	tunnel.opMu.Unlock()
+	select {
+	case state := <-done:
+		if state != healthOK {
+			t.Fatalf("restarting tunnel judged against stale evidence: state=%v", state)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("health check stuck on the operation lock")
+	}
+	if probed != 0 || reconnects != 0 {
+		t.Fatalf("stale round acted on a restarting tunnel: probes=%d reconnects=%d", probed, reconnects)
+	}
+	if tunnel.Status == "blocked" {
+		t.Fatal("stale evidence blocked a restarting tunnel")
 	}
 }
 

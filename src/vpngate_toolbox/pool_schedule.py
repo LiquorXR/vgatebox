@@ -6,7 +6,7 @@ from pathlib import Path
 from .common import ToolError, write_json
 
 DEFAULTS = {'refresh_enabled': True, 'refresh_minutes': 60,
-            'check_enabled': True, 'check_minutes': 15}
+            'check_enabled': True, 'check_minutes': 30}
 MINIMUM_MINUTES = {'refresh': 30, 'check': 15}
 
 

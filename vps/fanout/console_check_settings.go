@@ -34,7 +34,7 @@ func validateCheckParallelism(n int) error {
 
 func validateTTLSettings(resultMinutes, observationMinutes, ippureHours int) error {
 	if resultMinutes != 0 && (resultMinutes < minCheckResultTTLMinutes || resultMinutes > maxCheckResultTTLMinutes) {
-		return fmt.Errorf("结果有效期须为 0（自动）或 1–1440 分钟")
+		return fmt.Errorf("结果有效期须为 0（自动）或 30–1440 分钟")
 	}
 	if observationMinutes < 1 || observationMinutes > maxObservationTTLMinutes {
 		return fmt.Errorf("排序观察有效期须为 1–1440 分钟")
@@ -48,6 +48,9 @@ func validateTTLSettings(resultMinutes, observationMinutes, ippureHours int) err
 func normalizeTTLSettings(resultMinutes, observationMinutes, ippureHours int) (int, int, int) {
 	if resultMinutes < 0 || resultMinutes > maxCheckResultTTLMinutes {
 		resultMinutes = 0
+	}
+	if resultMinutes > 0 && resultMinutes < minCheckResultTTLMinutes {
+		resultMinutes = minCheckResultTTLMinutes
 	}
 	if observationMinutes <= 0 || observationMinutes > maxObservationTTLMinutes {
 		observationMinutes = defaultObservationTTLMinutes
@@ -135,6 +138,7 @@ func (c *Console) checkSettingsView(now time.Time) map[string]any {
 		"check_result_ttl_effective_minutes": int(resultTTL.Minutes()),
 		"observation_ttl_minutes":            observationMinutes,
 		"observation_ttl_effective_minutes":  int(observationTTL.Minutes()),
+		"check_cycle_seconds":                int(c.checkCycleDuration().Seconds()),
 		"ippure_ttl_hours":                   ippureHours,
 		"ippure_cache":                       c.m.ippureCacheStats(),
 	}
@@ -171,6 +175,12 @@ func (c *Console) apiCheckSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.IPPureTTLHours != nil {
 		ippureHours = *in.IPPureTTLHours
+	}
+	enabled, minutes := c.automationCheckSchedule()
+	if err := validateResultTTLForSchedule(resultMinutes, enabled, minutes); err != nil {
+		c.checksMu.Unlock()
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
 	}
 	err := c.saveCheckSettingsAll(in.Parallelism, ipTypeCheck, resultMinutes, observationMinutes, ippureHours)
 	c.checksMu.Unlock()

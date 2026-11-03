@@ -38,6 +38,7 @@ type Manager struct {
 	healthParallelLimit int
 	healthProbeWindow   time.Duration
 	healthEchoWindow    time.Duration
+	healthOpWindow      time.Duration
 	healthProbe         func(context.Context, *Tunnel) (string, float64, error)
 	healthReconnect     func(*Tunnel, string)
 
@@ -103,6 +104,14 @@ func (m *Manager) Nodes() ([]Node, time.Time) {
 		}
 	}
 	return out, m.fetched
+}
+
+// NodeCount avoids the full copy and evidence merge when only pool size matters
+// (TTL estimation runs for every stored result).
+func (m *Manager) NodeCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.nodes)
 }
 
 func (m *Manager) Tunnels() []*Tunnel {

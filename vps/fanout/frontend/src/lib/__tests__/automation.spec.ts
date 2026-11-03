@@ -3,7 +3,7 @@ import { scheduleLabel, sourceLabel } from "../automation";
 import type { AutomationView } from "@/api/types";
 
 const view: AutomationView = {
-  settings: { refresh_enabled: true, refresh_minutes: 60, check_enabled: false, check_minutes: 15 },
+  settings: { refresh_enabled: true, refresh_minutes: 60, check_enabled: false, check_minutes: 30 },
   refresh: {
     enabled: true,
     minutes: 60,

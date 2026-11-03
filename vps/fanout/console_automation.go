@@ -13,7 +13,7 @@ import (
 
 const (
 	defaultRefreshMinutes = 60
-	defaultCheckMinutes   = 15
+	defaultCheckMinutes   = 30
 	minRefreshMinutes     = 30
 	minCheckMinutes       = 15
 	maxAutomationMinutes  = 525600
@@ -192,6 +192,13 @@ func (c *Console) apiAutomation(w http.ResponseWriter, r *http.Request) {
 		}
 		s := automationSettings{*in.RefreshEnabled, in.RefreshMinutes, *in.CheckEnabled, in.CheckMinutes}
 		if err := validateAutomationSettings(s); err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
+		c.ttlMu.RLock()
+		configuredTTL := c.checkResultTTLMinutes
+		c.ttlMu.RUnlock()
+		if err := validateResultTTLForSchedule(configuredTTL, s.CheckEnabled, s.CheckMinutes); err != nil {
 			writeJSON(w, 400, map[string]string{"error": err.Error()})
 			return
 		}

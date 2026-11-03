@@ -203,6 +203,7 @@ export interface CheckSettingsView {
   check_result_ttl_effective_minutes?: number;
   observation_ttl_minutes?: number;
   observation_ttl_effective_minutes?: number;
+  check_cycle_seconds?: number;
   ippure_ttl_hours?: number;
   ippure_cache?: IPPureCacheView;
 }

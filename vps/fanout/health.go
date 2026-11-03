@@ -13,6 +13,9 @@ const (
 	healthProbeTime = 10 * time.Second
 	healthEchoTime  = 8 * time.Second
 	healthParallel  = 8
+	// A busy Slot (manual swap, console exit check) must not hold a probe permit
+	// for the whole operation: that would stretch the round for every other exit.
+	healthOpWait = 250 * time.Millisecond
 )
 
 type healthState int
@@ -21,7 +24,20 @@ const (
 	healthOK healthState = iota
 	healthTransient
 	healthBlocked
+	// healthDeferred means the round could not observe the tunnel because
+	// another network operation owned it. It must change neither the streak nor
+	// the tunnel state.
+	healthDeferred
 )
+
+type healthRoundState struct {
+	fails    map[int]int
+	deferred map[int]bool
+}
+
+func newHealthRoundState() *healthRoundState {
+	return &healthRoundState{fails: map[int]int{}, deferred: map[int]bool{}}
+}
 
 type healthRoundResult struct {
 	tunnel *Tunnel
@@ -35,19 +51,19 @@ type healthRoundResult struct {
 // only then waits for the next interval. There is no tick backlog or overlap;
 // cancellation stops the wait and the in-flight probes.
 func (m *Manager) WatchHealth(ctx context.Context) {
-	fails := map[int]int{}
+	state := newHealthRoundState()
 	if !waitForWork(ctx, m.healthIntervalValue()) {
 		return
 	}
 	for {
-		m.healthRound(ctx, fails)
+		m.healthRound(ctx, state)
 		if !waitForWork(ctx, m.healthIntervalValue()) {
 			return
 		}
 	}
 }
 
-func (m *Manager) healthRound(ctx context.Context, fails map[int]int) {
+func (m *Manager) healthRound(ctx context.Context, state *healthRoundState) {
 	tunnels := m.Tunnels()
 	active := make([]*Tunnel, 0, len(tunnels))
 	for _, t := range tunnels {
@@ -63,7 +79,7 @@ func (m *Manager) healthRound(ctx context.Context, fails map[int]int) {
 	}
 	// Slots that left the round must not keep an old failure streak: a reused
 	// slot would otherwise reconnect after a single ordinary failure.
-	for slot := range fails {
+	for slot := range state.fails {
 		found := false
 		for _, t := range active {
 			if t.Slot == slot {
@@ -72,7 +88,8 @@ func (m *Manager) healthRound(ctx context.Context, fails map[int]int) {
 			}
 		}
 		if !found {
-			delete(fails, slot)
+			delete(state.fails, slot)
+			delete(state.deferred, slot)
 		}
 	}
 	parallel := m.healthParallelValue()
@@ -106,19 +123,28 @@ func (m *Manager) healthRound(ctx context.Context, fails map[int]int) {
 		t := result.tunnel
 		switch result.state {
 		case healthOK:
-			fails[t.Slot] = 0
+			state.fails[t.Slot] = 0
+			state.deferred[t.Slot] = false
 		case healthBlocked:
-			fails[t.Slot] = 0
+			state.fails[t.Slot] = 0
+			state.deferred[t.Slot] = false
 			log.Printf("隧道 %d (%s) 出口证据已失效，立即换节点重连", t.Slot, t.Node.HostName)
 			m.reconnectHealth(t)
+		case healthDeferred:
+			// A busy Slot is not evidence of failure, but it must not look
+			// healthy either: leave the streak untouched and retry next round.
+			if !state.deferred[t.Slot] {
+				log.Printf("隧道 %d (%s) 正被其它操作占用，本轮跳过健康检查", t.Slot, t.Node.HostName)
+				state.deferred[t.Slot] = true
+			}
 		case healthTransient:
-			fails[t.Slot]++
-			if fails[t.Slot] < healthFailures {
-				log.Printf("隧道 %d (%s) 探测失败 %d 次", t.Slot, t.Node.HostName, fails[t.Slot])
+			state.fails[t.Slot]++
+			if state.fails[t.Slot] < healthFailures {
+				log.Printf("隧道 %d (%s) 探测失败 %d 次", t.Slot, t.Node.HostName, state.fails[t.Slot])
 				continue
 			}
 			log.Printf("隧道 %d (%s) 已掉线，正在换节点重连", t.Slot, t.Node.HostName)
-			fails[t.Slot] = 0
+			state.fails[t.Slot] = 0
 			m.reconnectHealth(t)
 		}
 	}
@@ -141,8 +167,22 @@ func (m *Manager) checkTunnelHealth(parent context.Context, t *Tunnel) (healthSt
 	if view.Status != "up" {
 		return healthOK, 0
 	}
-	t.opMu.Lock()
+	// Never wait unbounded for the Slot's operation lock: a manual swap or a
+	// console exit check can hold it for tens of seconds, and this goroutine is
+	// occupying a probe permit while it waits.
+	if !lockOpWithin(parent, &t.opMu, m.healthOpWaitValue()) {
+		return healthDeferred, 0
+	}
 	defer t.opMu.Unlock()
+	// The snapshot above was taken before the lock; re-read the state so a Slot
+	// that started reconnecting meanwhile is not judged against old evidence.
+	switch t.snapshot().Status {
+	case "up":
+	case "blocked":
+		return healthBlocked, 0
+	default:
+		return healthOK, 0
+	}
 	if parent.Err() != nil {
 		return healthTransient, 0
 	}
@@ -181,6 +221,28 @@ func (m *Manager) checkTunnelHealth(parent context.Context, t *Tunnel) (healthSt
 	return healthOK, latency
 }
 
+// lockOpWithin takes the Slot's operation lock without waiting for a long
+// connect or exit check. Probes must give up and try again next round instead
+// of holding a permit; otherwise one busy Slot delays every other exit.
+func lockOpWithin(ctx context.Context, mu *sync.Mutex, budget time.Duration) bool {
+	deadline := time.Now().Add(budget)
+	for {
+		if mu.TryLock() {
+			return true
+		}
+		if ctx.Err() != nil || !time.Now().Before(deadline) {
+			return false
+		}
+		timer := time.NewTimer(10 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return false
+		case <-timer.C:
+		}
+	}
+}
+
 func (m *Manager) probeTunnelHealth(ctx context.Context, t *Tunnel) (string, float64, error) {
 	if m.healthProbe != nil {
 		return m.healthProbe(ctx, t)
@@ -216,10 +278,11 @@ func (m *Manager) healthParallelValue() int {
 	return healthParallel
 }
 
-// tunnelHealthy 保留给需要布尔结果的内部调用：任何非正常状态都视为不健康。
-func (m *Manager) tunnelHealthy(t *Tunnel) bool {
-	state, _ := m.checkTunnelHealth(context.Background(), t)
-	return state == healthOK
+func (m *Manager) healthOpWaitValue() time.Duration {
+	if m.healthOpWindow > 0 {
+		return m.healthOpWindow
+	}
+	return healthOpWait
 }
 
 // reconnect 就地把一条隧道换到别的节点上，保持槽位与端口不变，

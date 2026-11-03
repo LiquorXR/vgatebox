@@ -16,7 +16,7 @@ func TestAutomationSettingsMinimumPersistAndRestart(t *testing.T) {
 	c := consoleFixture(t)
 	w := httptest.NewRecorder()
 	c.apiAutomation(w, httptest.NewRequest("GET", "/", nil))
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"refresh_minutes":60`) || !strings.Contains(w.Body.String(), `"check_minutes":15`) {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"refresh_minutes":60`) || !strings.Contains(w.Body.String(), `"check_minutes":30`) {
 		t.Fatal("wrong defaults")
 	}
 	path := filepath.Join(c.m.workDir, "automation.json")
@@ -45,6 +45,26 @@ func TestAutomationSettingsMinimumPersistAndRestart(t *testing.T) {
 	info, _ := os.Stat(path)
 	if info.Mode().Perm() != 0600 {
 		t.Fatal("schedule file became public")
+	}
+}
+
+func TestAutomationIntervalRejectsManualTTLBelowRefreshMargin(t *testing.T) {
+	c := consoleFixture(t)
+	c.ttlMu.Lock()
+	c.checkResultTTLMinutes = 40
+	c.ttlMu.Unlock()
+	w := httptest.NewRecorder()
+	c.apiAutomation(w, httptest.NewRequest("POST", "/", strings.NewReader(`{"refresh_enabled":true,"refresh_minutes":60,"check_enabled":true,"check_minutes":30}`)))
+	if w.Code != 400 {
+		t.Fatalf("interval shorter than the manual TTL margin was accepted: %d %s", w.Code, w.Body.String())
+	}
+	c.ttlMu.Lock()
+	c.checkResultTTLMinutes = 45
+	c.ttlMu.Unlock()
+	w = httptest.NewRecorder()
+	c.apiAutomation(w, httptest.NewRequest("POST", "/", strings.NewReader(`{"refresh_enabled":true,"refresh_minutes":60,"check_enabled":true,"check_minutes":30}`)))
+	if w.Code != 200 {
+		t.Fatalf("interval at the manual TTL margin was rejected: %d %s", w.Code, w.Body.String())
 	}
 }
 
