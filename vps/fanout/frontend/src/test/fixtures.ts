@@ -1,5 +1,3 @@
-import type { Page } from "@playwright/test";
-
 const now = "2026-10-31T10:24:00Z";
 
 const policy = {
@@ -207,7 +205,7 @@ const results = {
   },
 };
 
-const consoleData = {
+export const consoleData = {
   version: "v0.9.2",
   capacity: 40,
   target: 4,
@@ -277,7 +275,7 @@ const consoleData = {
   memory: { MemTotal: 5368709120, MemAvailable: 3120000000 },
 };
 
-const exitsView = {
+export const exitsView = {
   exits,
   host_direct: [
     {
@@ -298,7 +296,15 @@ const exitsView = {
   public_ip: "203.0.113.2",
 };
 
-const thirdParty = {
+export const nodesView = {
+  nodes,
+  fetched: now,
+  total: nodes.length,
+  available: nodes.length,
+  residential_only: true,
+};
+
+export const thirdParty = {
   proxies: [
     {
       id: 201,
@@ -329,7 +335,7 @@ const thirdParty = {
   ],
 };
 
-const sstp = {
+export const sstp = {
   nodes: [
     {
       hostname: "public-vpn-102",
@@ -355,7 +361,7 @@ const sstp = {
   cf_status: "not_tested",
 };
 
-const inbounds = [
+export const inbounds = [
   {
     id: 101,
     port: 31001,
@@ -390,7 +396,16 @@ const inbounds = [
   },
 ];
 
-const settings = {
+export const inboundDetail = {
+  ...inbounds[0],
+  clients: [{ email: "client@example", id: "00000000-0000-0000-0000-000000000001", enable: true }],
+  links: ["vless://00000000-0000-0000-0000-000000000001@203.0.113.2:31001?type=tcp&security=reality#JP"],
+  listen: "0.0.0.0",
+  network: "tcp",
+  tls: "reality",
+};
+
+export const settings = {
   base_path: "",
   port: 8899,
   listen_addr: "0.0.0.0",
@@ -399,17 +414,19 @@ const settings = {
   version: "v0.9.2",
 };
 
-const sub = { token: "abcdef1234567890", path: "/sub?token=abcdef1234567890", url: "http://127.0.0.1:4173/sub?token=abcdef1234567890" };
+export const sub = {
+  token: "abcdef1234567890",
+  path: "/sub?token=abcdef1234567890",
+  url: "http://127.0.0.1:4173/sub?token=abcdef1234567890",
+};
 
-const png = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-  "base64",
-);
+export const qrPngBase64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
-const payloads: Record<string, unknown> = {
+export const apiPayloads: Record<string, unknown> = {
   "/api/console": consoleData,
   "/api/exits": exitsView,
-  "/api/nodes": { nodes, fetched: now, total: nodes.length, available: nodes.length, residential_only: true },
+  "/api/nodes": nodesView,
   "/api/sub": sub,
   "/api/settings": settings,
   "/api/update/status": { status: "idle", message: "尚无更新任务", backup_available: false, rolled_back: false },
@@ -421,71 +438,5 @@ const payloads: Record<string, unknown> = {
   "/api/console/automation": consoleData.automation,
   "/api/console/source-settings": { mirror_enabled: true, source_timeout_seconds: 10, mirror_max_age_hours: 24 },
   "/api/xui/inbounds": inbounds,
-  "/api/xui/detail": {
-    ...inbounds[0],
-    clients: [{ email: "client@example", id: "00000000-0000-0000-0000-000000000001", enable: true }],
-    links: ["vless://00000000-0000-0000-0000-000000000001@203.0.113.2:31001?type=tcp&security=reality#JP"],
-    listen: "0.0.0.0",
-    network: "tcp",
-    tls: "reality",
-  },
+  "/api/xui/detail": inboundDetail,
 };
-
-export async function mockApi(page: Page): Promise<void> {
-  await page.route("**/api/**", async (route) => {
-    const url = new URL(route.request().url());
-    const path = url.pathname;
-
-    if (path === "/api/console/qr") {
-      return route.fulfill({ status: 200, contentType: "image/png", body: png });
-    }
-
-    if (path === "/api/cred") {
-      const body = (route.request().postDataJSON() || {}) as { user?: string; pass?: string };
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          user: body.user || "generated-user",
-          pass: body.pass || "generated-pass",
-        }),
-      });
-    }
-
-    if (path === "/api/xui/clone") {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ created: [31002, 31003] }),
-      });
-    }
-
-    const payload = payloads[path];
-    if (payload !== undefined) {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(payload),
-      });
-    }
-
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ ok: true }),
-    });
-  });
-
-  await page.route("**/login", async (route) => {
-    if (route.request().method() !== "POST") {
-      return route.fallback();
-    }
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ ok: "已登录" }),
-    });
-  });
-}
-
-export { png };

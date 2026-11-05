@@ -21,4 +21,15 @@ describe("theme", () => {
     expect(document.documentElement.classList.contains("dark")).toBe(false);
     expect(document.documentElement.style.colorScheme).toBe("light");
   });
+
+  it("restores the saved choice after a reload", async () => {
+    const first = await import("../theme");
+    first.setTheme("dark");
+
+    vi.resetModules();
+    const second = await import("../theme");
+    expect(second.themeChoice.value).toBe("dark");
+    second.applyTheme();
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+  });
 });

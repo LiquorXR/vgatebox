@@ -12,6 +12,6 @@
 | GitHub 官方 Actions | 固定提交引用 checkout、setup-python、upload-artifact | 官方仓库许可；固定提交写在工作流中 |
 | fanout | `vps/fanout/` 作为 v0.2 Multi-Exit 底座；读取本项目共享 `node_pool.json`，并保留完整上游版权与许可 | MIT；上游提交 `d7ce5224caf3469b19876982abdf8d1be16c4a8b`；修改说明见 [`vps/fanout/UPSTREAM.md`](vps/fanout/UPSTREAM.md) |
 | 新控制台运行时 | `vps/fanout/frontend` 使用 Vue 3、Vue Router、TanStack Vue Query、Reka UI、Lucide 和 Zod；只调用本项目 API，不包含上游实现代码 | MIT / ISC；版本锁定在 `frontend/package-lock.json`，构建产物随 GPL-3.0-only 程序分发 |
-| 新控制台构建与测试 | Vite、Tailwind CSS、`@vitejs/plugin-vue`、TypeScript、`vue-tsc`、Vitest、happy-dom、Playwright | MIT / Apache-2.0；只在构建和 CI 使用（Playwright 浏览器仅下载到 CI），不进入 VPS 运行时 |
+| 新控制台构建与测试 | Vite、Tailwind CSS、`@vitejs/plugin-vue`、TypeScript、`vue-tsc`、Vitest、happy-dom、`@vue/test-utils` | MIT / Apache-2.0；只在构建和 CI 使用，不进入 VPS 运行时 |
 
 完整的上游来源和固定版本见各组件链接。GPL 许可正文是标准许可文本，不是上游实现代码的复用。

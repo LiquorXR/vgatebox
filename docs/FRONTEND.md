@@ -18,7 +18,7 @@
 - TanStack Vue Query：轮询、缓存、窗口失焦暂停
 - Zod：第三方代理表单校验
 - Lucide 图标
-- Vitest：纯逻辑与回归测试
+- Vitest：纯逻辑、组件与页面集成测试
 
 不引入运行时 CDN、外部字体、图表库或图标字体。二维码仍由服务端 `go-qrcode` 生成。
 
@@ -140,11 +140,9 @@ cd vps/fanout/frontend
 npm run typecheck
 npm run test:unit
 npm run build
-npx playwright install chromium
-npm run test:e2e
 ```
 
-Vitest 覆盖纯逻辑、API 客户端、主题、状态/订阅/自动化格式化、共享组件和登录页；Playwright 覆盖根路径、出口目标弹窗与地区库存、删除自动出口及归档清理选项、归档入口清理、SOCKS5 凭据编辑、入口复制、订阅格式/二维码、节点筛选、接入页签、主题持久化、移动端无横向溢出和登录错误。旧的 `tests/test_console_*.mjs` 已随旧控制台删除。
+Vitest 覆盖纯逻辑、API 客户端、主题、状态/订阅/自动化格式化、共享组件和登录页（含错误提示与空密码拦截）；页面集成测试用 Vitest、`@vue/test-utils`、happy-dom 和内存路由挂载真实控制台，mock `fetch` 覆盖根路径与导航、出口目标弹窗与地区库存、出口策略与换 IP、删除自动出口及归档清理选项、归档入口清理、SOCKS5 凭据编辑、入口复制、订阅格式/二维码、节点筛选、接入页签、主题菜单和移动端导航。旧的 `tests/test_console_*.mjs` 已随旧控制台删除。
 
 ## 已完成切换
 
@@ -158,6 +156,7 @@ Vitest 覆盖纯逻辑、API 客户端、主题、状态/订阅/自动化格式�
 - `/advanced` 只做重定向；旧页面和样式已删除。
 - 候选列表仍由 `/api/nodes?all=1` 全量返回；前端分页，后续应在服务端分页或虚拟滚动。
 - `console` 仍是 5 秒轮询；ETag、SSE 和凭据按需加载尚未实现。
-- Playwright 使用 mock API 覆盖主流程，不替代真实 VPS 的隧道、防火墙、SSTP 和第三方代理验收。
+- 页面集成测试使用 mock API 覆盖主流程，不替代真实 VPS 的隧道、防火墙、SSTP 和第三方代理验收。
+- happy-dom 没有布局引擎，移动端横向溢出仍需在真实浏览器或设备上验收；移动端底部导航的结构已由集成测试覆盖。
 - 需要在真实 VPS 上验收登录、随机路径、移动端、慢网、出口操作、SSTP 和第三方代理。
 - 开启外部 SOCKS5 和保存第三方代理会重载 Xray。若通过反向代理访问，请让代理读超时覆盖重载时间（建议至少 120 秒），否则可能收到 502；服务端现在会把 5xx 和 panic 写入日志，前端会刷新状态而不是停在错误上。

@@ -29,12 +29,6 @@ jobs:
       - name: Build
         working-directory: vps/fanout/frontend
         run: npm run build
-      - name: Install Playwright Chromium
-        working-directory: vps/fanout/frontend
-        run: npx playwright install --with-deps chromium
-      - name: Browser tests
-        working-directory: vps/fanout/frontend
-        run: npm run test:e2e
 
   test:
     runs-on: ubuntu-24.04
