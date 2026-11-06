@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 )
@@ -158,8 +160,10 @@ func (n *Native) restoreRuntime(store *nativeStore, tunnels []*Tunnel) error {
 		if err := n.engine().restart(path); err != nil {
 			return err
 		}
+		n.procLive = true
 	} else {
 		n.engine().stop()
+		n.procLive = false
 	}
 	blob, err := os.ReadFile(path)
 	if err != nil {
@@ -184,6 +188,16 @@ func (n *Native) apply(tunnels []*Tunnel) error {
 		n.store = previous
 		return err
 	}
+	// 运行配置与磁盘逐字节一致、且进程是本实例拉起的，就跳过重启：
+	// 健康抖动、状态翻转等只改 Slot 不改入站的 apply 到这里全部收敛为 no-op，
+	// 其他 Slot 的已有客户端连接不再被连带中断。文件提交流程照常走
+	// （native.json 元数据仍需落盘），失败语义不变（touched 照常置位）。
+	sameConfig := false
+	if staged, serr := os.ReadFile(path); serr == nil {
+		if current, cerr := os.ReadFile(filepath.Join(n.dir, "xray.json")); cerr == nil {
+			sameConfig = bytes.Equal(staged, current)
+		}
+	}
 	tx, err := beginConfigTransaction(n.dir, nativeJournal, nativeConfigFiles)
 	if err != nil {
 		n.store = previous
@@ -195,15 +209,18 @@ func (n *Native) apply(tunnels []*Tunnel) error {
 		// Reap the failed candidate before any filesystem recovery attempt.
 		if touched {
 			n.engine().stop()
+			n.procLive = false
 		}
 		if err := tx.rollback(); err != nil {
 			n.engine().stop()
+			n.procLive = false
 			n.unavailable = true
 			return fmt.Errorf("配置应用失败且磁盘回滚未完成；服务已阻断，重启需恢复记录: %w", err)
 		}
 		if touched {
 			if err := n.restoreRuntime(previous, tunnels); err != nil {
 				n.engine().stop()
+				n.procLive = false
 				n.unavailable = true
 				return fmt.Errorf("配置已回滚，旧配置运行恢复失败；服务保持阻断: %w", err)
 			}
@@ -220,12 +237,16 @@ func (n *Native) apply(tunnels []*Tunnel) error {
 	}
 	touched = true
 	if enabled {
-		err = n.engine().restart(path)
+		if sameConfig && n.procLive {
+			log.Printf("Xray 运行配置无变化，跳过重启")
+		} else if err = n.engine().restart(path); err != nil {
+			return fail(err)
+		} else {
+			n.procLive = true
+		}
 	} else {
 		n.engine().stop()
-	}
-	if err != nil {
-		return fail(err)
+		n.procLive = false
 	}
 	if err := n.transactionStep("after_restart"); err != nil {
 		return fail(err)

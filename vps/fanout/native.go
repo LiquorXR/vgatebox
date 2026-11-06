@@ -21,6 +21,11 @@ type Native struct {
 	runtime         nativeRuntime
 	transactionHook func(string) error
 	unavailable     bool
+	// procLive 表示本实例是否已拉起 Xray 且之后没有停掉：
+	// 只有“运行配置与磁盘一致且进程是本实例拉起的”才跳过重启。
+	// 走文件比较而不是探活：崩溃自愈仍靠“配置变化即重启”与启动恢复。
+	// 调用方均持有 n.mu（与 store/committed 一致），读写安全。
+	procLive bool
 }
 
 func openNative(workDir string) (*Native, error) {
@@ -68,6 +73,7 @@ func (n *Native) Close() {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.proc.stop()
+	n.procLive = false
 }
 
 func (n *Native) Inbounds(live map[string]bool) ([]Inbound, error) {
