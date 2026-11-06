@@ -33,8 +33,8 @@ type apiGoldenDoc struct {
 
 var apiRouteFiles = []string{
 	"main.go",
-	"console.go",
-	"console_sstp.go",
+	"console_api.go",
+	"console_sstp_api.go",
 	"console_third_party.go",
 }
 

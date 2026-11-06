@@ -6,30 +6,30 @@
     {
       "path": "/api/console",
       "required": [
-        "version",
-        "console_version",
-        "capacity",
-        "target",
-        "target_configured",
-        "suggested_target",
         "allocated",
-        "ready",
-        "stopped",
-        "waiting",
-        "candidates",
-        "pool_read_at",
-        "pool_generated_at",
-        "pool_source",
         "automation",
-        "default_server_name",
-        "plan",
-        "plan_error",
-        "refresh",
+        "candidates",
+        "capacity",
         "check",
         "check_settings",
-        "results",
+        "console_version",
+        "default_server_name",
+        "memory",
+        "plan",
+        "plan_error",
+        "pool_generated_at",
+        "pool_read_at",
+        "pool_source",
+        "ready",
+        "refresh",
         "regions",
-        "memory"
+        "results",
+        "stopped",
+        "suggested_target",
+        "target",
+        "target_configured",
+        "version",
+        "waiting"
       ],
       "numbers": ["console_version", "capacity", "target", "allocated", "ready", "candidates"]
     },
@@ -41,30 +41,30 @@
     },
     {
       "path": "/api/exits",
-      "required": ["exits", "host_direct", "direct", "panel", "backend", "panel_info", "public_ip"]
+      "required": ["backend", "direct", "exits", "host_direct", "panel", "panel_info", "public_ip"]
     },
     {
       "path": "/api/nodes",
-      "required": ["nodes", "fetched", "total", "available", "residential_only"]
+      "required": ["available", "fetched", "nodes", "residential_only", "total"]
     },
     {
       "path": "/api/nodes",
       "query": "limit=200&offset=0",
-      "required": ["nodes", "fetched", "total", "available", "residential_only", "limit", "offset", "next_offset"],
+      "required": ["available", "fetched", "limit", "next_offset", "nodes", "offset", "residential_only", "total"],
       "note": "paged shape only exists with explicit limit; the frontend fixture keeps the base shape, the paged slicing is covered by harness logic and nodes_pagination_test.go"
     },
     {
       "path": "/api/settings",
-      "required": ["base_path", "port", "listen_addr", "has_password", "residential_only", "version"]
+      "required": ["base_path", "has_password", "listen_addr", "port", "residential_only", "version"]
     },
     {
       "path": "/api/sub",
-      "required": ["token", "path", "url"]
+      "required": ["path", "token", "url"]
     },
     {
       "path": "/healthz",
       "fixture": false,
-      "required": ["status", "version", "uptime_seconds", "slots", "pool", "panel"]
+      "required": ["panel", "pool", "slots", "status", "uptime_seconds", "version"]
     }
   ]
 }
