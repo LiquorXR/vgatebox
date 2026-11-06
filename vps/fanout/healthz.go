@@ -33,7 +33,8 @@ func initStructuredLogging() {
 // withRequestID 给每个请求发一个随机 id：进 context、出 X-Request-ID 响应头，
 // 并记一行结构化访问日志。只记 Method + Path + 状态 + 耗时，
 // 永不记 query（可能含订阅 token）、body（可能含口令/密码）与请求头。
-// 放 StripBasePath 内侧：日志里只出现剥掉访问路径前缀后的路径。
+// 放 StripBasePath 外侧：withRequestID 包在最外层，日志里是带访问路径前缀的原路径
+// （仅本地 stderr，不含 query/body/头）。
 func withRequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := randomHex(8)
@@ -68,7 +69,9 @@ func handleHealthz(m *Manager) http.HandlerFunc {
 		up, total := 0, 0
 		for _, t := range m.Tunnels() {
 			total++
-			if t.Status == "up" {
+			// Status 的写方都在 t.mu/changeMu 下，用 snapshot 读（同 export.go/exits.go），
+			// 裸读 live Tunnel 会与健康检查 goroutine 竞争，-race 下必报。
+			if t.snapshot().Status == "up" {
 				up++
 			}
 		}
