@@ -116,8 +116,9 @@ func (n *nativeInbound) securityOrNone() string {
 
 // nativeStore 是自建模式的持久状态。
 type nativeStore struct {
-	NextID   int              `json:"next_id"`
-	Inbounds []*nativeInbound `json:"inbounds"`
+	SchemaVersion int              `json:"schema_version,omitempty"`
+	NextID        int              `json:"next_id"`
+	Inbounds      []*nativeInbound `json:"inbounds"`
 
 	// droppedLegacy 记录本次加载是否过滤了已不再支持的协议。
 	droppedLegacy bool
@@ -149,6 +150,9 @@ func decodeNativeStore(blob []byte) (*nativeStore, error) {
 	var st *nativeStore
 	if err := json.Unmarshal(blob, &st); err != nil || st == nil {
 		return nil, fmt.Errorf("解析内置配置失败")
+	}
+	if err := validatePersistedSchemaVersion(st.SchemaVersion, "native.json"); err != nil {
+		return nil, err
 	}
 	if st.NextID < 1 {
 		st.NextID = 1
@@ -212,6 +216,7 @@ func validateNativeStore(st *nativeStore) error {
 }
 
 func (s *nativeStore) save(dir string) error {
+	s.SchemaVersion = persistedSchemaVersion
 	blob, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err

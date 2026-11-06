@@ -30,8 +30,9 @@ type persistedTunnel struct {
 }
 
 type persistedState struct {
-	Tunnels      []persistedTunnel `json:"tunnels"`
-	DeletedSlots []int             `json:"deleted_slots,omitempty"`
+	SchemaVersion int               `json:"schema_version,omitempty"`
+	Tunnels       []persistedTunnel `json:"tunnels"`
+	DeletedSlots  []int             `json:"deleted_slots,omitempty"`
 }
 
 func statePath(dir string) string { return paths.State(dir) }
@@ -50,6 +51,7 @@ func (m *Manager) saveState() error {
 		return err
 	}
 	var st persistedState
+	st.SchemaVersion = persistedSchemaVersion
 	m.mu.RLock()
 	for slot := range m.deletedSlots {
 		st.DeletedSlots = append(st.DeletedSlots, slot)
@@ -163,6 +165,9 @@ func decodePersistedState(blob []byte, maxSlots int) (*persistedState, error) {
 	var st *persistedState
 	if err := json.Unmarshal(blob, &st); err != nil || st == nil {
 		return nil, fmt.Errorf("解析状态文件失败")
+	}
+	if err := validatePersistedSchemaVersion(st.SchemaVersion, "state.json"); err != nil {
+		return nil, err
 	}
 	if maxSlots < 1 {
 		return nil, fmt.Errorf("Slot 上限无效")

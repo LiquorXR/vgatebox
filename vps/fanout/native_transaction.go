@@ -257,7 +257,10 @@ func (n *Native) apply(tunnels []*Tunnel) error {
 	if err := n.transactionStep("after_restart"); err != nil {
 		return fail(err)
 	}
-	blob, err := json.MarshalIndent(n.store, "", "  ")
+	blob, err := func() ([]byte, error) {
+		n.store.SchemaVersion = persistedSchemaVersion
+		return json.MarshalIndent(n.store, "", "  ")
+	}()
 	if err != nil {
 		return fail(err)
 	}
@@ -267,6 +270,7 @@ func (n *Native) apply(tunnels []*Tunnel) error {
 	if err := n.transactionStep("after_native_write"); err != nil {
 		return fail(err)
 	}
+	previous.SchemaVersion = persistedSchemaVersion
 	previousBlob, _ := json.MarshalIndent(previous, "", "  ")
 	if string(blob) != string(previousBlob) {
 		if err := atomicConfigWrite(paths.NativePrevious(n.dir), previousBlob); err != nil {

@@ -26,10 +26,11 @@ import (
 const consoleJournal = ".console-transaction.json"
 
 type ExitPlan struct {
-	Count      int        `json:"count"`
-	Policy     SlotPolicy `json:"policy"`
-	ServerName string     `json:"server_name"`
-	RemoveSlot int        `json:"remove_slot,omitempty"`
+	SchemaVersion int        `json:"schema_version,omitempty"`
+	Count         int        `json:"count"`
+	Policy        SlotPolicy `json:"policy"`
+	ServerName    string     `json:"server_name"`
+	RemoveSlot    int        `json:"remove_slot,omitempty"`
 }
 
 type Console struct {
@@ -161,6 +162,12 @@ func newConsole(m *Manager) (*Console, error) {
 }
 
 func validateExitPlan(p *ExitPlan, limit int) error {
+	if p == nil {
+		return fmt.Errorf("出口计划缺失")
+	}
+	if err := validatePersistedSchemaVersion(p.SchemaVersion, "console.json"); err != nil {
+		return err
+	}
 	if p.Count < 0 || p.Count > limit || p.Count > maximumSlots {
 		return fmt.Errorf("出口数量须为非负整数，不能超过本实例地址/管理员容量 %d", limit)
 	}
@@ -194,6 +201,7 @@ func (c *Console) bumpConsoleVersion() { c.version.Add(1) }
 func (c *Console) consoleVersion() uint64 { return c.version.Load() }
 
 func (c *Console) savePlan(p ExitPlan) error {
+	p.SchemaVersion = persistedSchemaVersion
 	blob, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		return err
