@@ -318,7 +318,11 @@ func TestSstpEndpointAndTLSRejectUnsafeInputs(t *testing.T) {
 }
 func TestSstpPrivatePPPFilesAndProcessOwnership(t *testing.T) {
 	dir := t.TempDir()
-	work := filepath.Join(dir, ".connectivity-sstp-test")
+	if err := paths.Ensure(dir); err != nil {
+		t.Fatal(err)
+	}
+	// 归属检查要求任务目录位于 run/ 下（与生产一致），裸 TempDir 根会误判。
+	work := filepath.Join(paths.RunDir(dir), ".connectivity-sstp-test")
 	os.Mkdir(work, 0700)
 	ns := "fixture-d1"
 	if err := writeSstpFiles(work, ns); err != nil {
