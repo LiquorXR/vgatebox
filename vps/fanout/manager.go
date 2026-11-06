@@ -49,6 +49,10 @@ type Manager struct {
 	// slotHealthDoc 存出口观察快照：SQLite 可用时走共享库的 slot_health
 	// 文档，无库（单测裸 Manager）时回退旧文件。快照可再生，fail-open。
 	slotHealthDoc store.DocStore
+
+	// ippureMap 存 IPPure 画像缓存：SQLite 可用时走共享库的 ippure
+	// 记录集，无库时回退旧文件形状。缓存可再生，fail-open。
+	ippureMap store.MapStore
 }
 
 func NewManager(maxSlots int, workDir string) *Manager {

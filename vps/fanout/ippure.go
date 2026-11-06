@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fanout/internal/paths"
+	"fanout/internal/store"
 	"fmt"
 	"net/http"
 	"os"
@@ -243,6 +244,61 @@ func (m *Manager) ippureCachePath() string {
 	return paths.IPPureCache(dir)
 }
 
+// legacyIPPureFile 是旧 ippure-cache.json 形状的 MapStore 适配：
+// 文件里是 {"version":1,"entries":{ip:{profile,cached_at}}}，
+// 进出时与 store.Entry 互转。只在 SQLite 不可用时使用。
+type legacyIPPureFile struct{ path string }
+
+func (s legacyIPPureFile) LoadAll() (map[string]store.Entry, error) {
+	out := map[string]store.Entry{}
+	blob, err := os.ReadFile(s.path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return out, nil
+		}
+		return nil, err
+	}
+	var file ippureCacheFile
+	if err := json.Unmarshal(blob, &file); err != nil || file.Entries == nil {
+		return nil, fmt.Errorf("invalid ippure cache file: %w", err)
+	}
+	for ip, e := range file.Entries {
+		data, err := json.Marshal(e.Profile)
+		if err != nil {
+			return nil, err
+		}
+		var expires time.Time
+		if t, err := time.Parse(time.RFC3339Nano, e.Profile.ExpiresAt); err == nil {
+			expires = t
+		}
+		out[ip] = store.Entry{Data: data, CheckedAt: e.CachedAt, ExpiresAt: expires}
+	}
+	return out, nil
+}
+
+func (s legacyIPPureFile) SaveAll(entries map[string]store.Entry) error {
+	file := ippureCacheFile{Version: 1, Entries: map[string]ippureCacheEntry{}}
+	for ip, e := range entries {
+		var p EgressProfile
+		if err := json.Unmarshal(e.Data, &p); err != nil {
+			return err
+		}
+		file.Entries[ip] = ippureCacheEntry{Profile: p, CachedAt: e.CheckedAt}
+	}
+	blob, err := json.Marshal(file)
+	if err != nil {
+		return err
+	}
+	return atomicConfigWrite(s.path, blob)
+}
+
+func (m *Manager) ippureStore() store.MapStore {
+	if m.ippureMap != nil {
+		return m.ippureMap
+	}
+	return legacyIPPureFile{path: m.ippureCachePath()}
+}
+
 func (m *Manager) loadIPPureCacheLocked() {
 	if m.ippureCacheLoaded {
 		return
@@ -251,19 +307,20 @@ func (m *Manager) loadIPPureCacheLocked() {
 	if m.ippureCache == nil {
 		m.ippureCache = map[string]ippureCacheEntry{}
 	}
-	blob, err := os.ReadFile(m.ippureCachePath())
+	entries, err := m.ippureStore().LoadAll()
 	if err != nil {
 		return
 	}
-	var file ippureCacheFile
-	if json.Unmarshal(blob, &file) != nil || file.Entries == nil {
-		return
-	}
-	for ip, entry := range file.Entries {
-		if entry.Profile.IP == ip && entry.Profile.IntelligenceStatus == "passed" &&
-			entry.Profile.Provider == "ippure" && entry.Profile.RuleVersion == ippureRuleVersion {
-			m.ippureCache[ip] = entry
+	for ip, e := range entries {
+		var p EgressProfile
+		if json.Unmarshal(e.Data, &p) != nil {
+			continue
 		}
+		if p.IP != ip || p.IntelligenceStatus != "passed" ||
+			p.Provider != "ippure" || p.RuleVersion != ippureRuleVersion {
+			continue
+		}
+		m.ippureCache[ip] = ippureCacheEntry{Profile: p, CachedAt: e.CheckedAt}
 	}
 }
 
@@ -275,11 +332,28 @@ func (m *Manager) saveIPPureCacheLocked() error {
 	if err := paths.Ensure(m.workDir); err != nil {
 		return err
 	}
-	blob, err := json.Marshal(ippureCacheFile{Version: 1, Entries: m.ippureCache})
-	if err != nil {
+	entries := make(map[string]store.Entry, len(m.ippureCache))
+	for ip, e := range m.ippureCache {
+		data, err := json.Marshal(e.Profile)
+		if err != nil {
+			return err
+		}
+		var expires time.Time
+		if t, err := time.Parse(time.RFC3339Nano, e.Profile.ExpiresAt); err == nil {
+			expires = t
+		}
+		entries[ip] = store.Entry{Data: data, CheckedAt: e.CachedAt, ExpiresAt: expires}
+	}
+	s := m.ippureStore()
+	if err := s.SaveAll(entries); err != nil {
 		return err
 	}
-	return atomicConfigWrite(m.ippureCachePath(), blob)
+	// DB 模式下删残留旧文件，避免两处缓存来源混淆；文件模式跳过
+	//（刚写入的就是它）。失败只忽略：缓存已落库，可再生。
+	if _, ok := s.(legacyIPPureFile); !ok {
+		_ = os.Remove(m.ippureCachePath())
+	}
+	return nil
 }
 
 func (m *Manager) cachedIPPure(ip string, now time.Time) (EgressProfile, bool) {
@@ -361,6 +435,10 @@ func (m *Manager) clearIPPureCache() error {
 	m.ippureCache = map[string]ippureCacheEntry{}
 	m.ippureCacheLoaded = true
 	m.ippureHits, m.ippureQueries = 0, 0
+	if err := m.ippureStore().SaveAll(map[string]store.Entry{}); err != nil {
+		return err
+	}
+	// 升级残留与文件模式统一：缓存文件不存在才算干净。
 	if err := os.Remove(m.ippureCachePath()); err != nil && !os.IsNotExist(err) {
 		return err
 	}

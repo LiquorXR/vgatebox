@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fanout/internal/paths"
+	"fanout/internal/store"
 	"os"
 	"testing"
 	"time"
@@ -132,6 +134,86 @@ func TestIPPureCacheRejectsFailuresMismatchAndIncompleteFields(t *testing.T) {
 				t.Fatalf("%s answer was stored", name)
 			}
 		}
+	}
+}
+
+func TestLegacyIPPureFileRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	if err := paths.Ensure(dir); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager(4, dir)
+	s := m.ippureStore()
+	if _, ok := s.(legacyIPPureFile); !ok {
+		t.Fatal("bare Manager should use the legacy file")
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	raw := completeIPPureResponse("70.79.253.35", true)
+	image, err := profileFromIPPureTTL(raw, raw.IP, now, 24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(image)
+	in := map[string]store.Entry{"70.79.253.35": {Data: data, CheckedAt: now, ExpiresAt: now.Add(24 * time.Hour)}}
+	if err := s.SaveAll(in); err != nil {
+		t.Fatal(err)
+	}
+	// 旧形状可读：文件仍是 {"version":1,"entries":...}。
+	blob, err := os.ReadFile(paths.IPPureCache(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f ippureCacheFile
+	if err := json.Unmarshal(blob, &f); err != nil || f.Version != 1 || len(f.Entries) != 1 {
+		t.Fatalf("legacy shape lost: %s", blob)
+	}
+	got, err := s.LoadAll()
+	if err != nil || len(got) != 1 {
+		t.Fatalf("reload = %v, %v", got, err)
+	}
+	if string(got["70.79.253.35"].Data) != string(data) || !got["70.79.253.35"].CheckedAt.Equal(now) {
+		t.Fatalf("entry mismatch: %+v", got["70.79.253.35"])
+	}
+	if err := s.SaveAll(map[string]store.Entry{"x": {Data: json.RawMessage(`{broken`)}}); err == nil {
+		t.Fatal("invalid entry accepted")
+	}
+	if err := os.WriteFile(paths.IPPureCache(dir), []byte(`{broken`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LoadAll(); err == nil {
+		t.Fatal("corrupt file accepted")
+	}
+}
+
+func TestIPPureCacheUsesSharedDBWhenConsolePresent(t *testing.T) {
+	c := consoleFixture(t)
+	m := c.m
+	if m.ippureMap == nil {
+		t.Fatal("ippure store not wired")
+	}
+	now := time.Now().UTC()
+	raw := completeIPPureResponse("70.79.253.35", true)
+	image, err := profileFromIPPureTTL(raw, raw.IP, now, 24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.storeIPPure(raw.IP, image)
+	got, ok := m.cachedIPPure(raw.IP, now.Add(time.Hour))
+	if !ok || !got.CacheUsed || got.IP != raw.IP {
+		t.Fatalf("DB cache miss: %+v ok=%v", got, ok)
+	}
+	if _, err := os.Stat(paths.IPPureCache(m.workDir)); !os.IsNotExist(err) {
+		t.Fatal("legacy ippure file retained in DB mode")
+	}
+	entries, err := m.ippureStore().LoadAll()
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("store = %v, %v", entries, err)
+	}
+	if err := m.clearIPPureCache(); err != nil {
+		t.Fatal(err)
+	}
+	if entries, err := m.ippureStore().LoadAll(); err != nil || len(entries) != 0 {
+		t.Fatalf("clear = %v %v", entries, err)
 	}
 }
 

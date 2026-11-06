@@ -17,8 +17,9 @@ refresh-state.json。意图类文件一旦进库，这些脚本全得改（Pytho
 
 ## Decision
 
-1. SQLite v1 只收三类调用方自有、可再生的数据：检测结果（已接线）、
-   出口观察快照与 IPPure 缓存（接口就绪，接线延后）。
+1. SQLite v1 只收三类调用方自有、可再生的数据：检测结果、出口观察快照、
+   IPPure 缓存（三者均已接线：`checks` MapStore、`slot_health` DocStore、
+   `ippure` MapStore，共用 `state/vgatebox.db`）。
    意图类（state/native/settings/console/automation/pool 共享态）留在文件。
 2. 接口与后端分离：`store.MapStore/DocStore` + JSON 文件后端
    （0600、整存整取，与现状语义一致）+ SQLite 后端（单连接、WAL、
@@ -32,9 +33,10 @@ refresh-state.json。意图类文件一旦进库，这些脚本全得改（Pytho
 ## Consequences
 
 - 好处：检测结果的高频合并写走 WAL 事务；单测可在 Windows 本地实跑；
-  后续域（slot_health、ippure）照同一模式接线。
+  三域共库，备份/卸载按整树处理。
 - 代价：二进制引入 modernc（构建慢 1–3 分钟，体积 +10MB 级）；
-  旧 `checks.json` 在 SQLite 模式下不再被读（残留文件可删，备份仍会带上）。
+  旧 `checks.json` / `slot_health.json` / `ippure-cache.json` 在 SQLite
+  模式下不再被读（成功写入后删残留，备份仍会带上整树）。
 
 ## Invariants（改动本机制必须保持）
 

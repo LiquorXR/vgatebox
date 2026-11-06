@@ -119,6 +119,7 @@ func newConsole(m *Manager) (*Console, error) {
 	c.checkStore, c.checkDB = openCheckStore(m.workDir)
 	if c.checkDB != nil {
 		m.slotHealthDoc = c.checkDB.DocStore("slot_health")
+		m.ippureMap = c.checkDB.MapStore("ippure")
 	} else {
 		m.slotHealthDoc = store.FileDocStore{Path: paths.SlotHealth(m.workDir)}
 	}
