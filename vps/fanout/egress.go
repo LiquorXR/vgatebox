@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fanout/internal/paths"
+	"fanout/internal/store"
 	"fmt"
 	"os"
 	"os/exec"
@@ -197,6 +198,13 @@ type slotHealthEvidence struct {
 	Policy         *SlotPolicy    `json:"policy,omitempty"`
 }
 
+func (m *Manager) slotHealthStore() store.DocStore {
+	if m.slotHealthDoc != nil {
+		return m.slotHealthDoc
+	}
+	return store.FileDocStore{Path: paths.SlotHealth(m.workDir)}
+}
+
 func (m *Manager) saveSlotHealth() error {
 	entries := make([]slotHealthEvidence, 0)
 	for _, t := range m.Tunnels() {
@@ -220,20 +228,16 @@ func (m *Manager) saveSlotHealth() error {
 	if err != nil {
 		return err
 	}
-	path := paths.SlotHealth(m.workDir)
-	f, err := os.CreateTemp(paths.StateDir(m.workDir), ".slot-health-*")
-	if err != nil {
+	s := m.slotHealthStore()
+	if err := s.Save(blob); err != nil {
 		return err
 	}
-	defer os.Remove(f.Name())
-	if _, err := f.Write(blob); err != nil {
-		f.Close()
-		return err
+	// DB 模式下删残留旧文件，避免两处快照来源混淆；文件模式跳过
+	//（刚写入的就是它）。失败只忽略：快照已落库，可再生。
+	if _, ok := s.(store.FileDocStore); !ok {
+		_ = os.Remove(paths.SlotHealth(m.workDir))
 	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(f.Name(), path)
+	return nil
 }
 
 func profileDigest(config string) string {

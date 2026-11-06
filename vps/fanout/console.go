@@ -117,6 +117,11 @@ func newConsole(m *Manager) (*Console, error) {
 	// 旧库没有历史也无妨，结果随下一轮检测重建（fail-open 只适用于
 	// 这种可再生的辅助数据，意图类状态仍是 fail-closed，见 ADR-0007）。
 	c.checkStore, c.checkDB = openCheckStore(m.workDir)
+	if c.checkDB != nil {
+		m.slotHealthDoc = c.checkDB.DocStore("slot_health")
+	} else {
+		m.slotHealthDoc = store.FileDocStore{Path: paths.SlotHealth(m.workDir)}
+	}
 	if entries, err := c.checkStore.LoadAll(); err != nil {
 		log.Printf("检测结果读取失败，从空开始: %v", err)
 	} else {

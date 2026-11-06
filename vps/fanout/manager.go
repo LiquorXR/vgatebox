@@ -3,6 +3,7 @@ package main
 // manager.go：Manager 结构与构造；只读选择器见 manager_selectors.go，生命周期见 manager_lifecycle.go。
 import (
 	"context"
+	"fanout/internal/store"
 	"sync"
 	"time"
 )
@@ -44,6 +45,10 @@ type Manager struct {
 	ippureHits        int
 	ippureQueries     int
 	ippureTTL         time.Duration
+
+	// slotHealthDoc 存出口观察快照：SQLite 可用时走共享库的 slot_health
+	// 文档，无库（单测裸 Manager）时回退旧文件。快照可再生，fail-open。
+	slotHealthDoc store.DocStore
 }
 
 func NewManager(maxSlots int, workDir string) *Manager {

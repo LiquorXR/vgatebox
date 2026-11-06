@@ -199,6 +199,41 @@ func TestSlotHealthPersistsPrivateIndependentEvidenceWithoutCredentials(t *testi
 	}
 }
 
+func TestSlotHealthUsesSharedDBWhenConsolePresent(t *testing.T) {
+	c := consoleFixture(t)
+	m := c.m
+	image := testEgressImage()
+	tunnel := &Tunnel{Slot: 1, Port: 17928, Node: Node{HostName: "a", Config: "profile", PoolNodeID: "node-a"},
+		Status: "up", ExitIP: image.IP, Cred: SocksCred{User: "socks-secret-user", Pass: "socks-secret-password"}}
+	if err := tunnel.acceptExitEvidence(image.IP, image.IP, image); err != nil {
+		t.Fatal(err)
+	}
+	m.tunnels[1] = tunnel
+	if err := m.saveState(); err != nil {
+		t.Fatal(err)
+	}
+	// DB 模式下旧文件必须消失，库里可读回同一快照。
+	if _, err := os.Stat(paths.SlotHealth(m.workDir)); !os.IsNotExist(err) {
+		t.Fatal("legacy slot_health file retained in DB mode")
+	}
+	blob, err := m.slotHealthStore().Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved struct{ Slots []slotHealthEvidence }
+	if err := json.Unmarshal(blob, &saved); err != nil {
+		t.Fatal(err)
+	}
+	slot := saved.Slots[0]
+	if slot.SlotID != "slot-01" || slot.SocksPort != 17928 || slot.ExpectedExitIP != image.IP ||
+		slot.ActualExitIP != image.IP || slot.VerifiedAt == "" || slot.ProfileSHA256 != profileDigest("profile") || slot.Egress.Raw == nil {
+		t.Fatalf("evidence incomplete: %s", blob)
+	}
+	if strings.Contains(string(blob), "socks-secret") {
+		t.Fatal("credentials in evidence")
+	}
+}
+
 func TestValidatedPoolKeepsSourceLabelAwayFromEgressType(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "profile.ovpn"), []byte("client"), 0600); err != nil {
