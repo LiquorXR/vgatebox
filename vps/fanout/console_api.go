@@ -386,3 +386,33 @@ func (c *Console) startPoolRefresh(scheduled bool) (<-chan struct{}, error) {
 	}()
 	return finished, nil
 }
+
+func (c *Console) apiCheck(w http.ResponseWriter, r *http.Request) {
+	var in CheckRequest
+	if err := readConsoleJSON(w, r, &in); err != nil {
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	job, err := c.startCheck(in)
+	if err != nil {
+		writeJSON(w, 409, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 202, job.view())
+}
+
+func (c *Console) apiCheckCancel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	c.checksMu.Lock()
+	j := c.check
+	c.checksMu.Unlock()
+	if j == nil {
+		writeJSON(w, 404, map[string]string{"error": "没有检测任务"})
+		return
+	}
+	j.cancel()
+	writeJSON(w, 202, map[string]string{"status": "cancelling"})
+}
