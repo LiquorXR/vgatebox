@@ -147,6 +147,9 @@ func TestNetBaseFileCorrupted(t *testing.T) {
 	t.Cleanup(func() { instTag, instBase = pTag, pBase })
 
 	dir := t.TempDir()
+	if err := paths.Ensure(dir); err != nil {
+		t.Fatal(err)
+	}
 	for _, junk := range []string{"", "  ", "abc", "42", "999", "-1"} {
 		if err := os.WriteFile(paths.NetBase(dir), []byte(junk), 0600); err != nil {
 			t.Fatal(err)

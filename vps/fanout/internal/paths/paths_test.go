@@ -28,7 +28,6 @@ func TestAccessorsResolveUnderSubdirs(t *testing.T) {
 		"state/refresh-state.json":             RefreshState(root),
 		"state/sstp.json":                      SSTP(root),
 		"state/third-party-checks.json":        ThirdPartyChecks(root),
-		"state/diagnostic.json":                Diagnostic(root),
 		"state/slot_health.json":               SlotHealth(root),
 		"state/ippure-cache.json":              IPPureCache(root),
 		"run/xray.log":                         XrayLog(root),
@@ -55,6 +54,9 @@ func TestAccessorsResolveUnderSubdirs(t *testing.T) {
 	}
 	if got := SSTPLog(run); got != filepath.Join(run, "sstp.log") {
 		t.Errorf("sstp log = %q", got)
+	}
+	if got := Diagnostic(run); got != filepath.Join(run, "diagnostic.json") {
+		t.Errorf("diagnostic = %q", got)
 	}
 }
 

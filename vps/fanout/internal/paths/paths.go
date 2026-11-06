@@ -96,7 +96,9 @@ func SSTP(root string) string         { return filepath.Join(StateDir(root), "ss
 func ThirdPartyChecks(root string) string {
 	return filepath.Join(StateDir(root), "third-party-checks.json")
 }
-func Diagnostic(root string) string { return filepath.Join(StateDir(root), "diagnostic.json") }
+// Diagnostic 是任务目录里的检测资源记录（随任务目录走，一般在 run/ 下，
+// 与 SlotOVPN 同类；从不是 state/ 下的固定文件）。
+func Diagnostic(dir string) string { return filepath.Join(dir, "diagnostic.json") }
 
 // --- 画像与健康证据 ---
 

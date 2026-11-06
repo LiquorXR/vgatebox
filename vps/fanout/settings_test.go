@@ -74,10 +74,10 @@ func TestAuthSetPassword(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuth: %v", err)
 	}
-	if err := auth.SetPassword("newsecret12"); err != nil {
+	if err := auth.SetPassword("newsecret123"); err != nil {
 		t.Fatalf("SetPassword: %v", err)
 	}
-	if !auth.check("newsecret12") {
+	if !auth.check("newsecret123") {
 		t.Fatal("新口令应校验通过")
 	}
 	if auth.check("wrong") {
