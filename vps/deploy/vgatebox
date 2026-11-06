@@ -17,12 +17,12 @@ PY
     ;;
   update-status) exec python3 /usr/local/lib/vgatebox/deploy/installer.py status ;;
   status) systemctl --no-pager status vgatebox-fanout.service vgatebox-pool.timer ;;
-  refresh) exec python3 /usr/local/lib/vgatebox/scripts/toolbox.py --config /etc/vgatebox/pool.json pool --output /var/lib/vgatebox/pool --schedule-dir /var/lib/vgatebox/fanout ;;
+  refresh) exec python3 /usr/local/lib/vgatebox/scripts/toolbox.py --config /etc/vgatebox/pool.json pool --output /var/lib/vgatebox/pool --schedule-dir /var/lib/vgatebox/fanout/state ;;
   restart) systemctl restart vgatebox-fanout.service ;;
   access)
     python3 - <<'PY'
 import pathlib,json,http.client,urllib.parse
-p=pathlib.Path('/var/lib/vgatebox/fanout');s=json.loads((p/'settings.json').read_text());base='/'+(p/'basepath').read_text().strip().strip('/');password=(p/'password').read_text().strip()
+p=pathlib.Path('/var/lib/vgatebox/fanout/state');s=json.loads((p/'settings.json').read_text());base='/'+(p/'basepath').read_text().strip().strip('/');password=(p/'password').read_text().strip()
 listen=s.get('listen_addr') or '0.0.0.0';host='127.0.0.1' if listen in ('0.0.0.0','all','::') else listen
 public='<VPS公网IP>'
 try:

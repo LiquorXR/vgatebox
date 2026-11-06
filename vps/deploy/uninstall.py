@@ -257,6 +257,7 @@ class Uninstaller:
             alternatives=[marker]
             if unit==UNITS[0]: alternatives.append('Description=Refresh vgatebox candidate pool on configured schedule')
             if unit==UNITS[1]: alternatives.append(marker+' --schedule-dir /var/lib/vgatebox/fanout --scheduled')
+            if unit==UNITS[1]: alternatives.append(marker+' --schedule-dir /var/lib/vgatebox/fanout/state --scheduled')
             if p.exists() and not any(m in p.read_text() for m in alternatives): raise Refuse('项目服务已自定义，保留现场：' + unit)
             if p.exists():
                 text = p.read_text()
@@ -316,6 +317,12 @@ class Uninstaller:
             for unit in units:
                 if self.r.loaded(unit): raise Refuse('仍存在其他位置的同名服务，请核对卸载结果')
             if any(self.path(p).exists() for p in paths): raise Refuse('文件清理未完成')
+        # /run 是 tmpfs，部署锁只在并发互斥期间有意义；成功后顺手清理，
+        # 留下也不影响（重启即失）。best-effort：失败只忽略，不把成功变失败。
+        try:
+            self.remove('run/lock/vgatebox-deploy.lock')
+        except (Refuse, OSError):
+            pass
 
     def stop_unit(self, unit):
         if not self.r.loaded(unit): return

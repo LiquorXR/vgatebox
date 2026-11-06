@@ -64,7 +64,7 @@ class UninstallTests(unittest.TestCase):
         timer=self.root/'etc/systemd/system/vgatebox-pool.timer'
         timer.write_text(timer.read_text().replace('Refresh vgatebox candidate pool on configured schedule','Refresh vgatebox candidate pool every ten minutes').replace('OnUnitActiveSec=30min','OnUnitActiveSec=10min'))
         service=self.root/'etc/systemd/system/vgatebox-pool.service'
-        service.write_text(service.read_text().replace(' --schedule-dir /var/lib/vgatebox/fanout --scheduled',''))
+        service.write_text(service.read_text().replace(' --schedule-dir /var/lib/vgatebox/fanout/state --scheduled',''))
         self.i.execute()
         self.assertFalse(timer.exists());self.assertFalse(service.exists());self.protected()
 
@@ -73,6 +73,7 @@ class UninstallTests(unittest.TestCase):
         self.i.execute()
         self.assertFalse(self.r.ns)
         self.assertFalse((self.root/u.WORK).exists())
+        self.assertFalse((self.root/'run/lock/vgatebox-deploy.lock').exists())
         self.assertEqual((self.root/'etc/x-ui/x-ui.db').read_text(),'panel-must-survive')
 
     def test_null_lists_allowed_but_malformed_lists_refused_without_deletion(self):
