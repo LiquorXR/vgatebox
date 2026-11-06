@@ -98,7 +98,7 @@ func runFanout(args []string, stdout, stderr io.Writer) int {
 		log.Printf("非默认工作目录，本实例用 netns fo%s* 与网段 10.%d.x", instTag, instBase)
 	}
 
-	if err := recoverConfigTransaction(*workDir, managementJournal, managementConfigFiles); err != nil {
+	if err := recoverConfigTransaction(paths.StateDir(*workDir), managementJournal, managementConfigFiles); err != nil {
 		log.Printf("恢复管理配置失败: %v", err)
 		return 1
 	}

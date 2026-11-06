@@ -89,7 +89,9 @@ func commitManagementSettings(auth *Auth, srv *webServer, next WebSettings, pass
 		base = &v
 	}
 	dir := filepath.Dir(webSettingsPath)
-	if auth != nil && auth.dir != dir {
+	if auth != nil && paths.Password(auth.dir) != filepath.Join(dir, "password") {
+		// 同实例守卫：auth 的工作目录必须正好落到这份 settings 所在的目录，
+		// 直接比文件路径，不假设布局（根/子目录）。
 		return fmt.Errorf("管理配置目录不一致")
 	}
 	current := getWebSettings()
@@ -131,7 +133,7 @@ func commitManagementSettings(auth *Auth, srv *webServer, next WebSettings, pass
 		if auth == nil {
 			return fail(fmt.Errorf("缺少管理认证对象"))
 		}
-		if err := atomicConfigWrite(paths.Password(dir), []byte(*password+"\n")); err != nil {
+		if err := atomicConfigWrite(filepath.Join(dir, "password"), []byte(*password+"\n")); err != nil {
 			return fail(err)
 		}
 	}
@@ -141,7 +143,7 @@ func commitManagementSettings(auth *Auth, srv *webServer, next WebSettings, pass
 		}
 	}
 	if base != nil {
-		if err := atomicConfigWrite(paths.BasePath(dir), []byte(strings.TrimPrefix(*base, "/")+"\n")); err != nil {
+		if err := atomicConfigWrite(filepath.Join(dir, "basepath"), []byte(strings.TrimPrefix(*base, "/")+"\n")); err != nil {
 			return fail(err)
 		}
 	}

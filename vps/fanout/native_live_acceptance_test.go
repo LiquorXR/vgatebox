@@ -337,7 +337,7 @@ func TestLiveManagementFailures(t *testing.T) {
 	if err := unix.Unmount(target, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := recoverConfigTransaction(dir, managementJournal, managementConfigFiles); err != nil {
+	if err := recoverConfigTransaction(paths.StateDir(dir), managementJournal, managementConfigFiles); err != nil {
 		t.Fatal(err)
 	}
 	assertOld()

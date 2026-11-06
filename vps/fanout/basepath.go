@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -21,7 +22,8 @@ var (
 	basePathDir string
 )
 
-// initBasePath 载入访问路径并记住工作目录，供后续修改落盘。
+// initBasePath 载入访问路径并记住 basepath 文件所在目录（即 state/），
+// 供后续修改落盘：与 commitManagementSettings 保持同一约定。
 func initBasePath(dir string) (bool, error) {
 	bp, created, err := LoadBasePath(dir)
 	if err != nil {
@@ -29,7 +31,7 @@ func initBasePath(dir string) (bool, error) {
 	}
 	basePathMu.Lock()
 	basePathCur = bp
-	basePathDir = dir
+	basePathDir = filepath.Dir(paths.BasePath(dir))
 	basePathMu.Unlock()
 	return created, nil
 }
@@ -50,7 +52,9 @@ func setBasePath(raw string) (string, error) {
 	basePathMu.RLock()
 	dir := basePathDir
 	basePathMu.RUnlock()
-	if err := os.WriteFile(paths.BasePath(dir), []byte(strings.TrimPrefix(bp, "/")+"\n"), 0600); err != nil {
+	// dir 是 basepath 文件所在目录（见 initBasePath），直接 Join，
+	// 不经 paths.BasePath（后者要工作目录根，会套出 state/state）。
+	if err := os.WriteFile(filepath.Join(dir, "basepath"), []byte(strings.TrimPrefix(bp, "/")+"\n"), 0600); err != nil {
 		return "", fmt.Errorf("写访问路径失败: %w", err)
 	}
 	basePathMu.Lock()
