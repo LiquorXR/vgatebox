@@ -176,7 +176,9 @@ func (a *Auth) Wrap(next http.Handler) http.Handler {
 		}
 		// 订阅得让客户端直接拉，带不了登录态，所以这条路放行。
 		// 它不是无门槛：handleSub 自己校验一串独立口令，且仍在访问路径之后。
-		if r.URL.Path == "/sub" {
+		// /healthz 同理放行：只返回计数与版本等非敏感字段（见 healthz.go），
+		// 供本机探活与负载均衡免登录轮询。
+		if r.URL.Path == "/sub" || r.URL.Path == "/healthz" {
 			next.ServeHTTP(w, r)
 			return
 		}

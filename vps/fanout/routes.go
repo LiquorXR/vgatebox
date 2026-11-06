@@ -12,6 +12,7 @@ package main
 //   - session：需要管理登录态（Auth.Wrap 未登录时 /api/* 回 401）
 //   - token：免登录但验独立口令（/sub 由 handleSub 自验 token）
 //   - mixed：页面入口，未登录跳登录页（/ 由 handleIndex + Auth.Wrap 决定）
+//   - none：免登录公开端点（/healthz，只返回非敏感字段，见 healthz.go）
 type apiRoute struct {
 	Path    string   `json:"path"`
 	Methods []string `json:"methods"`
@@ -20,8 +21,8 @@ type apiRoute struct {
 }
 
 // allAPIRoutes 返回全部后端路由契约，按 path 排序。
-// main.go 的 36 条 + Console 的 13 条 + SstpManager 的 5 条 +
-// ThirdPartyManager 的 5 条 = 59 条。
+// main.go 的 37 条 + Console 的 13 条 + SstpManager 的 5 条 +
+// ThirdPartyManager 的 5 条 = 60 条。
 func allAPIRoutes() []apiRoute {
 	return []apiRoute{
 		{Path: "/", Methods: []string{"GET", "HEAD"}, Handler: "handleIndex", Auth: "mixed"},
@@ -82,6 +83,7 @@ func allAPIRoutes() []apiRoute {
 		{Path: "/api/xui/encryption/set", Methods: []string{"POST"}, Handler: "apiXUISetEncryption", Auth: "session"},
 		{Path: "/api/xui/inbounds", Methods: []string{"GET"}, Handler: "apiXUIInbounds", Auth: "session"},
 		{Path: "/api/xui/links", Methods: []string{"GET"}, Handler: "apiXUILinks", Auth: "session"},
+		{Path: "/healthz", Methods: []string{"GET", "HEAD"}, Handler: "handleHealthz", Auth: "none"},
 		{Path: "/sub", Methods: []string{"GET"}, Handler: "handleSub", Auth: "token"},
 	}
 }

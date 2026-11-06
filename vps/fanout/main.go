@@ -27,6 +27,7 @@ func main() {
 // 也是后续继续拆分启动步骤（监听构建、路由注册）的落点。
 // 命名避开 tunnel.go 中执行网络配置命令的 run。
 func runFanout(args []string, stdout, stderr io.Writer) int {
+	initStructuredLogging()
 	loadEnvFile(envOr("FANOUT_INTELLIGENCE_ENV_FILE", "/etc/vgatebox/intelligence.env"))
 	fs := flag.NewFlagSet("fanout", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -223,6 +224,8 @@ func runFanout(args []string, stdout, stderr io.Writer) int {
 	mux.HandleFunc("/api/sub/reset", apiSubReset)
 	// 订阅本体走免登录（见 auth.go 的放行），口令在 handleSub 里验
 	mux.HandleFunc("/sub", handleSub(mgr))
+	// 探活走免登录（见 auth.go 的放行）：只返回计数与版本等非敏感字段，见 healthz.go
+	mux.HandleFunc("/healthz", handleHealthz(mgr))
 
 	auth, created, err := NewAuth(*workDir)
 	if err != nil {
@@ -242,7 +245,7 @@ func runFanout(args []string, stdout, stderr io.Writer) int {
 		log.Printf("已生成访问路径，见 %s", filepath.Join(*workDir, "basepath"))
 	}
 
-	handler := StripBasePath(auth.Wrap(mux))
+	handler := withRequestID(StripBasePath(auth.Wrap(mux)))
 	handler = withStatusLog(withSecurityHeaders(withRecovery(withGzip(handler))))
 	srv := newWebServer(handler)
 	// 设置面板：改密码 / 改路径 / 改端口 / 改本地监听。

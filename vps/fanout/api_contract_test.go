@@ -87,7 +87,7 @@ func checkAPIRouteEntry(t *testing.T, r apiRoute, seen map[string]bool) {
 		}
 	}
 	switch r.Auth {
-	case "session", "token", "mixed":
+	case "session", "token", "mixed", "none":
 	default:
 		t.Errorf("路径 %q 有未知认证方式 %q", r.Path, r.Auth)
 	}

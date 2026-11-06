@@ -478,6 +478,15 @@
       "auth": "session"
     },
     {
+      "path": "/healthz",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "handler": "handleHealthz",
+      "auth": "none"
+    },
+    {
       "path": "/sub",
       "methods": [
         "GET"
