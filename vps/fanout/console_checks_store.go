@@ -2,8 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"fanout/internal/paths"
 	"log"
-	"path/filepath"
 	"sort"
 	"time"
 )
@@ -60,7 +60,7 @@ func (c *Console) flushChecks() error {
 	if err != nil {
 		return err
 	}
-	if err := atomicConfigWrite(filepath.Join(c.m.workDir, "checks.json"), blob); err != nil {
+	if err := atomicConfigWrite(paths.Checks(c.m.workDir), blob); err != nil {
 		c.checksMu.Lock()
 		c.checksDirty = true
 		c.checksMu.Unlock()

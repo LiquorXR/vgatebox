@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"os"
 	"os/exec"
@@ -67,7 +68,7 @@ func (c *Console) cleanupDiagnostics() error {
 		if !info.IsDir() {
 			return fmt.Errorf("检测临时目录类型异常")
 		}
-		blob, err := os.ReadFile(filepath.Join(dir, "diagnostic.json"))
+		blob, err := os.ReadFile(paths.Diagnostic(dir))
 		if err == nil {
 			var r diagnosticResource
 			if json.Unmarshal(blob, &r) != nil || r.Slot >= 0 || r.Slot < -networkLinkCount || r.NetworkIndex < 0 || r.NetworkIndex >= networkLinkCount || seen[r.Slot] {
@@ -76,7 +77,7 @@ func (c *Console) cleanupDiagnostics() error {
 			seen[r.Slot] = true
 			r.Node.Config = r.Config
 			if r.Node.Config == "" {
-				data, err := os.ReadFile(filepath.Join(dir, (&Tunnel{Slot: r.Slot}).nsName()+".ovpn"))
+				data, err := os.ReadFile(paths.SlotOVPN(dir, (&Tunnel{Slot: r.Slot}).nsName()))
 				if err == nil {
 					r.Node.Config = string(data)
 				} else if !os.IsNotExist(err) {
@@ -94,7 +95,7 @@ func (c *Console) cleanupDiagnostics() error {
 			// diagnostic config, rather than just the number, identifies ownership.
 			for _, slot := range []int{240, 241} {
 				t := &Tunnel{Slot: slot}
-				config := filepath.Join(dir, t.nsName()+".ovpn")
+				config := paths.SlotOVPN(dir, t.nsName())
 				if data, err := os.ReadFile(config); err == nil {
 					t.Node.Config = string(data)
 					if err := c.cleanupDiagnosticTunnel(t); err != nil {

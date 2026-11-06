@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -240,7 +240,7 @@ func (m *Manager) ippureCachePath() string {
 	if strings.TrimSpace(dir) == "" {
 		dir = m.workDir
 	}
-	return filepath.Join(dir, "ippure-cache.json")
+	return paths.IPPureCache(dir)
 }
 
 func (m *Manager) loadIPPureCacheLocked() {

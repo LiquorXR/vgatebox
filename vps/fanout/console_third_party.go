@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"sync"
@@ -29,7 +29,7 @@ type ThirdPartyManager struct {
 
 func (c *Console) loadThirdPartyManager() {
 	s := &ThirdPartyManager{c: c, records: map[int]ThirdPartyRecord{}, jobs: map[int]*thirdPartyJob{}, probe: probeThirdParty}
-	if b, err := os.ReadFile(filepath.Join(c.m.workDir, "third-party-checks.json")); err == nil {
+	if b, err := os.ReadFile(paths.ThirdPartyChecks(c.m.workDir)); err == nil {
 		_ = json.Unmarshal(b, &s.records)
 	}
 	if s.records == nil {
@@ -112,7 +112,7 @@ func (s *ThirdPartyManager) start(n *Native, id int) error {
 		s.records[id] = r
 		b, err := json.Marshal(s.records)
 		if err == nil {
-			err = atomicConfigWrite(filepath.Join(s.c.m.workDir, "third-party-checks.json"), b)
+			err = atomicConfigWrite(paths.ThirdPartyChecks(s.c.m.workDir), b)
 		}
 		if err != nil {
 			r.Status, r.Code = "failed", "result_save_failed"

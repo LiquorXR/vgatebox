@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -49,7 +49,7 @@ func validateSstpSettings(v SstpSettings) error {
 
 func (c *Console) loadSstpManager() error {
 	s := &SstpManager{c: c, state: sstpState{Settings: SstpSettings{Parallelism: c.checkParallelism, ValidMinutes: 60, TimeoutSeconds: 90}, Results: map[string]CheckResult{}}}
-	blob, err := os.ReadFile(filepath.Join(c.m.workDir, "sstp.json"))
+	blob, err := os.ReadFile(paths.SSTP(c.m.workDir))
 	if err == nil {
 		if json.Unmarshal(blob, &s.state) != nil || validateSstpSettings(s.state.Settings) != nil {
 			return fmt.Errorf("SSTP 设置或结果文件损坏，保留原文件")
@@ -72,7 +72,7 @@ func (s *SstpManager) persist() error {
 	if err != nil {
 		return err
 	}
-	if err = atomicConfigWrite(filepath.Join(s.c.m.workDir, "sstp.json"), blob); err != nil {
+	if err = atomicConfigWrite(paths.SSTP(s.c.m.workDir), blob); err != nil {
 		return fmt.Errorf("SSTP 结果或设置保存失败")
 	}
 	return nil

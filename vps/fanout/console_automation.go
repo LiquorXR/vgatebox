@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"log"
 	"net/http"
@@ -111,7 +112,7 @@ func runDue(r automationRun, minutes int, now time.Time) bool {
 
 func (c *Console) sourceAutomationState() automationRun {
 	var r automationRun
-	blob, err := os.ReadFile(filepath.Join(c.m.workDir, "refresh-state.json"))
+	blob, err := os.ReadFile(paths.RefreshState(c.m.workDir))
 	if err == nil {
 		if json.Unmarshal(blob, &r) != nil || runReference(r).IsZero() || (r.Status != "running" && r.Status != "passed" && r.Status != "failed") {
 			return automationRun{Status: "invalid", AnchorAt: time.Now().UTC()}
@@ -124,7 +125,7 @@ func (c *Console) sourceAutomationState() automationRun {
 	var pool struct {
 		GeneratedAt time.Time `json:"generated_at"`
 	}
-	if blob, err := os.ReadFile(envOr("FANOUT_VALIDATED_POOL_FILE", "/var/lib/vgatebox/pool/node_pool.json")); err == nil && json.Unmarshal(blob, &pool) == nil {
+	if blob, err := os.ReadFile(paths.PoolFile()); err == nil && json.Unmarshal(blob, &pool) == nil {
 		r.AnchorAt = pool.GeneratedAt
 	}
 	r.Status = "never"
@@ -204,7 +205,7 @@ func (c *Console) apiAutomation(w http.ResponseWriter, r *http.Request) {
 		}
 		c.automation.mu.Lock()
 		blob, _ := json.Marshal(s)
-		err := atomicConfigWrite(filepath.Join(c.m.workDir, "automation.json"), blob)
+		err := atomicConfigWrite(paths.Automation(c.m.workDir), blob)
 		if err == nil {
 			c.automation.settings = s
 		}
@@ -238,7 +239,7 @@ func (c *Console) automationCheckStarted(scheduled bool) error {
 	}
 	next := automationRun{Status: "running", AnchorAt: a.check.AnchorAt, StartedAt: now}
 	blob, _ := json.Marshal(next)
-	if err := atomicConfigWrite(filepath.Join(c.m.workDir, "check-schedule-state.json"), blob); err != nil {
+	if err := atomicConfigWrite(paths.CheckSchedule(c.m.workDir), blob); err != nil {
 		return fmt.Errorf("周期检测状态保存失败")
 	}
 	a.check = next
@@ -273,7 +274,7 @@ func (c *Console) automationCheckFinished(j *CheckRun) {
 	a.check.Nodes = total
 	a.check.Passed = passed
 	blob, _ := json.Marshal(a.check)
-	if atomicConfigWrite(filepath.Join(c.m.workDir, "check-schedule-state.json"), blob) != nil {
+	if atomicConfigWrite(paths.CheckSchedule(c.m.workDir), blob) != nil {
 		a.err = "周期状态无法保存，自动任务暂停"
 	}
 	c.bumpConsoleVersion()
@@ -345,7 +346,7 @@ func (c *Console) automationTick(now time.Time) {
 		a.check.Status = "no_candidates"
 		a.check.FinishedAt = now
 		blob, _ := json.Marshal(a.check)
-		if atomicConfigWrite(filepath.Join(c.m.workDir, "check-schedule-state.json"), blob) != nil {
+		if atomicConfigWrite(paths.CheckSchedule(c.m.workDir), blob) != nil {
 			a.err = "周期状态无法保存，自动任务暂停"
 		}
 		a.mu.Unlock()

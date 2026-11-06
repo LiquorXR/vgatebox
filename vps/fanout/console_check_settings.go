@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -68,7 +68,7 @@ func (c *Console) loadCheckSettings() error {
 	c.observationTTLMinutes = defaultObservationTTLMinutes
 	c.ippureTTLHours = defaultIPPureTTLHours
 	c.m.connectBudget.setLimit(defaultCheckParallelism)
-	blob, err := os.ReadFile(filepath.Join(c.m.workDir, "check-settings.json"))
+	blob, err := os.ReadFile(paths.CheckSettings(c.m.workDir))
 	if os.IsNotExist(err) {
 		return nil
 	}
@@ -108,7 +108,7 @@ func (c *Console) saveCheckSettingsAll(n int, ipTypeCheck bool, resultMinutes, o
 		return err
 	}
 	blob, _ := json.Marshal(checkSettings{Parallelism: n, IPTypeCheck: ipTypeCheck, CheckResultTTLMinutes: resultMinutes, ObservationTTLMinutes: observationMinutes, IPPureTTLHours: ippureHours})
-	if err := atomicConfigWrite(filepath.Join(c.m.workDir, "check-settings.json"), blob); err != nil {
+	if err := atomicConfigWrite(paths.CheckSettings(c.m.workDir), blob); err != nil {
 		return fmt.Errorf("检测设置保存失败")
 	}
 	c.checkParallelism = n

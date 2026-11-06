@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"io"
 	"log"
@@ -91,7 +92,7 @@ func newConsole(m *Manager) (*Console, error) {
 	if err := recoverConfigTransaction(m.workDir, consoleJournal, []string{"console.json"}); err != nil {
 		return nil, err
 	}
-	blob, err := os.ReadFile(filepath.Join(m.workDir, "console.json"))
+	blob, err := os.ReadFile(paths.Console(m.workDir))
 	if err == nil {
 		var plan *ExitPlan
 		if json.Unmarshal(blob, &plan) != nil || plan == nil {
@@ -105,7 +106,7 @@ func newConsole(m *Manager) (*Console, error) {
 		return nil, err
 	}
 	// Observations are auxiliary; they never restore a tunnel as healthy.
-	if blob, err := os.ReadFile(filepath.Join(m.workDir, "checks.json")); err == nil {
+	if blob, err := os.ReadFile(paths.Checks(m.workDir)); err == nil {
 		_ = json.Unmarshal(blob, &c.results)
 	}
 	if c.results == nil {
@@ -176,7 +177,7 @@ func (c *Console) savePlan(p ExitPlan) error {
 	if err != nil {
 		return err
 	}
-	if err := atomicConfigWrite(filepath.Join(c.m.workDir, "console.json"), blob); err != nil {
+	if err := atomicConfigWrite(paths.Console(c.m.workDir), blob); err != nil {
 		_ = tx.rollback()
 		return err
 	}
@@ -597,7 +598,7 @@ func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {
 		GeneratedAt string             `json:"generated_at"`
 		Source      poolSourceMetadata `json:"source"`
 	}
-	if blob, err := os.ReadFile(envOr("FANOUT_VALIDATED_POOL_FILE", "/var/lib/vgatebox/pool/node_pool.json")); err == nil && json.Unmarshal(blob, &pool) == nil {
+	if blob, err := os.ReadFile(paths.PoolFile()); err == nil && json.Unmarshal(blob, &pool) == nil {
 		generated = pool.GeneratedAt
 	}
 	serverName := "www.tesla.com"
@@ -670,8 +671,8 @@ func (c *Console) startPoolRefresh(scheduled bool) (<-chan struct{}, error) {
 		defer close(finished)
 		ctx, cancel := context.WithTimeout(c.ctx, 90*time.Second)
 		defer cancel()
-		pool := envOr("FANOUT_VALIDATED_POOL_FILE", "/var/lib/vgatebox/pool/node_pool.json")
-		args := []string{envOr("FANOUT_TOOLBOX_SCRIPT", "/usr/local/lib/vgatebox/scripts/toolbox.py"), "--config", envOr("FANOUT_POOL_CONFIG", "/etc/vgatebox/pool.json"), "pool", "--output", filepath.Dir(pool), "--schedule-dir", c.m.workDir}
+		pool := paths.PoolFile()
+		args := []string{paths.Toolbox(), "--config", paths.PoolConfig(), "pool", "--output", filepath.Dir(pool), "--schedule-dir", c.m.workDir}
 		if scheduled {
 			args = append(args, "--scheduled")
 		}

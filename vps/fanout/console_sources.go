@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"net/http"
 	"os"
@@ -70,7 +71,7 @@ func (c *Console) apiSourceSettings(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(503)
 		return
 	}
-	path := envOr("FANOUT_POOL_CONFIG", "/etc/vgatebox/pool.json")
+	path := paths.PoolConfig()
 	s, fields, err := readSourceOptions(path)
 	if err != nil {
 		writeJSON(w, 409, map[string]string{"error": err.Error()})

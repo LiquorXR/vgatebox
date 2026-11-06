@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"log"
 	"net/http"
@@ -168,7 +169,7 @@ func (c *Console) probeCandidate(parent context.Context, node Node, slot int, pr
 	policy := SlotPolicy{AllowedIPTypes: []string{"strict_residential", "unknown"}}
 	index := lease.networkIndex
 	manifest, _ := json.Marshal(diagnosticResource{Config: node.Config, Slot: slot, NetworkIndex: index, Node: node})
-	if err := atomicConfigWrite(filepath.Join(dir, "diagnostic.json"), manifest); err != nil {
+	if err := atomicConfigWrite(paths.Diagnostic(dir), manifest); err != nil {
 		result.Code = "probe_environment_failed"
 		return result
 	}
