@@ -155,7 +155,11 @@ func TestMigrationV031PreparationPreservesBindingsWithoutRevivingHealth(t *testi
 	if _, err := os.Stat(bin); os.IsNotExist(err) {
 		t.Skip("pinned Xray missing; structural migration checks above completed")
 	}
-	path, err := writeXrayConfig(t.TempDir(), config)
+	xdir := t.TempDir()
+	if err := paths.Ensure(xdir); err != nil {
+		t.Fatal(err)
+	}
+	path, err := writeXrayConfig(xdir, config)
 	if err != nil {
 		t.Fatal(err)
 	}
