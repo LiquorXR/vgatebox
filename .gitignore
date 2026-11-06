@@ -15,3 +15,5 @@ build/
 .opencode/
 vps/fanout/webdist/*
 !vps/fanout/webdist/.gitkeep
+vps/fanout/frontend/test-results/
+vps/fanout/frontend/playwright-report/

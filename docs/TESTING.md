@@ -22,6 +22,15 @@ npm run build
 
 构建产物 `webdist` 不提交；CI 会在 Go 测试和打包前完成构建，并运行 Vitest 组件与页面集成测试。新控制台是默认入口，`/next/` 为别名，详见 [前端说明](FRONTEND.md)。
 
+## 浏览器 E2E
+
+```sh
+cd vps/fanout/frontend
+npm run test:e2e
+```
+
+`e2e/` 用 Playwright 跑真实后端（`playwright.config.ts`，桌面 + Pixel 5 两个项目），覆盖登录→总览、设数量→等待出口、订阅复制/二维码、删出口回 0、移动端导航与接入页签五条路径。后端须是 Linux 上以 root 起的真 manager（需 netns/iptables，Windows 本地跑不了），零隧道：无候选、目标最多到 1，直出开关走内置 Xray。CI（`e2e.yml`，需 sudo）在临时 workdir 起服务，用 `/healthz` 等就绪后跑；本地复现需自行准备 Linux 后端并导出 `E2E_BASE`、`E2E_BASE_PATH`、`E2E_PASSWORD`。E2E 不替代真实 VPS 的隧道、防火墙、SSTP 和第三方代理验收。
+
 ## 回归测试
 
 ```sh
@@ -34,6 +43,7 @@ Python 检查解析、证据一致性、异常响应、证书拒绝、订阅清�
 ## GitHub Actions
 
 - `test.yml`：Python 3.9/3.12、前端类型检查/组件与页面集成测试/构建。
+- `e2e.yml`：Linux 真后端浏览器 E2E（桌面 + 移动端），需 sudo 起服务。
 - `vps.yml`：Linux Go/race、卸载验证、完整包构建及多发行版安装矩阵。
 - 手动运行 `vps.yml` 时可选 `live_mirror`，在一次性 Linux 环境运行生产 Builder，自行请求公开镜像索引与固定提交 CSV；不发布候选、不连接 VPN、不替代用户 VPS 验收。
 - `release-vps.yml`：手动发布通过测试的完整包，核对来源、版本与文件摘要。
