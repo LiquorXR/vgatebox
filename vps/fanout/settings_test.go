@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fanout/internal/paths"
 	"net"
 	"net/http"
 	"os"
@@ -55,7 +56,7 @@ func TestSetBasePathValidatesAndPersists(t *testing.T) {
 	if bp != "/myPanel_1" || currentBasePath() != "/myPanel_1" {
 		t.Fatalf("basePath 未生效: %q / %q", bp, currentBasePath())
 	}
-	if _, err := os.ReadFile(dir + "/basepath"); err != nil {
+	if _, err := os.ReadFile(paths.BasePath(dir)); err != nil {
 		t.Fatalf("basepath 未落盘: %v", err)
 	}
 	if _, err := setBasePath("bad/slash"); err == nil {
@@ -73,10 +74,10 @@ func TestAuthSetPassword(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuth: %v", err)
 	}
-	if err := auth.SetPassword("newsecret"); err != nil {
+	if err := auth.SetPassword("newsecret12"); err != nil {
 		t.Fatalf("SetPassword: %v", err)
 	}
-	if !auth.check("newsecret") {
+	if !auth.check("newsecret12") {
 		t.Fatal("新口令应校验通过")
 	}
 	if auth.check("wrong") {

@@ -16,7 +16,7 @@ func TestPersistedSchemaVersionBackwardCompat(t *testing.T) {
 	if _, err := decodeNativeStore([]byte(`{"next_id":1,"inbounds":[]}`)); err != nil {
 		t.Fatalf("legacy native rejected: %v", err)
 	}
-	p := ExitPlan{Count: 0}
+	p := ExitPlan{Count: 0, Policy: defaultSlotPolicyForMode("", false)}
 	if err := validateExitPlan(&p, 32); err != nil {
 		t.Fatalf("legacy plan rejected: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestPersistedSchemaVersionBackwardCompat(t *testing.T) {
 	if _, err := decodeNativeStore([]byte(`{"schema_version":1,"next_id":1,"inbounds":[]}`)); err != nil {
 		t.Fatalf("v1 native rejected: %v", err)
 	}
-	p1 := ExitPlan{SchemaVersion: 1, Count: 0}
+	p1 := ExitPlan{SchemaVersion: 1, Count: 0, Policy: defaultSlotPolicyForMode("", false)}
 	if err := validateExitPlan(&p1, 32); err != nil {
 		t.Fatalf("v1 plan rejected: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestPersistedSchemaVersionWritten(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { c.shutdown(); c.closeStores() }()
-	if err := c.savePlan(ExitPlan{Count: 0}); err != nil {
+	if err := c.savePlan(ExitPlan{Count: 0, Policy: defaultSlotPolicyForMode("", false)}); err != nil {
 		t.Fatal(err)
 	}
 	blob, err = os.ReadFile(paths.Console(dir))
