@@ -44,6 +44,10 @@ const (
 	loginFailReset = 10 * time.Minute
 )
 
+// minPasswordLength 是管理口令的最低长度。新口令必须达到，
+// 已有短口令仍可登录（check 不限长度），只在下次修改时执行新规。
+const minPasswordLength = 12
+
 // NewAuth 载入或生成访问口令。返回口令是否为本次新建。
 func NewAuth(dir string) (*Auth, bool, error) {
 	path := filepath.Join(dir, "password")
@@ -100,8 +104,8 @@ func (a *Auth) SetPassword(pw string) error {
 	if pw == "" {
 		return fmt.Errorf("口令不能为空")
 	}
-	if len(pw) < 4 {
-		return fmt.Errorf("口令至少 4 位")
+	if len(pw) < minPasswordLength {
+		return fmt.Errorf("口令至少 %d 位", minPasswordLength)
 	}
 	path := filepath.Join(a.dir, "password")
 	tmp := path + ".tmp"

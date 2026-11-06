@@ -23,4 +23,10 @@ describe("console settings", () => {
     expect(localStorage.getItem("vgatebox.theme")).toBe("dark");
     expect(document.documentElement.style.colorScheme).toBe("dark");
   });
+
+  it("hints the 12-char minimum on the new password field", async () => {
+    const { screen } = await mountConsole("/settings", api);
+
+    await waitFor(() => screen.text().includes("至少 12 位"), "password hint");
+  });
 });

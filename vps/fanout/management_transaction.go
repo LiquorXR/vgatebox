@@ -75,8 +75,8 @@ func commitManagementSettings(auth *Auth, srv *webServer, next WebSettings, pass
 	next.ListenAddr = norm
 	if password != nil {
 		v := strings.TrimSpace(*password)
-		if len(v) < 4 {
-			return fmt.Errorf("口令至少4位")
+		if len(v) < minPasswordLength {
+			return fmt.Errorf("口令至少%d位", minPasswordLength)
 		}
 		password = &v
 	}

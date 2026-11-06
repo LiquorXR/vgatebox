@@ -58,7 +58,7 @@ const saveMutation = useMutation({
   mutationFn: async () => {
     const port = Number(form.port);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("管理端口须为 1–65535");
-    if (form.password && form.password.length < 4) throw new Error("新密码至少 4 位");
+    if (form.password && form.password.length < 12) throw new Error("新密码至少 12 位");
     if (form.password && !form.current_password.trim()) throw new Error("修改密码需要输入当前密码");
     const body: Record<string, unknown> = {
       port,
@@ -237,7 +237,7 @@ const themeOptions: { value: ThemeChoice; label: string }[] = [
             <label class="block">
               <span class="mb-1 block text-xs font-medium">新密码（留空保留原密码）</span>
               <input v-model="form.password" name="new-password" type="password" autocomplete="new-password" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
-              <span class="mt-1 block text-[11px] text-faint">至少 4 位；修改后其他已登录会话会退出，当前会话保留。</span>
+              <span class="mt-1 block text-[11px] text-faint">至少 12 位；修改后其他已登录会话会退出，当前会话保留。已有短口令仍可登录，下次修改时再换长。</span>
             </label>
             <label class="flex items-start justify-between gap-4 rounded-lg border border-line p-3">
               <span>
