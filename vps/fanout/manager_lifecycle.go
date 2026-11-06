@@ -1,0 +1,635 @@
+package main
+
+// manager_lifecycle.go：Manager 的隧道生命周期（启动/重连/停止/删除/换节点/凭据/退出）。
+import (
+	"context"
+	"fanout/internal/paths"
+	"fmt"
+	"log"
+	"os/exec"
+	"strings"
+	"time"
+)
+
+// Start 为指定节点开一条隧道，返回分配到的本地端口。
+func (m *Manager) Start(node Node) (*Tunnel, error) {
+	return m.StartWithPolicy(node, defaultSlotPolicy(node.CountryCode))
+}
+
+func (m *Manager) StartWithPolicy(node Node, policy SlotPolicy) (*Tunnel, error) {
+	policy, err := normalizePolicy(policy)
+	if err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	for _, other := range m.tunnels {
+		other.mu.Lock()
+		occupied := node.HostName != "" && other.Status != "stopped" && other.Node.HostName == node.HostName
+		other.mu.Unlock()
+		if occupied {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("节点已被其他 Slot 占用")
+		}
+	}
+	slot, err := m.freeSlot()
+	if err != nil {
+		m.mu.Unlock()
+		return nil, err
+	}
+	// 端口随机取，避免固定规律撞上机器上的其他服务
+	taken := map[int]bool{}
+	for _, other := range m.tunnels {
+		taken[other.Port] = true
+	}
+	port, fixed, err := fixedSlotPort(slot)
+	if err != nil {
+		m.mu.Unlock()
+		return nil, err
+	}
+	if fixed {
+		if taken[port] || !portAvailable(port) {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("槽位 %d 的固定端口 %d 已被占用", slot, port)
+		}
+	} else {
+		port, err = freeRandomPort(taken)
+		if err != nil {
+			m.mu.Unlock()
+			return nil, err
+		}
+	}
+	cred, err := newSocksCred()
+	if err != nil {
+		m.mu.Unlock()
+		return nil, err
+	}
+	t := &Tunnel{
+		Slot:   slot,
+		Port:   port,
+		Node:   node,
+		Status: "starting",
+		Since:  time.Now(),
+		Cred:   cred,
+		Policy: &policy,
+	}
+	t.resetWork()
+	m.tunnels[slot] = t
+	delete(m.deletedSlots, slot)
+	m.mu.Unlock()
+
+	if err := m.saveState(); err != nil {
+		m.mu.Lock()
+		delete(m.tunnels, slot)
+		m.mu.Unlock()
+		t.blockWork()
+		return nil, err
+	}
+	go m.bringUpPersistContext(t, true, true, t.workContext())
+	return t, nil
+}
+
+// bringUp 把一条隧道拉起来。
+//
+// notify 决定成功后是否立刻重建后端配置。换节点重连时要传 false：
+// 那条路径随后会调 rebind/resync 把入站改绑到新节点，在那之前重建配置
+// 会因为入站还指着旧节点名而把路由规则丢掉。
+func (m *Manager) bringUp(t *Tunnel, notify bool) {
+	m.bringUpPersist(t, notify, false)
+}
+
+// 自动重连的退避区间：一轮候选全挂后等一会儿再刷新节点列表重来，
+// 别把死节点列表打爆，也别让恢复拖太久。
+const (
+	reconnectBackoffMin = 5 * time.Second
+	reconnectBackoffMax = 60 * time.Second
+)
+
+// bringUpPersist 把一条隧道拉起来。
+//
+// persist=false：走一轮候选，全失败保留 waiting_for_nodes，不放宽策略。
+// persist=true（自动重连 / 重启恢复）：一轮全失败不放弃，退避后刷新节点列表再来一轮，
+// 一直循环到连上或这条隧道被用户停掉。VPN Gate 死节点多，"当前都不可用"往往只是
+// 这一批候选恰好都挂了，过一会儿就有新节点，不该让出口永久躺死。
+func (m *Manager) bringUpPersist(t *Tunnel, notify bool, persist bool) {
+	m.bringUpPersistContext(t, notify, persist, t.workContext())
+}
+
+func (m *Manager) bringUpPersistContext(t *Tunnel, notify, persist bool, ctx context.Context) {
+	backoff := reconnectBackoffMin
+	for {
+		if ctx.Err() != nil || !m.tunnelActive(t) {
+			return
+		}
+		if m.tryCandidatesContext(t, notify, ctx) {
+			return
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		// 隧道已被用户停掉或从管理器移除，别再重试
+		if !persist || !m.tunnelActive(t) {
+			if persist {
+				return
+			}
+			t.mu.Lock()
+			t.Status = "waiting_for_nodes"
+			t.mu.Unlock()
+			if serr := m.saveState(); serr != nil {
+				log.Printf("保存状态失败: %v", serr)
+			}
+			return
+		}
+
+		t.mu.Lock()
+		t.Status = "waiting_for_nodes"
+		t.Err = fmt.Sprintf("暂无符合策略的节点，%.0f 秒后重试", backoff.Seconds())
+		t.mu.Unlock()
+		if err := m.saveState(); err != nil {
+			log.Printf("保存等待状态失败: %v", err)
+		}
+		log.Printf("隧道 %d 一轮候选均失败，%.0f 秒后刷新节点重试", t.Slot, backoff.Seconds())
+		if !waitForWork(ctx, backoff) {
+			return
+		}
+		if !m.tunnelActive(t) {
+			return
+		}
+		if _, err := m.RefreshNodes(); err != nil {
+			log.Printf("重试前刷新节点列表失败: %v", err)
+		}
+		if backoff < reconnectBackoffMax {
+			backoff *= 2
+			if backoff > reconnectBackoffMax {
+				backoff = reconnectBackoffMax
+			}
+		}
+	}
+}
+
+// tryCandidates 走一轮候选节点，成功返回 true。失败不改 Status（留给调用方决定）。
+func (m *Manager) tryCandidates(t *Tunnel, notify bool) bool {
+	return m.tryCandidatesContext(t, notify, t.workContext())
+}
+
+func (m *Manager) tryCandidatesContext(t *Tunnel, notify bool, ctx context.Context) bool {
+	t.opMu.Lock()
+	defer t.opMu.Unlock()
+	if ctx.Err() != nil {
+		return false
+	}
+	// VPN Gate 是志愿者节点，列表里有相当比例已下线或满员（AUTH_FAILED），
+	// 连不上就顺着候选列表换下一个，不必让用户手动试。
+	candidates := m.candidatesFor(t)
+	for i, node := range candidates {
+		if ctx.Err() != nil || !m.tunnelActive(t) {
+			return false
+		}
+		// 其他隧道可能在重试期间占用了这个节点，跳过以免多个端口撞同一出口 IP
+		// The previous candidate's kill-switch rules are keyed by its remote
+		// endpoint. Tear them down before replacing t.Node, otherwise a stale
+		// allow rule can block the next candidate or leave an old endpoint open.
+		if i > 0 {
+			t.teardownNetns()
+		}
+		if !m.claimNode(t, node, ctx) {
+			continue
+		}
+		if i > 0 {
+			t.mu.Lock()
+			t.Err = fmt.Sprintf("已换到第 %d 个候选节点", i+1)
+			t.mu.Unlock()
+		}
+
+		err := m.tryNode(t)
+		if err == nil && m.publishUp(t, ctx) {
+			if serr := m.saveState(); serr != nil {
+				log.Printf("保存状态失败: %v", serr)
+			}
+			if notify {
+				m.notifyPanel()
+			}
+			return true
+		}
+		if err == nil {
+			err = fmt.Errorf("Slot 操作已取消或出口与另一 Slot 重复")
+		}
+		log.Printf("隧道 %d 候选 %s 失败: %v", t.Slot, node.HostName, err)
+		t.teardownNetns()
+		if ctx.Err() != nil {
+			return false
+		}
+		t.mu.Lock()
+		if t.cooldown == nil {
+			t.cooldown = map[string]time.Time{}
+		}
+		t.cooldown[node.HostName] = time.Now().Add(30 * time.Second)
+		t.Err = firstLine(fmt.Sprint(err))
+		t.mu.Unlock()
+	}
+	log.Printf("隧道 %d 本轮没有符合策略的候选", t.Slot)
+	return false
+}
+
+// tunnelActive 判断这条隧道是否还归管理器所有且未被用户停掉。
+// 用指针比对：Stop 会从 map 里删除并把 Status 置 stopped，
+// 重连循环据此退出，避免对着一条已经不存在的隧道空转。
+func (m *Manager) tunnelActive(t *Tunnel) bool {
+	t.mu.Lock()
+	stopped := t.Status == "stopped"
+	t.mu.Unlock()
+	if stopped {
+		return false
+	}
+	m.mu.RLock()
+	cur, ok := m.tunnels[t.Slot]
+	m.mu.RUnlock()
+	return ok && cur == t
+}
+
+// tryNode 尝试用当前节点把隧道拉起来。
+func (m *Manager) tryNode(t *Tunnel) error {
+	t.probePhase("waiting_capacity")
+	release, err := m.connectBudget.acquire(t.workContext(), t.Slot > 0)
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	t.clearEgress()
+	t.probePhase("setup")
+	if err := t.setupNetns(); err != nil {
+		return err
+	}
+	t.probePhase("connecting")
+	if err := t.startOpenVPN(paths.RunDir(m.workDir)); err != nil {
+		return err
+	}
+	if t.listener == nil {
+		if err := t.serve(); err != nil {
+			return err
+		}
+	}
+	t.probePhase("baseline")
+	ip, err := t.probeExitIP()
+	if err != nil {
+		return err
+	}
+	if host := hostPublicIP(); host != "" && ip == host {
+		return fmt.Errorf("OpenVPN 未提供独立出口，namespace 回落到母机公网 IP %s", host)
+	}
+	t.mu.Lock()
+	t.ExitIP = ip
+	t.mu.Unlock()
+	t.setValidating(true)
+	t.probePhase("verify_exit")
+	actual, latency, err := t.probeSocksExitIPWithLatency()
+	if err != nil {
+		t.setValidating(false)
+		return fmt.Errorf("固定 SOCKS5 出口验活失败: %w", err)
+	}
+	if actual != ip {
+		t.setValidating(false)
+		return fmt.Errorf("expected_exit_ip 与 actual_exit_ip 不一致: %s / %s", ip, actual)
+	}
+	// IPPure can only describe the caller, so this query must happen while the
+	// validation credential is active and the tunnel is still unopened.
+	t.probePhase("profile")
+	var image EgressProfile
+	if t.skipEgressProfile {
+		image = unknownOpenVPNEgress(ip, "ip_type_check_disabled")
+		image.Protocol = "openvpn"
+	} else {
+		image = m.lookupEgressProfile(t, ip)
+	}
+	t.setValidating(false)
+	if !t.skipEgressProfile && ippureEnabled() && image.IntelligenceStatus != "passed" {
+		return fmt.Errorf("IPPure 画像不可用: %s", image.IntelligenceError)
+	}
+	if !m.tunnelActive(t) {
+		return fmt.Errorf("画像查询期间 Slot 已停止")
+	}
+	policy := t.policySnapshot()
+	if err := policy.checkImage(image); err != nil {
+		return err
+	}
+	if err := policy.checkLatency(latency); err != nil {
+		return err
+	}
+	if !m.tunnelActive(t) || t.workContext().Err() != nil {
+		return fmt.Errorf("Slot 操作已取消")
+	}
+	t.mu.Lock()
+	t.LatencyMS = latency
+	t.mu.Unlock()
+	if err := t.acceptExitEvidence(ip, actual, image); err != nil {
+		return err
+	}
+	public := image
+	public.Raw = nil
+	t.mu.Lock()
+	t.Node.OpenVPNEgress = &public
+	t.Node.ExpectedExitIP, t.Node.OpenVPNStatus, t.Node.IPType = ip, "passed", image.IPType
+	t.Node.ISP, t.Node.ASN = stringValue(image.ISP), stringValue(image.ASN)
+	// Residential 是出口画像结论；SourceResidential 保持节点来源标签不变。
+	t.Node.Residential = image.IPType == "strict_residential"
+	observed := t.Node
+	t.mu.Unlock()
+	m.mu.Lock()
+	m.localEvidence[observed.HostName] = observed
+	m.mu.Unlock()
+	return nil
+}
+
+// Stop 停掉运行态，保留 Slot 身份、端口和策略。
+func (m *Manager) Stop(slot int) error {
+	invalidateInbounds()
+	m.mu.Lock()
+	t, ok := m.tunnels[slot]
+
+	m.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("槽位 %d 没有运行中的隧道", slot)
+	}
+	t.changeMu.Lock()
+	defer t.changeMu.Unlock()
+	t.stop()
+	if err := m.saveState(); err != nil {
+		log.Printf("保存状态失败: %v", err)
+		m.notifyPanel()
+		return err
+	}
+	m.notifyPanel()
+	return nil
+}
+
+// Delete is explicit: stopping reserves the Slot; deletion frees its identity.
+// Export retains a block tombstone until that Slot is deliberately recreated.
+func (m *Manager) Delete(slot int) error {
+	if m.console != nil {
+		return m.console.deleteSlot(slot)
+	}
+	return m.deleteSlot(slot)
+}
+
+func (m *Manager) deleteSlot(slot int) error {
+	m.mu.RLock()
+	t := m.tunnels[slot]
+	m.mu.RUnlock()
+	if t == nil {
+		return fmt.Errorf("Slot 不存在")
+	}
+	t.changeMu.Lock()
+	defer t.changeMu.Unlock()
+	t.stop()
+	m.mu.Lock()
+	delete(m.tunnels, slot)
+	m.deletedSlots[slot] = true
+	m.mu.Unlock()
+	if err := m.saveState(); err != nil {
+		return err
+	}
+	m.notifyPanel()
+	return nil
+}
+
+// Swap 把一条隧道换到同地区的另一个节点上，端口与已分发的客户端配置保持不变。
+//
+// 与健康检查的自动重连不同：那边优先重连原节点（目标是恢复），
+// 这里用户是嫌当前出口 IP 不好用，必须真的换一个。
+//
+// 换过的节点会记进历史一并避开。只排除"当前这个"是不够的：
+// A 换成 B 之后 A 就空出来了，而候选是按速度排的，A 往往又排在最前面，
+// 于是再点一次就换回了 A。历史让每次点击都真的换一个没用过的。
+func (m *Manager) Swap(slot int) error {
+	m.mu.RLock()
+	t, ok := m.tunnels[slot]
+	m.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("槽位 %d 没有运行中的隧道", slot)
+	}
+	t.changeMu.Lock()
+	defer t.changeMu.Unlock()
+	if t.Status == "stopped" {
+		return fmt.Errorf("Slot 已停止，请先启动")
+	}
+	if t.Status == "starting" {
+		return fmt.Errorf("这个出口正在连接中，稍等一下")
+	}
+
+	node, err := m.pickSwapTarget(t)
+	if err != nil {
+		return err
+	}
+	oldHost := t.Node.HostName
+	m.reconnectTo(t, oldHost, &node)
+	return nil
+}
+
+// SwapTo replaces a running Slot with a user-selected node from the shared
+// validated pool.  The country is kept stable so a manual choice cannot
+// silently violate the Slot's current policy.
+func (m *Manager) SwapTo(slot int, host string) error {
+	m.mu.RLock()
+	t, ok := m.tunnels[slot]
+	var node Node
+	for _, candidate := range m.nodes {
+		if candidate.HostName == host {
+			node = candidate
+			break
+		}
+	}
+	m.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("槽位 %d 没有运行中的隧道", slot)
+	}
+	if node.HostName == "" {
+		return fmt.Errorf("节点不存在，可能节点池已刷新")
+	}
+	t.changeMu.Lock()
+	defer t.changeMu.Unlock()
+	if t.Status == "stopped" {
+		return fmt.Errorf("Slot 已停止，请先启动")
+	}
+	if t.Status == "starting" {
+		return fmt.Errorf("这个出口正在连接中，稍等一下")
+	}
+	policy := t.policySnapshot()
+	if image := freshCandidateImage(node); image != nil {
+		if err := policy.checkImage(*image); err != nil {
+			return err
+		}
+	} else if policy.Country != "" && node.CountryCode != "" && !strings.EqualFold(policy.Country, node.CountryCode) {
+		return fmt.Errorf("手动指定节点不满足 Slot 国家策略")
+	}
+	if m.nodeInUse(node.HostName, slot) {
+		return fmt.Errorf("节点已被其他出口占用")
+	}
+	oldHost := t.Node.HostName
+	if oldHost == node.HostName {
+		return fmt.Errorf("这个节点已经是当前出口")
+	}
+	t.rememberSwap(oldHost)
+	t.rememberSwap(node.HostName)
+	m.reconnectTo(t, oldHost, &node)
+	return nil
+}
+
+// pickSwapTarget 给"换节点"挑下一个目标，并把该跳过的节点记进历史。
+//
+// 记两个：换下来的那个，以及刚挑中的这个。挑中的也记是因为真机上踩到过——
+// 它连不上时会被候选列表换成别人，但它自己没进历史，
+// 于是下次点换节点又从它开始试一遍，白等一轮握手超时。
+func (m *Manager) pickSwapTarget(t *Tunnel) (Node, error) {
+	avoid := t.swapAvoid()
+	picks := m.policyCandidates(t.policySnapshot(), avoid, t.Slot)
+	var err error
+	if len(picks) == 0 {
+		err = fmt.Errorf("没有符合策略的替代候选")
+	}
+	if err != nil && len(avoid) > 1 {
+		// 这个地区的节点都换过一轮了。清掉历史重新开始，
+		// 总比告诉用户"没得换了"好——转一圈之后原来那些节点未必还是当初的状态。
+		t.forgetSwaps()
+		picks = m.policyCandidates(t.policySnapshot(), t.swapAvoid(), t.Slot)
+		err = nil
+		if len(picks) == 0 {
+			err = fmt.Errorf("没有符合策略的替代候选")
+		}
+	}
+	if err != nil {
+		return Node{}, err
+	}
+	t.rememberSwap(t.Node.HostName)
+	t.rememberSwap(picks[0].HostName)
+	return picks[0], nil
+}
+
+// StopAll 停掉所有隧道并清空状态文件。
+func (m *Manager) StopAll() {
+	for _, t := range m.Tunnels() {
+		_ = m.Stop(t.Slot)
+	}
+}
+
+// SetCred 改一条出口的 SOCKS5 凭据。cred 两个字段都为空表示随机重置。
+//
+// 改完要通知后端：本机 Xray 的 socks 出站里带着这套凭据，
+// 不同步的话面板侧的节点会立刻连不上自己的出口。
+func (m *Manager) SetCred(slot int, cred SocksCred) (SocksCred, error) {
+	m.mu.RLock()
+	t, ok := m.tunnels[slot]
+	m.mu.RUnlock()
+	if !ok {
+		return SocksCred{}, fmt.Errorf("槽位 %d 没有运行中的隧道", slot)
+	}
+
+	if cred.User == "" && cred.Pass == "" {
+		gen, err := newSocksCred()
+		if err != nil {
+			return SocksCred{}, err
+		}
+		cred = gen
+	}
+	if err := validateCred(cred); err != nil {
+		return SocksCred{}, err
+	}
+
+	t.changeMu.Lock()
+	defer t.changeMu.Unlock()
+	if !m.ownsTunnel(t) {
+		return SocksCred{}, fmt.Errorf("Slot 已删除")
+	}
+	t.opMu.Lock()
+	defer t.opMu.Unlock()
+	previous := t.credential()
+	apply := func() error {
+		if m.credentialApply != nil {
+			return m.credentialApply(t)
+		}
+		return m.resync(t)
+	}
+	restore := func(cause error) (SocksCred, error) {
+		t.setCredential(previous)
+		if err := apply(); err != nil {
+			t.blockForPolicy("SOCKS 配置恢复失败，Slot 保持阻断")
+			_ = m.saveState()
+			return SocksCred{}, fmt.Errorf("凭据修改失败且旧配置无法运行，Slot 已阻断: %w", err)
+		}
+		return SocksCred{}, fmt.Errorf("凭据修改失败，已恢复旧凭据: %w", cause)
+	}
+	t.setCredential(cred)
+	if err := apply(); err != nil {
+		return restore(err)
+	}
+	if err := m.saveState(); err != nil {
+		return restore(err)
+	}
+	return cred, nil
+}
+
+// syncCred 把新凭据写进后端的 socks 出站。
+func (m *Manager) syncCred(t *Tunnel) {
+	if err := m.resync(t); err != nil {
+		log.Printf("同步 SOCKS5 凭据到节点链接后端失败: %v", err)
+	}
+}
+
+// Shutdown 停掉运行态但保留状态文件，让下次启动能恢复同样的隧道。
+func (m *Manager) Shutdown() {
+	m.shutdownWithStop(func(t *Tunnel) { t.stop() })
+}
+
+func (m *Manager) shutdownWithStop(stop func(*Tunnel)) {
+	// Fence all writers before the first temporary stopped status. A worker
+	// completing another Slot during teardown must not persist half a shutdown
+	// as explicit operator stop intent. Wait for an existing commit first.
+	m.saveMu.Lock()
+	m.shuttingDown = true
+	m.saveMu.Unlock()
+	for _, t := range m.Tunnels() {
+		stop(t)
+	}
+}
+
+// prepareHost 打开转发开关。netns 出网依赖它。
+func prepareHost() error {
+	if err := cmdRun(exec.Command("sysctl", "-qw", "net.ipv4.ip_forward=1")); err != nil {
+		return fmt.Errorf("开启 ip_forward 失败: %w", err)
+	}
+	return nil
+}
+
+// rebind 在隧道换节点后，把原先指向旧节点的内置 Xray 入站改绑到新节点。
+// 后端不可用时静默跳过，健康检查本身不应因此失败。
+func (m *Manager) rebind(oldHost string, t *Tunnel) error {
+	x, err := openPanel()
+	if err != nil {
+		return fmt.Errorf("绑定配置后端不可用: %w", err)
+	}
+	return x.Rebind(oldHost, t, m.Tunnels())
+}
+
+// resync 在节点没换但重连过之后，把内置 Xray 的出站配置刷新一遍。
+// 后端不可用时静默跳过，健康检查本身不应因此失败。
+func (m *Manager) resync(t *Tunnel) error {
+	x, err := openPanel()
+	if err != nil {
+		return fmt.Errorf("出站配置后端不可用: %w", err)
+	}
+	return x.ResyncOutbound(t, m.Tunnels())
+}
+
+// notifyPanel 告诉后端隧道集合变了。
+//
+// 出站是由隧道列表现算出来的，不通知的话新开的出口在 Xray 里没有对应的
+// socks 出站，绑定会指向一个不存在的 tag。后端不可用不该让开关出口失败，
+// 所以只记日志。
+func (m *Manager) notifyPanel() {
+	p, err := openPanel()
+	if err != nil {
+		return
+	}
+	if err := p.OnTunnelsChanged(m.Tunnels()); err != nil {
+		log.Printf("同步节点链接后端失败: %v", err)
+	}
+}
