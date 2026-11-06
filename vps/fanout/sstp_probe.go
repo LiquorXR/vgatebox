@@ -152,7 +152,7 @@ func writeSstpFiles(dir, ns string) error {
 
 func (s *SstpManager) probeEndpoint(ctx context.Context, n Node, e SstpEndpoint, lease *diagnosticLease, progress func(string)) (r CheckResult) {
 	r = CheckResult{Host: n.HostName, Port: e.Port, Status: "failed", IPType: "unknown", Code: "probe_environment_failed"}
-	dir, err := os.MkdirTemp(s.c.m.workDir, ".connectivity-sstp-")
+	dir, err := os.MkdirTemp(paths.RunDir(s.c.m.workDir), ".connectivity-sstp-")
 	if err != nil {
 		return r
 	}

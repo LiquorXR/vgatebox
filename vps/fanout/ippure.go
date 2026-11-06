@@ -271,6 +271,10 @@ func (m *Manager) saveIPPureCacheLocked() error {
 	if m.ippureCache == nil {
 		m.ippureCache = map[string]ippureCacheEntry{}
 	}
+	// 缓存目录可能随布局补建：先补再写，权限问题仍 loud 失败。
+	if err := paths.Ensure(m.workDir); err != nil {
+		return err
+	}
 	blob, err := json.Marshal(ippureCacheFile{Version: 1, Entries: m.ippureCache})
 	if err != nil {
 		return err

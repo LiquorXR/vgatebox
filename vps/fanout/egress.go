@@ -221,7 +221,7 @@ func (m *Manager) saveSlotHealth() error {
 		return err
 	}
 	path := paths.SlotHealth(m.workDir)
-	f, err := os.CreateTemp(m.workDir, ".slot-health-*")
+	f, err := os.CreateTemp(paths.StateDir(m.workDir), ".slot-health-*")
 	if err != nil {
 		return err
 	}

@@ -45,6 +45,10 @@ func (m *Manager) saveState() error {
 	if m.shuttingDown {
 		return fmt.Errorf("服务正在停止，保留最后提交的运行意图")
 	}
+	// 布局子目录可能被部分删除：先补齐再写，权限问题仍 loud 失败。
+	if err := paths.Ensure(m.workDir); err != nil {
+		return err
+	}
 	var st persistedState
 	m.mu.RLock()
 	for slot := range m.deletedSlots {
@@ -76,7 +80,7 @@ func (m *Manager) saveState() error {
 	if err != nil {
 		return err
 	}
-	tx, err := beginConfigTransaction(m.workDir, stateJournal, []string{"state.json"})
+	tx, err := beginConfigTransaction(paths.StateDir(m.workDir), stateJournal, []string{"state.json"})
 	if err != nil {
 		return err
 	}
@@ -112,7 +116,10 @@ func (m *Manager) saveState() error {
 // restoreState 读回上次的隧道并逐条拉起。
 // 节点配置一并存了盘，所以即使 VPN Gate 列表里该节点已消失也能重建。
 func (m *Manager) restoreState() (int, error) {
-	if err := recoverConfigTransaction(m.workDir, stateJournal, []string{"state.json"}); err != nil {
+	if err := paths.Ensure(m.workDir); err != nil {
+		return 0, err
+	}
+	if err := recoverConfigTransaction(paths.StateDir(m.workDir), stateJournal, []string{"state.json"}); err != nil {
 		return 0, err
 	}
 	blob, err := os.ReadFile(statePath(m.workDir))

@@ -1,9 +1,9 @@
 package main
 
 import (
+	"fanout/internal/paths"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -78,7 +78,7 @@ var panelState struct {
 // panelModeFile is the legacy external-backend selection file. It is read only
 // to reject an upgrade that would otherwise start native Xray beside an old
 // external panel.
-func panelModeFile(dir string) string { return filepath.Join(dir, "panel_mode") }
+func panelModeFile(dir string) string { return paths.PanelMode(dir) }
 
 // configurePanel records the native backend work directory.
 //

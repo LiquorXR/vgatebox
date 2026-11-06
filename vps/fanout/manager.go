@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fanout/internal/paths"
 	"fmt"
 	"log"
 	"os/exec"
@@ -390,7 +391,7 @@ func (m *Manager) tryNode(t *Tunnel) error {
 		return err
 	}
 	t.probePhase("connecting")
-	if err := t.startOpenVPN(m.workDir); err != nil {
+	if err := t.startOpenVPN(paths.RunDir(m.workDir)); err != nil {
 		return err
 	}
 	if t.listener == nil {

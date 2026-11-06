@@ -7,45 +7,51 @@ import (
 )
 
 // 落盘路径只许从这里拼：调用方不得再出现 filepath.Join(dir, "<固定名>")。
-func TestAccessorsStayUnderRoot(t *testing.T) {
+// 本测试锁死统一目录映射：改名即搬迁，调用方不动。
+func TestAccessorsResolveUnderSubdirs(t *testing.T) {
 	root := t.TempDir()
+	run := RunDir(root)
 	cases := map[string]string{
-		"settings.json":             Settings(root),
-		"password":                  Password(root),
-		"basepath":                  BasePath(root),
-		"state.json":                State(root),
-		"netbase":                   NetBase(root),
-		"lock":                      WorkLock(root),
-		"native.json":               Native(root),
-		"native.previous.json":      NativePrevious(root),
-		"xray.json":                 Xray(root),
-		"xray.log":                  XrayLog(root),
-		"xray.pid":                  XrayPID(root),
-		"console.json":              Console(root),
-		"checks.json":               Checks(root),
-		"check-settings.json":       CheckSettings(root),
-		"automation.json":           Automation(root),
-		"check-schedule-state.json": CheckSchedule(root),
-		"refresh-state.json":        RefreshState(root),
-		"sstp.json":                 SSTP(root),
-		"third-party-checks.json":   ThirdPartyChecks(root),
-		"diagnostic.json":           Diagnostic(root),
-		"slot_health.json":          SlotHealth(root),
-		"ippure-cache.json":         IPPureCache(root),
+		"state/settings.json":                  Settings(root),
+		"state/password":                       Password(root),
+		"state/basepath":                       BasePath(root),
+		"state/state.json":                     State(root),
+		"state/netbase":                        NetBase(root),
+		"state/native.json":                    Native(root),
+		"state/native.previous.json":           NativePrevious(root),
+		"state/xray.json":                      Xray(root),
+		"state/console.json":                   Console(root),
+		"state/checks.json":                    Checks(root),
+		"state/check-settings.json":            CheckSettings(root),
+		"state/automation.json":                Automation(root),
+		"state/check-schedule-state.json":      CheckSchedule(root),
+		"state/refresh-state.json":             RefreshState(root),
+		"state/sstp.json":                      SSTP(root),
+		"state/third-party-checks.json":        ThirdPartyChecks(root),
+		"state/diagnostic.json":                Diagnostic(root),
+		"state/slot_health.json":               SlotHealth(root),
+		"state/ippure-cache.json":              IPPureCache(root),
+		"run/xray.log":                         XrayLog(root),
+		"run/xray.pid":                         XrayPID(root),
+		"lock":                                 WorkLock(root),
+		"cache/intelligence/cache.json":        IntelCacheOpenVPN(root),
+		"cache/intelligence/sstp-cache.json":   IntelCacheSSTP(root),
+		"cache/intelligence/socks5-cache.json": IntelCacheSOCKS5(root),
+		"certs":                                CertsDir(root),
 	}
-	for name, got := range cases {
-		if filepath.Dir(got) != root || filepath.Base(got) != name {
-			t.Errorf("%s = %q，想要 %s 下的同名文件", name, got, root)
+	for rel, got := range cases {
+		if want := filepath.Join(root, filepath.FromSlash(rel)); got != want {
+			t.Errorf("%s = %q，想要 %q", rel, got, want)
 		}
 	}
-	if got := CertsDir(root); filepath.Dir(got) != root || filepath.Base(got) != "certs" {
-		t.Errorf("certs = %q", got)
-	}
-	if got := IntelCacheOpenVPN(root); got != filepath.Join(root, "intelligence", "cache.json") {
-		t.Errorf("intel openvpn = %q", got)
-	}
-	if got := SlotOVPN(root, "fo1"); got != filepath.Join(root, "fo1.ovpn") {
+	if got := SlotOVPN(run, "fo1"); got != filepath.Join(run, "fo1.ovpn") {
 		t.Errorf("slot ovpn = %q", got)
+	}
+	if got := SlotAuth(run); got != filepath.Join(run, "auth.txt") {
+		t.Errorf("slot auth = %q", got)
+	}
+	if got := SlotLog(run, "fo1"); got != filepath.Join(run, "fo1.log") {
+		t.Errorf("slot log = %q", got)
 	}
 }
 
@@ -54,10 +60,13 @@ func TestEnsureCreatesDirs(t *testing.T) {
 	if err := Ensure(root); err != nil {
 		t.Fatal(err)
 	}
-	for _, dir := range []string{root, CertsDir(root), IntelligenceDir(root)} {
+	for _, dir := range []string{root, StateDir(root), CacheDir(root), IntelligenceDir(root), CertsDir(root), RunDir(root)} {
 		st, err := os.Stat(dir)
 		if err != nil || !st.IsDir() {
 			t.Fatalf("%s 不存在或不是目录: %v", dir, err)
+		}
+		if st.Mode().Perm()&0700 != 0700 {
+			t.Fatalf("%s 权限不足 0700: %v", dir, st.Mode())
 		}
 	}
 	// 幂等：已存在不报错。

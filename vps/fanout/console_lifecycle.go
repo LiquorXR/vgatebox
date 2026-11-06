@@ -42,7 +42,7 @@ func diagnosticConfigOwned(workDir, ns, executable, config string) bool {
 		return false
 	}
 	dir := filepath.Dir(config)
-	return filepath.Dir(dir) == filepath.Clean(workDir) && strings.HasPrefix(filepath.Base(dir), ".connectivity-")
+	return filepath.Dir(dir) == paths.RunDir(workDir) && strings.HasPrefix(filepath.Base(dir), ".connectivity-")
 }
 
 type diagnosticResource struct {
@@ -55,7 +55,7 @@ type diagnosticResource struct {
 // Each resource manifest is written before any kernel resources are created.
 // Startup runs under the instance lock and before restoring production work.
 func (c *Console) cleanupDiagnostics() error {
-	dirs, err := filepath.Glob(filepath.Join(c.m.workDir, ".connectivity-*"))
+	dirs, err := filepath.Glob(filepath.Join(paths.RunDir(c.m.workDir), ".connectivity-*"))
 	if err != nil {
 		return err
 	}
@@ -180,7 +180,7 @@ func diagnosticProcessOwned(workDir, ns, executable, config string) bool {
 		return true
 	}
 	dir := filepath.Dir(config)
-	if filepath.Dir(dir) != filepath.Clean(workDir) || !strings.HasPrefix(filepath.Base(dir), ".connectivity-sstp-") {
+	if filepath.Dir(dir) != paths.RunDir(workDir) || !strings.HasPrefix(filepath.Base(dir), ".connectivity-sstp-") {
 		return false
 	}
 	if filepath.Base(executable) == "curl" {
@@ -209,7 +209,7 @@ func diagnosticPPPHookOwned(workDir, ns, proc, executable string) bool {
 	if err != nil {
 		return false
 	}
-	dirs, _ := filepath.Glob(filepath.Join(workDir, ".connectivity-sstp-*"))
+	dirs, _ := filepath.Glob(filepath.Join(paths.RunDir(workDir), ".connectivity-sstp-*"))
 	for _, dir := range dirs {
 		if _, err := os.Stat(filepath.Join(dir, ns+".ppp")); err != nil {
 			continue

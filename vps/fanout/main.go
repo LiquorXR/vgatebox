@@ -63,14 +63,14 @@ func runFanout(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if *checkState {
-		return runMigrationCheck(stdout, *workDir, *maxSlots, *webPort)
+		return runMigrationCheck(stdout, paths.StateDir(*workDir), *maxSlots, *webPort)
 	}
 
 	if os.Geteuid() != 0 {
 		log.Print("需要 root 权限（要创建 netns 和改 iptables）")
 		return 1
 	}
-	if err := os.MkdirAll(*workDir, 0700); err != nil {
+	if err := paths.Ensure(*workDir); err != nil {
 		log.Printf("创建工作目录失败: %v", err)
 		return 1
 	}

@@ -46,6 +46,9 @@ var (
 // 结果要落盘：重启后必须还是同一套，否则上一次留下的 netns 没人认领，
 // 会一直挂在机器上占着 veth 和 iptables 规则。
 func initInstance(workDir string) error {
+	if err := paths.Ensure(workDir); err != nil {
+		return err
+	}
 	abs, err := filepath.Abs(workDir)
 	if err != nil {
 		abs = workDir

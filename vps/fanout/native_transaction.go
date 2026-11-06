@@ -121,7 +121,7 @@ func (n *Native) stageConfig(store *nativeStore, tunnels []*Tunnel) (string, boo
 	if err != nil {
 		return "", false, err
 	}
-	f, err := os.CreateTemp(n.dir, ".xray-candidate-*.json")
+	f, err := os.CreateTemp(paths.RunDir(n.dir), ".xray-candidate-*.json")
 	if err != nil {
 		return "", false, err
 	}
@@ -175,6 +175,9 @@ func (n *Native) restoreRuntime(store *nativeStore, tunnels []*Tunnel) error {
 }
 
 func (n *Native) apply(tunnels []*Tunnel) error {
+	if err := paths.Ensure(n.dir); err != nil {
+		return err
+	}
 	if n.committed == nil {
 		n.committed = cloneNativeStore(n.store)
 	}
@@ -200,7 +203,7 @@ func (n *Native) apply(tunnels []*Tunnel) error {
 			sameConfig = bytes.Equal(staged, current)
 		}
 	}
-	tx, err := beginConfigTransaction(n.dir, nativeJournal, nativeConfigFiles)
+	tx, err := beginConfigTransaction(paths.StateDir(n.dir), nativeJournal, nativeConfigFiles)
 	if err != nil {
 		n.store = previous
 		return err

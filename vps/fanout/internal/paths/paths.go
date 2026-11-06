@@ -1,14 +1,19 @@
 // Package paths 是全部落盘路径的唯一出口。
 //
-// 背景：持久化文件散在 workDir 顶层（state.json、native.json、password …）、
-// intelligence/、certs/ 子目录、pool 输出目录与 /etc 配置里，
-// 同一个文件名在生产代码与测试里被 filepath.Join 重复拼几十次，
-// 改名或搬目录必然漏改。之后所有新增落盘点必须先加到这里。
+// 统一目录（P3-2 已切换）：workDir 为根，其下按用途分子目录。
+// 调用方只传 workDir（或任务目录），永远不要自己拼固定文件名。
 //
-// 统一目录（P3）：布局切换时只改本文件的映射函数，调用方不动。
-// 目标布局（workDir 为根）：state/ 放全部 JSON 状态与期刊，
-// cache/ 放画像缓存，certs/ 放证书，run/ 放 ovpn/log/pid 与诊断目录，
-// lock 留在根（跨版本锁语义）；pool 与 /etc 配置保持外部位置。
+//	workDir/
+//	  state/    全部 JSON 状态与期刊：state、native、settings/password/basepath、
+//	            console、checks、automation、sstp、third-party、slot_health、ippure、netbase
+//	  cache/    画像缓存：intelligence/{cache,sstp-cache,socks5-cache}.json、country/cache.json
+//	  certs/    自签证书
+//	  run/      运行态：<ns>.ovpn、auth.txt、*.log、xray.pid、.xray-candidate-*、
+//	            .connectivity-* 诊断目录、sstp 任务文件
+//	  lock      实例锁（留根：跨版本锁语义，新旧程序互斥）
+//
+// pool 输出目录与 /etc 配置是外部位置，保持不动（见 PoolFile/PoolConfig/IntelEnv）。
+// 任务目录（诊断、sstp 探测）由调用方传参， Diagnose* / SlotOVPN 等函数对任意目录生效。
 package paths
 
 import (
@@ -17,12 +22,28 @@ import (
 	"strings"
 )
 
-// Join 拼 workDir 下的顶层文件。过渡期用；布局切换后各函数改走子目录。
-func Join(root, name string) string { return filepath.Join(root, name) }
+// 子目录名。改名即搬迁：调用方传的永远是 workDir。
+const (
+	StateDirName = "state"
+	CacheDirName = "cache"
+	CertsDirName = "certs"
+	RunDirName   = "run"
+)
+
+func StateDir(root string) string { return filepath.Join(root, StateDirName) }
+func CacheDir(root string) string { return filepath.Join(root, CacheDirName) }
+func CertsDir(root string) string { return filepath.Join(root, CertsDirName) }
+func RunDir(root string) string   { return filepath.Join(root, RunDirName) }
+
+func IntelligenceDir(root string) string {
+	return filepath.Join(CacheDir(root), "intelligence")
+}
 
 // Ensure 建好 workDir 及固定子目录（0700）。幂等，已存在不报错。
+// 入口（main）与各 loader（newConsole/openNative/loadWebSettings）在启动与
+// 测试夹具里调用，保证后续原子写（其临时文件建在目标同目录）有父目录可用。
 func Ensure(root string) error {
-	for _, dir := range []string{root, CertsDir(root), IntelligenceDir(root)} {
+	for _, dir := range []string{root, StateDir(root), CacheDir(root), IntelligenceDir(root), CertsDir(root), RunDir(root)} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return err
 		}
@@ -30,66 +51,74 @@ func Ensure(root string) error {
 	return nil
 }
 
-func CertsDir(root string) string        { return filepath.Join(root, "certs") }
-func IntelligenceDir(root string) string { return filepath.Join(root, "intelligence") }
+// Join 拼 workDir 下的顶层文件。过渡期用；布局切换后各函数改走子目录。
+func Join(root, name string) string { return filepath.Join(root, name) }
 
 // --- 管理身份（settings.json / password / basepath + 期刊） ---
 
-func Settings(root string) string { return filepath.Join(root, "settings.json") }
-func Password(root string) string { return filepath.Join(root, "password") }
-func BasePath(root string) string { return filepath.Join(root, "basepath") }
+func Settings(root string) string { return filepath.Join(StateDir(root), "settings.json") }
+func Password(root string) string { return filepath.Join(StateDir(root), "password") }
+func BasePath(root string) string { return filepath.Join(StateDir(root), "basepath") }
 func ManagementJournal() string   { return ".management-transaction.json" }
 func ManagementFiles() []string   { return []string{"settings.json", "password", "basepath"} }
 
 // --- Slot 意图 ---
 
-func State(root string) string    { return filepath.Join(root, "state.json") }
+func State(root string) string    { return filepath.Join(StateDir(root), "state.json") }
 func StateJournal() string        { return ".state-transaction.json" }
 func StateFiles() []string        { return []string{"state.json"} }
-func NetBase(root string) string  { return filepath.Join(root, "netbase") }
+func NetBase(root string) string  { return filepath.Join(StateDir(root), "netbase") }
 func WorkLock(root string) string { return filepath.Join(root, "lock") }
 
 // --- Xray 配置 ---
 
-func Native(root string) string         { return filepath.Join(root, "native.json") }
-func NativePrevious(root string) string { return filepath.Join(root, "native.previous.json") }
-func Xray(root string) string           { return filepath.Join(root, "xray.json") }
+func Native(root string) string         { return filepath.Join(StateDir(root), "native.json") }
+func NativePrevious(root string) string { return filepath.Join(StateDir(root), "native.previous.json") }
+func Xray(root string) string           { return filepath.Join(StateDir(root), "xray.json") }
 func NativeJournal() string             { return ".native-transaction.json" }
 func NativeFiles() []string             { return []string{"native.json", "xray.json", "native.previous.json"} }
-func XrayLog(root string) string        { return filepath.Join(root, "xray.log") }
-func XrayPID(root string) string        { return filepath.Join(root, "xray.pid") }
+func XrayLog(root string) string        { return filepath.Join(RunDir(root), "xray.log") }
+func XrayPID(root string) string        { return filepath.Join(RunDir(root), "xray.pid") }
 
 // --- 控制台计划与检测 ---
 
-func Console(root string) string          { return filepath.Join(root, "console.json") }
-func ConsoleJournal() string              { return ".console-transaction.json" }
-func ConsoleFiles() []string              { return []string{"console.json"} }
-func Checks(root string) string           { return filepath.Join(root, "checks.json") }
-func CheckSettings(root string) string    { return filepath.Join(root, "check-settings.json") }
-func Automation(root string) string       { return filepath.Join(root, "automation.json") }
-func CheckSchedule(root string) string    { return filepath.Join(root, "check-schedule-state.json") }
-func RefreshState(root string) string     { return filepath.Join(root, "refresh-state.json") }
-func SSTP(root string) string             { return filepath.Join(root, "sstp.json") }
-func ThirdPartyChecks(root string) string { return filepath.Join(root, "third-party-checks.json") }
-func Diagnostic(root string) string       { return filepath.Join(root, "diagnostic.json") }
+func Console(root string) string       { return filepath.Join(StateDir(root), "console.json") }
+func ConsoleJournal() string           { return ".console-transaction.json" }
+func ConsoleFiles() []string           { return []string{"console.json"} }
+func Checks(root string) string        { return filepath.Join(StateDir(root), "checks.json") }
+func CheckSettings(root string) string { return filepath.Join(StateDir(root), "check-settings.json") }
+func Automation(root string) string    { return filepath.Join(StateDir(root), "automation.json") }
+func CheckSchedule(root string) string {
+	return filepath.Join(StateDir(root), "check-schedule-state.json")
+}
+func RefreshState(root string) string { return filepath.Join(StateDir(root), "refresh-state.json") }
+func SSTP(root string) string         { return filepath.Join(StateDir(root), "sstp.json") }
+func ThirdPartyChecks(root string) string {
+	return filepath.Join(StateDir(root), "third-party-checks.json")
+}
+func Diagnostic(root string) string { return filepath.Join(StateDir(root), "diagnostic.json") }
 
 // --- 画像与健康证据 ---
 
-func SlotHealth(root string) string        { return filepath.Join(root, "slot_health.json") }
-func IPPureCache(root string) string       { return filepath.Join(root, "ippure-cache.json") }
-func IntelCacheOpenVPN(root string) string { return filepath.Join(root, "intelligence", "cache.json") }
+func SlotHealth(root string) string        { return filepath.Join(StateDir(root), "slot_health.json") }
+func IPPureCache(root string) string       { return filepath.Join(StateDir(root), "ippure-cache.json") }
+func IntelCacheOpenVPN(root string) string { return filepath.Join(IntelligenceDir(root), "cache.json") }
 func IntelCacheSSTP(root string) string {
-	return filepath.Join(root, "intelligence", "sstp-cache.json")
+	return filepath.Join(IntelligenceDir(root), "sstp-cache.json")
 }
 func IntelCacheSOCKS5(root string) string {
-	return filepath.Join(root, "intelligence", "socks5-cache.json")
+	return filepath.Join(IntelligenceDir(root), "socks5-cache.json")
 }
 
-// --- 运行态（隧道 ovpn/凭据/日志，netns 名拼在调用方） ---
+// --- 运行态（隧道 ovpn/凭据/日志，netns 名拼在调用方；dir 一般是 run/ 或任务目录） ---
 
 func SlotOVPN(dir, ns string) string { return filepath.Join(dir, ns+".ovpn") }
 func SlotAuth(dir string) string     { return filepath.Join(dir, "auth.txt") }
 func SlotLog(dir, ns string) string  { return filepath.Join(dir, ns+".log") }
+
+// PanelMode 是旧版外部后端选择文件的哨兵，只读用于拒绝危险升级，
+// 永远留在 workDir 根（老安装的值就在那里；搬走会漏检“新旧面板并存”）。
+func PanelMode(root string) string { return filepath.Join(root, "panel_mode") }
 
 // --- 外部位置（env 可覆盖，默认值集中于此） ---
 

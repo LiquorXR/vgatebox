@@ -67,6 +67,9 @@ func webSettingsFilePath(dir string) string { return paths.Settings(dir) }
 // 连不上，也没有任何提示。显式指定时以命令行为准并写回，让参数说话算话。
 func loadWebSettings(dir string, defaultPort int, portExplicit bool) (WebSettings, error) {
 	webSettingsPath = webSettingsFilePath(dir)
+	if err := paths.Ensure(dir); err != nil {
+		return WebSettings{}, err
+	}
 
 	s := WebSettings{Port: defaultPort, ListenAddr: ""}
 	blob, err := os.ReadFile(webSettingsPath)

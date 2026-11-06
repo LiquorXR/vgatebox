@@ -50,6 +50,9 @@ const minPasswordLength = 12
 
 // NewAuth 载入或生成访问口令。返回口令是否为本次新建。
 func NewAuth(dir string) (*Auth, bool, error) {
+	if err := paths.Ensure(dir); err != nil {
+		return nil, false, err
+	}
 	path := paths.Password(dir)
 	created := false
 

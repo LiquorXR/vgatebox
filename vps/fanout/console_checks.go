@@ -150,7 +150,7 @@ func (c *Console) probeCandidate(parent context.Context, node Node, slot int, pr
 		}
 		return result
 	}
-	dir, err := os.MkdirTemp(c.m.workDir, ".connectivity-")
+	dir, err := os.MkdirTemp(paths.RunDir(c.m.workDir), ".connectivity-")
 	if err != nil {
 		result.Code = "probe_environment_failed"
 		return result

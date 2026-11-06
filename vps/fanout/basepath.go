@@ -78,6 +78,9 @@ func validateBasePath(raw string) (string, error) {
 // LoadBasePath 读取或生成随机访问路径，形如 /aB3xY9pQ。
 // 和常见面板一样：路径本身也是一层门槛，扫端口的探不到界面。
 func LoadBasePath(dir string) (string, bool, error) {
+	if err := paths.Ensure(dir); err != nil {
+		return "", false, err
+	}
 	path := paths.BasePath(dir)
 
 	blob, err := os.ReadFile(path)

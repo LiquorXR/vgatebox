@@ -75,6 +75,11 @@ type Console struct {
 }
 
 func newConsole(m *Manager) (*Console, error) {
+	// 测试夹具直接拿裸 TempDir 当 workDir：这里建好子目录，
+	// 后续原子写（临时文件建在目标同目录）才有父目录可用。
+	if err := paths.Ensure(m.workDir); err != nil {
+		return nil, err
+	}
 	c := &Console{m: m, results: map[string]CheckResult{}, start: m.StartWithPolicy, remove: m.deleteSlot, poolChanged: make(chan struct{}, 1)}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	c.ensure = func(ts []*Tunnel, host string) error {
@@ -89,7 +94,7 @@ func newConsole(m *Manager) (*Console, error) {
 		return n.ensureSlotInbounds(ts, host)
 	}
 	c.probe = c.probeCandidate
-	if err := recoverConfigTransaction(m.workDir, consoleJournal, []string{"console.json"}); err != nil {
+	if err := recoverConfigTransaction(paths.StateDir(m.workDir), consoleJournal, []string{"console.json"}); err != nil {
 		return nil, err
 	}
 	blob, err := os.ReadFile(paths.Console(m.workDir))
@@ -173,7 +178,7 @@ func (c *Console) savePlan(p ExitPlan) error {
 	if err != nil {
 		return err
 	}
-	tx, err := beginConfigTransaction(c.m.workDir, consoleJournal, []string{"console.json"})
+	tx, err := beginConfigTransaction(paths.StateDir(c.m.workDir), consoleJournal, []string{"console.json"})
 	if err != nil {
 		return err
 	}
@@ -672,7 +677,7 @@ func (c *Console) startPoolRefresh(scheduled bool) (<-chan struct{}, error) {
 		ctx, cancel := context.WithTimeout(c.ctx, 90*time.Second)
 		defer cancel()
 		pool := paths.PoolFile()
-		args := []string{paths.Toolbox(), "--config", paths.PoolConfig(), "pool", "--output", filepath.Dir(pool), "--schedule-dir", c.m.workDir}
+		args := []string{paths.Toolbox(), "--config", paths.PoolConfig(), "pool", "--output", filepath.Dir(pool), "--schedule-dir", paths.StateDir(c.m.workDir)}
 		if scheduled {
 			args = append(args, "--scheduled")
 		}

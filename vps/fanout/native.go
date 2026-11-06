@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fanout/internal/paths"
 	"fmt"
 	"net/url"
 	"os"
@@ -38,7 +39,10 @@ func openNative(workDir string) (*Native, error) {
 	}
 	proc := &xrayProc{bin: bin, dir: workDir}
 	proc.reapOrphan()
-	if err := recoverConfigTransaction(workDir, nativeJournal, nativeConfigFiles); err != nil {
+	if err := paths.Ensure(workDir); err != nil {
+		return nil, err
+	}
+	if err := recoverConfigTransaction(paths.StateDir(workDir), nativeJournal, nativeConfigFiles); err != nil {
 		return nil, err
 	}
 	store, err := loadNativeStore(workDir)
