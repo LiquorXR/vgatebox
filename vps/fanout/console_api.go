@@ -195,9 +195,21 @@ func (c *Console) apiConsoleVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"version": c.consoleVersion()})
 }
 
+// consoleETag 由可见状态版本号派生：版本号不变即控制台可见无变化，
+// 与前端版本轮询的语义一致（内存水位等未进版本的遥测不算可见变更）。
+func (c *Console) consoleETag() string {
+	return fmt.Sprintf("\"v%d\"", c.consoleVersion())
+}
+
 func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(405)
+		return
+	}
+	etag := c.consoleETag()
+	w.Header().Set("ETag", etag)
+	if match := r.Header.Get("If-None-Match"); match == etag || match == "*" {
+		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 	view := c.m.ExitsOf()

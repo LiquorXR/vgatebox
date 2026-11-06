@@ -435,6 +435,29 @@ func TestShutdownOrderKeepsStoreUsableUntilClose(t *testing.T) {
 	c.closeStores()
 }
 
+func TestConsoleETagNotModified(t *testing.T) {
+	c := consoleFixture(t)
+	w := httptest.NewRecorder()
+	c.apiConsole(w, httptest.NewRequest("GET", "/", nil))
+	etag := w.Header().Get("ETag")
+	if w.Code != 200 || etag == "" {
+		t.Fatalf("console without ETag: code=%d etag=%q", w.Code, etag)
+	}
+	again := httptest.NewRecorder()
+	cond := httptest.NewRequest("GET", "/", nil)
+	cond.Header.Set("If-None-Match", etag)
+	c.apiConsole(again, cond)
+	if again.Code != http.StatusNotModified || again.Body.Len() != 0 {
+		t.Fatalf("stale console not 304: code=%d body=%d", again.Code, again.Body.Len())
+	}
+	c.bumpConsoleVersion()
+	moved := httptest.NewRecorder()
+	c.apiConsole(moved, cond)
+	if moved.Code != 200 {
+		t.Fatalf("changed console still 304: code=%d", moved.Code)
+	}
+}
+
 func TestConsoleDiagnosticCleanupOwnershipIsNarrow(t *testing.T) {
 	root := "/var/lib/vgatebox/fanout"
 	ns := "foabcd240"

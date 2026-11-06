@@ -128,7 +128,7 @@ Vite 默认把 `/api`、`/sub`、`/login` 代理到 `http://127.0.0.1:8899`。�
 
 已移除与新入口重叠的旧路由：`/api/tunnels`（改用 `/api/exits`）、`/api/start` 和 `/api/replace`（改用 `/api/console/target` 与 `/api/swap`）、`/api/refresh`（改用 `/api/console/refresh`）、`/api/xui` 状态（后端固定为内置 Xray，不再提供模式切换）、`/api/panel/mode`（不再支持外部后端切换）。底层 Manager 方法仍保留给控制台内部使用。
 
-后续可把 `console` 改为 ETag 或 SSE；当前先保持接口兼容。
+后续可把 `console` 改为 SSE；ETag 已就绪：`GET /api/console` 按可见版本号回 `ETag`，`If-None-Match` 命中（或 `*`）回 304 空体，语义与版本轮询一致，旧客户端忽略即可。当前前端仍走版本轮询，切条件 GET 时再改前端。
 
 ## 外部后端迁移
 
