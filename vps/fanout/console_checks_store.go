@@ -129,6 +129,11 @@ func (c *Console) flushChecks() error {
 		c.checksMu.Unlock()
 		return err
 	}
+	// DB 模式下删残留旧 checks.json，避免两处结果来源混淆；文件模式
+	// 跳过（刚写入的就是它）。失败只忽略：结果已落库，可再生。
+	if _, ok := c.checkStore.(legacyChecksFile); !ok {
+		_ = os.Remove(paths.Checks(c.m.workDir))
+	}
 	return nil
 }
 

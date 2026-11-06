@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"fanout/internal/paths"
+	"os"
 	"testing"
 	"time"
 )
@@ -55,6 +57,36 @@ func TestChecksPersistenceCombinesMultipleResultsAndSurvivesRestart(t *testing.T
 	reloaded.checksMu.Unlock()
 	if count != 2 {
 		t.Fatalf("reloaded results: %d", count)
+	}
+}
+
+func TestChecksFlushRemovesLegacyFileInDBMode(t *testing.T) {
+	c := consoleFixture(t)
+	if _, ok := c.checkStore.(legacyChecksFile); ok {
+		t.Skip("SQLite unavailable, fallback mode keeps the file")
+	}
+	// 模拟升级残留：库里没有、文件里有旧结果。
+	legacy := paths.Checks(c.m.workDir)
+	if err := os.WriteFile(legacy, []byte(`{"old":{"host":"old","status":"failed"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c.m.nodes = []Node{{HostName: "b", Config: "fixture"}}
+	c.checksMu.Lock()
+	c.results["b"] = CheckResult{Host: "b", Status: "passed", CheckedAt: time.Now().UTC()}
+	c.markChecksDirtyLocked()
+	c.checksMu.Unlock()
+	if err := c.flushChecks(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatal("legacy checks file retained in DB mode")
+	}
+	entries, err := c.checkStore.LoadAll()
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("store = %v, %v", entries, err)
+	}
+	if _, ok := entries["b"]; !ok {
+		t.Fatalf("flushed result missing: %v", entries)
 	}
 }
 
