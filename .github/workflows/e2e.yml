@@ -47,11 +47,15 @@ jobs:
       - name: Start the manager under test
         run: |
           sudo /tmp/vgatebox-fanout-e2e -dir /tmp/vgb-e2e -web 18080 -max 4 > /tmp/e2e-manager.log 2>&1 &
+          # 管理界面挂在随机访问路径下（含 healthz）：先等 basepath 落盘，
+          # 再探 /<base>/healthz。裸 /healthz 会 404（StripBasePath），不是探活失败。
           for _ in $(seq 1 60); do
-            if curl -sf http://127.0.0.1:18080/healthz; then break; fi
+            base=$(sudo cat /tmp/vgb-e2e/state/basepath 2>/dev/null | tr -d ' \n\r')
+            if [ -n "$base" ] && curl -sf "http://127.0.0.1:18080/$base/healthz"; then break; fi
             sleep 2
           done
-          curl -sf http://127.0.0.1:18080/healthz
+          base=$(sudo cat /tmp/vgb-e2e/state/basepath | tr -d ' \n\r')
+          curl -sf "http://127.0.0.1:18080/$base/healthz"
           {
             echo "E2E_BASE_PATH=/$(sudo cat /tmp/vgb-e2e/state/basepath | tr -d ' \n\r')"
             echo "E2E_PASSWORD=$(sudo cat /tmp/vgb-e2e/state/password | tr -d ' \n\r')"

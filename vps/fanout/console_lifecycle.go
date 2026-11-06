@@ -51,6 +51,7 @@ func (c *Console) closeStores() {
 		log.Printf("检测库 checkpoint 失败: %v", err)
 	}
 	_ = c.checkDB.Close()
+	c.checkDB = nil
 }
 
 func diagnosticConfigOwned(workDir, ns, executable, config string) bool {
