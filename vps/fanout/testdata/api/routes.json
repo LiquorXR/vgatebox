@@ -179,6 +179,14 @@
       "auth": "session"
     },
     {
+      "path": "/api/metrics",
+      "methods": [
+        "GET"
+      ],
+      "handler": "Console.apiMetrics",
+      "auth": "session"
+    },
+    {
       "path": "/api/nodes",
       "methods": [
         "GET"

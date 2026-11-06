@@ -358,6 +358,7 @@ func (c *Console) routes(mux *http.ServeMux) {
 	c.third.routes(mux)
 	mux.HandleFunc("/api/console", c.apiConsole)
 	mux.HandleFunc("/api/console/version", c.apiConsoleVersion)
+	mux.HandleFunc("/api/metrics", c.apiMetrics)
 	mux.HandleFunc("/api/console/target", c.apiApplyTarget)
 	mux.HandleFunc("/api/console/direct", c.apiHostDirect)
 	mux.HandleFunc("/api/console/socks", c.apiPublicSocks)

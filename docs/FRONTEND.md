@@ -117,6 +117,9 @@ Vite 默认把 `/api`、`/sub`、`/login` 代理到 `http://127.0.0.1:8899`。�
 - `POST /api/console/slot/delete`: body `{"slot": N, "cleanup_archive": false}`，删除指定自动出口并把控制台目标数量减 1，其他 Slot 编号不变。默认保留该出口的自动入口作为归档，之后重建同一编号时可以复用；`cleanup_archive: true` 会一并删除该 Slot 的自动归档入口，并在响应 `cleanup_error` 中报告清理失败。出口详情和「高级接入」的自动入口都使用该接口；旧 `/api/slot/delete` 只保留兼容，新 UI 不再调用。
 - 对应出口已不存在的自动入口会在「高级接入」显示为「归档入口」。它不再有可删除的出口，使用「清理入口」调用 `POST /api/xui/delete?ids=N` 单独清理；手动入口和本机直出入口仍走各自的删除入口。
 - `GET /api/console` 的 `regions` 字段：合并旧 `/api/regions` 的候选库存统计。出口目标弹窗显示各国家空闲节点数、最佳延迟和最佳速度，并明确标注这是候选库存而不是已验证出口。旧路由保留给外部调用。
+- `GET /api/console/version`：控制台状态单调版本号（小响应）；前端先轮询它，变化或 60 秒兜底时才拉全量 `console`（应答自带 `console_version` 对齐）。需登录。
+- `GET /healthz`：免登录探活，只返回版本/uptime/Slot 计数/候选池龄/面板状态等非敏感字段。
+- `GET /api/metrics`：Prometheus 文本格式，需登录；含 Slot 计数、候选池龄、Xray 重启次数、上次检测数与按路径/状态的请求计数。建议 15 秒以上抓取。
 - `POST /api/xui/clone?id=N`: 「高级接入 → 详情」以当前入口为模板，为所有已就绪出口创建入口。
 - `POST /api/xui/encryption/rotate?id=N`: 为已启用 VLESS Encryption 的入口重新生成一对 `decryption`/`encryption` 参数；旧订阅链接立即失效。
 - `POST /api/xui/encryption/set?id=N&enabled=1|0&key_type=x25519|mlkem768`: 打开或关闭一个 VLESS 入站的协议内加密层；打开时可按需生成新参数。

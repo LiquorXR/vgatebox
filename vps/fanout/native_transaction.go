@@ -161,6 +161,7 @@ func (n *Native) restoreRuntime(store *nativeStore, tunnels []*Tunnel) error {
 			return err
 		}
 		n.procLive = true
+		noteXrayRestart()
 	} else {
 		n.engine().stop()
 		n.procLive = false
@@ -243,6 +244,7 @@ func (n *Native) apply(tunnels []*Tunnel) error {
 			return fail(err)
 		} else {
 			n.procLive = true
+			noteXrayRestart()
 		}
 	} else {
 		n.engine().stop()

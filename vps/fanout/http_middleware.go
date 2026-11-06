@@ -148,6 +148,13 @@ func withStatusLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sw := &statusWriter{ResponseWriter: w}
 		next.ServeHTTP(sw, r)
+		status := sw.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		// 计数挂在这里：StripBasePath 已在内层把随机访问前缀剥掉，
+		// metricsPathLabel 再收敛一次，未知路径永不进 label。
+		noteHTTPRequest(r.URL.Path, status)
 		if sw.status >= 500 {
 			log.Printf("HTTP %d %s %s", sw.status, r.Method, r.URL.Path)
 		}
