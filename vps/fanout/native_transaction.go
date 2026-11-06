@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"log"
 	"os"
@@ -90,7 +91,7 @@ func (n *Native) cleanupCandidateCerts(candidate, accepted *nativeStore) {
 	}
 	// A successful manual rollback swaps current/previous. Its predecessor's
 	// generated certificates are still needed if the operator restores it.
-	if blob, err := os.ReadFile(filepath.Join(n.dir, "native.previous.json")); err == nil {
+	if blob, err := os.ReadFile(paths.NativePrevious(n.dir)); err == nil {
 		var history nativeStore
 		if json.Unmarshal(blob, &history) == nil {
 			for _, ib := range history.Inbounds {
@@ -101,7 +102,7 @@ func (n *Native) cleanupCandidateCerts(candidate, accepted *nativeStore) {
 			}
 		}
 	}
-	certDir := filepath.Join(n.dir, "certs")
+	certDir := paths.CertsDir(n.dir)
 	for _, ib := range candidate.Inbounds {
 		if ib.TLS == nil || !ib.TLS.SelfSigned {
 			continue
@@ -170,7 +171,7 @@ func (n *Native) restoreRuntime(store *nativeStore, tunnels []*Tunnel) error {
 	if err != nil {
 		return err
 	}
-	return atomicConfigWrite(filepath.Join(n.dir, "xray.json"), blob)
+	return atomicConfigWrite(paths.Xray(n.dir), blob)
 }
 
 func (n *Native) apply(tunnels []*Tunnel) error {
@@ -195,7 +196,7 @@ func (n *Native) apply(tunnels []*Tunnel) error {
 	// （native.json 元数据仍需落盘），失败语义不变（touched 照常置位）。
 	sameConfig := false
 	if staged, serr := os.ReadFile(path); serr == nil {
-		if current, cerr := os.ReadFile(filepath.Join(n.dir, "xray.json")); cerr == nil {
+		if current, cerr := os.ReadFile(paths.Xray(n.dir)); cerr == nil {
 			sameConfig = bytes.Equal(staged, current)
 		}
 	}
@@ -265,7 +266,7 @@ func (n *Native) apply(tunnels []*Tunnel) error {
 	}
 	previousBlob, _ := json.MarshalIndent(previous, "", "  ")
 	if string(blob) != string(previousBlob) {
-		if err := atomicConfigWrite(filepath.Join(n.dir, "native.previous.json"), previousBlob); err != nil {
+		if err := atomicConfigWrite(paths.NativePrevious(n.dir), previousBlob); err != nil {
 			return fail(err)
 		}
 	}
@@ -273,7 +274,7 @@ func (n *Native) apply(tunnels []*Tunnel) error {
 	if err != nil {
 		return fail(err)
 	}
-	if err := atomicConfigWrite(filepath.Join(n.dir, "xray.json"), config); err != nil {
+	if err := atomicConfigWrite(paths.Xray(n.dir), config); err != nil {
 		return fail(err)
 	}
 	if err := n.transactionStep("before_commit"); err != nil {
@@ -290,7 +291,7 @@ func (n *Native) apply(tunnels []*Tunnel) error {
 func (n *Native) Rollback(tunnels []*Tunnel) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	blob, err := os.ReadFile(filepath.Join(n.dir, "native.previous.json"))
+	blob, err := os.ReadFile(paths.NativePrevious(n.dir))
 	if err != nil {
 		return fmt.Errorf("没有可读的上一次内置配置")
 	}

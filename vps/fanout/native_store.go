@@ -4,9 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -123,7 +123,7 @@ type nativeStore struct {
 	droppedLegacy bool
 }
 
-func nativeStatePath(dir string) string { return filepath.Join(dir, "native.json") }
+func nativeStatePath(dir string) string { return paths.Native(dir) }
 
 func loadNativeStore(dir string) (*nativeStore, error) {
 	blob, err := os.ReadFile(nativeStatePath(dir))

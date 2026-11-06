@@ -5,11 +5,11 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
+	"fanout/internal/paths"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"time"
 )
@@ -73,7 +73,7 @@ func randomShortID() string {
 // 走 openssl 而不是 Go 的 crypto/x509：证书要落成 Xray 能读的 PEM 文件，
 // openssl 一条命令就够，省掉一大段编解码代码。
 func selfSignedCert(dir, serverName string) (certFile, keyFile string, err error) {
-	certDir := filepath.Join(dir, "certs")
+	certDir := paths.CertsDir(dir)
 	if err := os.MkdirAll(certDir, 0700); err != nil {
 		return "", "", err
 	}

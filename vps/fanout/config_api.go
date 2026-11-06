@@ -1,10 +1,10 @@
 package main
 
 import (
+	"fanout/internal/paths"
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 )
 
@@ -45,7 +45,7 @@ func apiRollbackNative(m *Manager) http.HandlerFunc {
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method == http.MethodGet {
-			_, err := os.Stat(filepath.Join(n.dir, "native.previous.json"))
+			_, err := os.Stat(paths.NativePrevious(n.dir))
 			writeJSON(w, 200, map[string]bool{"available": err == nil})
 			return
 		}

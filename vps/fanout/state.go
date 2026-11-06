@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 )
 
 // persistedTunnel 是隧道在磁盘上的形态。
@@ -34,7 +34,7 @@ type persistedState struct {
 	DeletedSlots []int             `json:"deleted_slots,omitempty"`
 }
 
-func statePath(dir string) string { return filepath.Join(dir, "state.json") }
+func statePath(dir string) string { return paths.State(dir) }
 
 const stateJournal = ".state-transaction.json"
 
