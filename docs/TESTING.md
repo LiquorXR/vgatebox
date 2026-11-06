@@ -40,6 +40,8 @@ python3 -m unittest discover -s tests -v
 
 Python 检查解析、证据一致性、异常响应、证书拒绝、订阅清理、私密性、锁和进程清理。新控制台的纯逻辑和页面集成流程由 Vitest 检查。Linux Go 测试包含网络隔离、出口生命周期、阻断及并发检查。合成测试与真实 VPN 节点验收分别记录，不因前者通过而认定后者可用。
 
+Go fuzz（`vps/fanout/fuzz_test.go`，纯函数无网络磁盘）：`parseNodeCSV`、`clashProxy`、`normalizePolicy`、`normalizeInboundSpec`，平时 `go test` 只跑种子语义断言；延长跑 `go test -fuzz=FuzzParseNodeCSV -fuzztime=5m vps/fanout`（余类推），每夜全量 race 会带上种子部分。
+
 ## GitHub Actions
 
 - `test.yml`：Python 3.9/3.12、前端类型检查/组件与页面集成测试/构建。
