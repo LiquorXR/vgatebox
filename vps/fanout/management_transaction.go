@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"net"
 	"path/filepath"
@@ -130,7 +131,7 @@ func commitManagementSettings(auth *Auth, srv *webServer, next WebSettings, pass
 		if auth == nil {
 			return fail(fmt.Errorf("缺少管理认证对象"))
 		}
-		if err := atomicConfigWrite(filepath.Join(dir, "password"), []byte(*password+"\n")); err != nil {
+		if err := atomicConfigWrite(paths.Password(dir), []byte(*password+"\n")); err != nil {
 			return fail(err)
 		}
 	}
@@ -140,7 +141,7 @@ func commitManagementSettings(auth *Auth, srv *webServer, next WebSettings, pass
 		}
 	}
 	if base != nil {
-		if err := atomicConfigWrite(filepath.Join(dir, "basepath"), []byte(strings.TrimPrefix(*base, "/")+"\n")); err != nil {
+		if err := atomicConfigWrite(paths.BasePath(dir), []byte(strings.TrimPrefix(*base, "/")+"\n")); err != nil {
 			return fail(err)
 		}
 	}

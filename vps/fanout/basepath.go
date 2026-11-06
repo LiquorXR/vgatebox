@@ -2,10 +2,10 @@ package main
 
 import (
 	"crypto/rand"
+	"fanout/internal/paths"
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -50,7 +50,7 @@ func setBasePath(raw string) (string, error) {
 	basePathMu.RLock()
 	dir := basePathDir
 	basePathMu.RUnlock()
-	if err := os.WriteFile(filepath.Join(dir, "basepath"), []byte(strings.TrimPrefix(bp, "/")+"\n"), 0600); err != nil {
+	if err := os.WriteFile(paths.BasePath(dir), []byte(strings.TrimPrefix(bp, "/")+"\n"), 0600); err != nil {
 		return "", fmt.Errorf("写访问路径失败: %w", err)
 	}
 	basePathMu.Lock()
@@ -78,7 +78,7 @@ func validateBasePath(raw string) (string, error) {
 // LoadBasePath 读取或生成随机访问路径，形如 /aB3xY9pQ。
 // 和常见面板一样：路径本身也是一层门槛，扫端口的探不到界面。
 func LoadBasePath(dir string) (string, bool, error) {
-	path := filepath.Join(dir, "basepath")
+	path := paths.BasePath(dir)
 
 	blob, err := os.ReadFile(path)
 	if err == nil {

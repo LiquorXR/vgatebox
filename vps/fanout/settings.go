@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,7 +58,7 @@ var (
 	webSettingsPath string
 )
 
-func webSettingsFilePath(dir string) string { return filepath.Join(dir, "settings.json") }
+func webSettingsFilePath(dir string) string { return paths.Settings(dir) }
 
 // loadWebSettings 读盘并返回当前配置。
 //

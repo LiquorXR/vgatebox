@@ -5,12 +5,12 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"fanout/internal/paths"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -50,7 +50,7 @@ const minPasswordLength = 12
 
 // NewAuth 载入或生成访问口令。返回口令是否为本次新建。
 func NewAuth(dir string) (*Auth, bool, error) {
-	path := filepath.Join(dir, "password")
+	path := paths.Password(dir)
 	created := false
 
 	blob, err := os.ReadFile(path)
@@ -107,7 +107,7 @@ func (a *Auth) SetPassword(pw string) error {
 	if len(pw) < minPasswordLength {
 		return fmt.Errorf("口令至少 %d 位", minPasswordLength)
 	}
-	path := filepath.Join(a.dir, "password")
+	path := paths.Password(a.dir)
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(pw+"\n"), 0600); err != nil {
 		return fmt.Errorf("写口令文件失败: %w", err)
