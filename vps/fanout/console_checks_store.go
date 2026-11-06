@@ -3,7 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fanout/internal/paths"
+	"fanout/internal/store"
+	"fanout/internal/storesqlite"
+	"fmt"
 	"log"
+	"os"
 	"sort"
 	"time"
 )
@@ -12,6 +16,60 @@ const (
 	defaultChecksFlushInterval = 2 * time.Second
 	maxStoredCheckResults      = 1000
 )
+
+// openCheckStore 打开检测结果存储：SQLite 优先，打不开回退旧 JSON 文件。
+// 回退读写旧形状（map[host]CheckResult），不断旧库的连续性。
+func openCheckStore(workDir string) (store.MapStore, *storesqlite.DB) {
+	if db, err := storesqlite.Open(paths.DBFile(workDir)); err != nil {
+		log.Printf("检测结果改用文件存储: %v", err)
+		return legacyChecksFile{path: paths.Checks(workDir)}, nil
+	} else {
+		return db.MapStore("checks"), db
+	}
+}
+
+// legacyChecksFile 是 Store 接口的旧形状适配：文件里是 map[host]CheckResult，
+// 进出时与 store.Entry 互转。只在 SQLite 打不开时使用。
+type legacyChecksFile struct{ path string }
+
+func (s legacyChecksFile) LoadAll() (map[string]store.Entry, error) {
+	out := map[string]store.Entry{}
+	blob, err := os.ReadFile(s.path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return out, nil
+		}
+		return nil, err
+	}
+	var m map[string]CheckResult
+	if err := json.Unmarshal(blob, &m); err != nil || m == nil {
+		return nil, fmt.Errorf("invalid checks file: %w", err)
+	}
+	for host, r := range m {
+		data, err := json.Marshal(r)
+		if err != nil {
+			return nil, err
+		}
+		out[host] = store.Entry{Data: data, CheckedAt: r.CheckedAt, ExpiresAt: r.ExpiresAt}
+	}
+	return out, nil
+}
+
+func (s legacyChecksFile) SaveAll(m map[string]store.Entry) error {
+	out := make(map[string]CheckResult, len(m))
+	for host, e := range m {
+		var r CheckResult
+		if err := json.Unmarshal(e.Data, &r); err != nil {
+			return err
+		}
+		out[host] = r
+	}
+	blob, err := json.Marshal(out)
+	if err != nil {
+		return err
+	}
+	return atomicConfigWrite(s.path, blob)
+}
 
 func (c *Console) markChecksDirtyLocked() {
 	c.checksDirty = true
@@ -55,12 +113,17 @@ func (c *Console) flushChecks() error {
 		return nil
 	}
 	c.checksDirty = false
-	blob, err := json.Marshal(c.results)
-	c.checksMu.Unlock()
-	if err != nil {
-		return err
+	entries := make(map[string]store.Entry, len(c.results))
+	for host, r := range c.results {
+		blob, err := json.Marshal(r)
+		if err != nil {
+			c.checksMu.Unlock()
+			return err
+		}
+		entries[host] = store.Entry{Data: blob, CheckedAt: r.CheckedAt, ExpiresAt: r.ExpiresAt}
 	}
-	if err := atomicConfigWrite(paths.Checks(c.m.workDir), blob); err != nil {
+	c.checksMu.Unlock()
+	if err := c.checkStore.SaveAll(entries); err != nil {
 		c.checksMu.Lock()
 		c.checksDirty = true
 		c.checksMu.Unlock()

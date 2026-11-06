@@ -134,6 +134,11 @@ func Toolbox() string {
 }
 func DeployStatus() string { return "/var/lib/vgatebox-deploy/status.json" }
 
+// DBFile 是 SQLite 库文件（state/ 下单文件 + -wal/-shm）。
+// backing 三类自有数据：检测结果、（后续）观察快照与画像缓存。
+// 意图类文件因 Python 侧直接读 JSON 而留在文件，见 ADR-0007。
+func DBFile(root string) string { return filepath.Join(StateDir(root), "vgatebox.db") }
+
 func envOr(name, fallback string) string {
 	if v := strings.TrimSpace(os.Getenv(name)); v != "" {
 		return v

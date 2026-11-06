@@ -1,8 +1,7 @@
 package main
 
 import (
-	"fanout/internal/paths"
-	"os"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -10,25 +9,24 @@ import (
 func TestChecksPersistenceDebouncesAndForcesFlush(t *testing.T) {
 	c := consoleFixture(t)
 	c.m.nodes = []Node{{HostName: "a", Config: "fixture"}}
-	path := paths.Checks(c.m.workDir)
 	c.checksMu.Lock()
 	c.results["a"] = CheckResult{Host: "a", Status: "passed", CheckedAt: time.Now().UTC()}
 	c.markChecksDirtyLocked()
 	c.checksMu.Unlock()
 	time.Sleep(100 * time.Millisecond)
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatal("result was written immediately instead of debounced")
+	if entries, err := c.checkStore.LoadAll(); err != nil || len(entries) != 0 {
+		t.Fatal("result was written immediately instead of debounced", entries, err)
 	}
 	if err := c.flushChecks(); err != nil {
 		t.Fatal(err)
 	}
-	blob, err := os.ReadFile(path)
-	if err != nil || len(blob) == 0 {
-		t.Fatal("forced flush did not persist results", err)
+	entries, err := c.checkStore.LoadAll()
+	if err != nil || len(entries) != 1 {
+		t.Fatal("forced flush did not persist results", entries, err)
 	}
-	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0600 {
-		t.Fatal("checks file is not private")
+	var r CheckResult
+	if err := json.Unmarshal(entries["a"].Data, &r); err != nil || r.Status != "passed" {
+		t.Fatal("persisted result mismatch", r, err)
 	}
 	if err := c.flushChecks(); err != nil {
 		t.Fatal("clean flush failed")

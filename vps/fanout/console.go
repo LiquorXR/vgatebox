@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fanout/internal/paths"
+	"fanout/internal/store"
+	"fanout/internal/storesqlite"
 	"fmt"
 	"io"
 	"log"
@@ -67,6 +69,11 @@ type Console struct {
 	// saveState/RefreshNodes 经 m.console、检测启停与结果、刷新启停、自动化与检测设置）。
 	// 只增不减，atomic 保证并发安全，调用方无需持锁。
 	version atomic.Uint64
+	// checkStore 存检测结果：SQLite 优先（state/vgatebox.db），打不开
+	// 则回退同目录旧 checks.json（legacyChecksFile，读写旧形状）。
+	// 旧库升级上来没有历史也无妨：结果会随下一轮检测重建。
+	checkStore store.MapStore
+	checkDB   *storesqlite.DB
 	// Test seams exercise intent/persistence without creating real namespaces.
 	start  func(Node, SlotPolicy) (*Tunnel, error)
 	remove func(int) error
@@ -111,8 +118,21 @@ func newConsole(m *Manager) (*Console, error) {
 		return nil, err
 	}
 	// Observations are auxiliary; they never restore a tunnel as healthy.
-	if blob, err := os.ReadFile(paths.Checks(m.workDir)); err == nil {
-		_ = json.Unmarshal(blob, &c.results)
+	// 检测结果走 Store：SQLite 优先，打不开回退旧 JSON 文件。
+	// 旧库没有历史也无妨，结果随下一轮检测重建（fail-open 只适用于
+	// 这种可再生的辅助数据，意图类状态仍是 fail-closed，见 ADR-0007）。
+	c.checkStore, c.checkDB = openCheckStore(m.workDir)
+	if entries, err := c.checkStore.LoadAll(); err != nil {
+		log.Printf("检测结果读取失败，从空开始: %v", err)
+	} else {
+		for host, e := range entries {
+			var r CheckResult
+			if json.Unmarshal(e.Data, &r) != nil {
+				log.Printf("检测结果 %q损坏已跳过", host)
+				continue
+			}
+			c.results[host] = r
+		}
 	}
 	if c.results == nil {
 		c.results = map[string]CheckResult{}

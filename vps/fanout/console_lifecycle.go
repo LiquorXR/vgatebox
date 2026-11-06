@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fanout/internal/paths"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +36,14 @@ func (c *Console) shutdown() {
 		<-finished
 	}
 	_ = c.flushChecks()
+	if c.checkDB != nil {
+		// 备份/卸载拷整树：先把 WAL 并回主库，保证单文件自包含。
+		// 失败只记日志：数据已落盘，进程退出后 SQLite 照常恢复。
+		if err := c.checkDB.Checkpoint(); err != nil {
+			log.Printf("检测库 checkpoint 失败: %v", err)
+		}
+		_ = c.checkDB.Close()
+	}
 }
 
 func diagnosticConfigOwned(workDir, ns, executable, config string) bool {
