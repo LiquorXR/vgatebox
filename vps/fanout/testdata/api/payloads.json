@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "generated_from": "hand-curated required keys; backend api_payload_contract_test.go and frontend payload-contract.spec.ts both enforce this file",
+  "rule": "additive only: handlers and fixtures must contain every required key; new keys need no contract change, removed keys fail both suites. Entries with fixture=false are enforced backend-side only (tiny endpoints no unit test mocks); entries are sorted by path, then query.",
+  "endpoints": [
+    {
+      "path": "/api/console",
+      "required": [
+        "version",
+        "console_version",
+        "capacity",
+        "target",
+        "target_configured",
+        "suggested_target",
+        "allocated",
+        "ready",
+        "stopped",
+        "waiting",
+        "candidates",
+        "pool_read_at",
+        "pool_generated_at",
+        "pool_source",
+        "automation",
+        "default_server_name",
+        "plan",
+        "plan_error",
+        "refresh",
+        "check",
+        "check_settings",
+        "results",
+        "regions",
+        "memory"
+      ],
+      "numbers": ["console_version", "capacity", "target", "allocated", "ready", "candidates"]
+    },
+    {
+      "path": "/api/console/version",
+      "fixture": false,
+      "required": ["version"],
+      "numbers": ["version"]
+    },
+    {
+      "path": "/api/exits",
+      "required": ["exits", "host_direct", "direct", "panel", "backend", "panel_info", "public_ip"]
+    },
+    {
+      "path": "/api/nodes",
+      "required": ["nodes", "fetched", "total", "available", "residential_only"]
+    },
+    {
+      "path": "/api/nodes",
+      "query": "limit=200&offset=0",
+      "required": ["nodes", "fetched", "total", "available", "residential_only", "limit", "offset", "next_offset"],
+      "note": "paged shape only exists with explicit limit; the frontend fixture keeps the base shape, the paged slicing is covered by harness logic and nodes_pagination_test.go"
+    },
+    {
+      "path": "/api/settings",
+      "required": ["base_path", "port", "listen_addr", "has_password", "residential_only", "version"]
+    },
+    {
+      "path": "/api/sub",
+      "required": ["token", "path", "url"]
+    },
+    {
+      "path": "/healthz",
+      "fixture": false,
+      "required": ["status", "version", "uptime_seconds", "slots", "pool", "panel"]
+    }
+  ]
+}

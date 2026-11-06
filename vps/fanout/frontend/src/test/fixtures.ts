@@ -207,6 +207,7 @@ const results = {
 
 export const consoleData = {
   version: "v0.9.2",
+  console_version: 7,
   capacity: 40,
   target: 4,
   target_configured: true,
