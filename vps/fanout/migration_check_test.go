@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fanout/internal/paths"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -15,6 +16,9 @@ import (
 func migrationFixture(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+	if err := paths.Ensure(dir); err != nil {
+		t.Fatal(err)
+	}
 	files, err := os.ReadDir("testdata/migration-v031")
 	if err != nil {
 		t.Fatal(err)
@@ -24,7 +28,7 @@ func migrationFixture(t *testing.T) string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, file.Name()), blob, 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(paths.StateDir(dir), file.Name()), blob, 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -62,7 +66,7 @@ func TestMigrationCheckV031ThreeSlotsReadOnlyAndRedacted(t *testing.T) {
 	before := migrationTree(t, dir)
 	settings := getWebSettings()
 	var output bytes.Buffer
-	if runMigrationCheck(&output, dir, 3, 8899) != 0 {
+	if runMigrationCheck(&output, paths.StateDir(dir), 3, 8899) != 0 {
 		t.Fatal("synthetic v0.3.1 snapshot rejected")
 	}
 	var report migrationReport
@@ -90,13 +94,13 @@ func TestMigrationCheckV031ThreeSlotsReadOnlyAndRedacted(t *testing.T) {
 func TestMigrationMissingStateOnlyAcceptsInstallationsWithoutSlots(t *testing.T) {
 	for _, bound := range []bool{false, true} {
 		dir := migrationFixture(t)
-		os.Remove(filepath.Join(dir, "state.json"))
+		os.Remove(filepath.Join(paths.StateDir(dir), "state.json"))
 		if !bound {
-			os.WriteFile(filepath.Join(dir, "native.json"), []byte(`{"next_id":1,"inbounds":[]}`), 0600)
-			os.Remove(filepath.Join(dir, "native.previous.json"))
+			os.WriteFile(filepath.Join(paths.StateDir(dir), "native.json"), []byte(`{"next_id":1,"inbounds":[]}`), 0600)
+			os.Remove(filepath.Join(paths.StateDir(dir), "native.previous.json"))
 		}
 		before := migrationTree(t, dir)
-		report := checkMigrationState(dir, 32, 8899)
+		report := checkMigrationState(paths.StateDir(dir), 32, 8899)
 		if report.ConfigValid == bound || !reflect.DeepEqual(before, migrationTree(t, dir)) {
 			t.Fatalf("missing state handling: bound=%v, report=%+v", bound, report)
 		}
@@ -181,7 +185,7 @@ func TestMigrationRejectsInvalidStateBeforePublishingAnySlots(t *testing.T) {
 			if _, err := m.restoreState(); err == nil || len(m.tunnels) != 0 || len(m.deletedSlots) != 0 {
 				t.Fatal("invalid migration partially populated manager")
 			}
-			if checkMigrationState(dir, 3, 8899).ConfigValid || !reflect.DeepEqual(before, migrationTree(t, dir)) {
+			if checkMigrationState(paths.StateDir(dir), 3, 8899).ConfigValid || !reflect.DeepEqual(before, migrationTree(t, dir)) {
 				t.Fatal("checker disagreed with restore or modified bad input")
 			}
 		})
@@ -208,12 +212,12 @@ func TestMigrationCheckPendingTransactionsRemainUntouched(t *testing.T) {
 	for _, name := range []string{nativeJournal, managementJournal, stateJournal} {
 		t.Run(name, func(t *testing.T) {
 			dir := migrationFixture(t)
-			if err := os.WriteFile(filepath.Join(dir, name), []byte("fixture-incomplete-journal"), 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(paths.StateDir(dir), name), []byte("fixture-incomplete-journal"), 0600); err != nil {
 				t.Fatal(err)
 			}
 			before := migrationTree(t, dir)
 			var output bytes.Buffer
-			if runMigrationCheck(&output, dir, 3, 8899) != 1 || !strings.Contains(output.String(), "pending_transaction") || strings.Contains(output.String(), "fixture-incomplete") {
+			if runMigrationCheck(&output, paths.StateDir(dir), 3, 8899) != 1 || !strings.Contains(output.String(), "pending_transaction") || strings.Contains(output.String(), "fixture-incomplete") {
 				t.Fatal("pending journal was ignored or exposed")
 			}
 			if !reflect.DeepEqual(before, migrationTree(t, dir)) {
@@ -247,11 +251,11 @@ func TestMigrationCheckInvalidFilesDoNotLeakValues(t *testing.T) {
 	} {
 		t.Run(tc.file+tc.content, func(t *testing.T) {
 			dir := migrationFixture(t)
-			if err := os.WriteFile(filepath.Join(dir, tc.file), []byte(tc.content), 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(paths.StateDir(dir), tc.file), []byte(tc.content), 0600); err != nil {
 				t.Fatal(err)
 			}
 			var output bytes.Buffer
-			if runMigrationCheck(&output, dir, 3, 8899) != 1 || strings.Contains(output.String(), "fixture-private") {
+			if runMigrationCheck(&output, paths.StateDir(dir), 3, 8899) != 1 || strings.Contains(output.String(), "fixture-private") {
 				t.Fatal("invalid file accepted or private value included")
 			}
 		})
@@ -269,14 +273,14 @@ func TestMigrationStartupRejectsCorruptAccessAndNativeConfig(t *testing.T) {
 	} {
 		t.Run(tc.file+tc.content, func(t *testing.T) {
 			dir := migrationFixture(t)
-			if err := os.WriteFile(filepath.Join(dir, tc.file), []byte(tc.content), 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(paths.StateDir(dir), tc.file), []byte(tc.content), 0600); err != nil {
 				t.Fatal(err)
 			}
 			before := migrationTree(t, dir)
 			var err error
 			switch tc.file {
 			case "settings.json":
-				blob, _ := os.ReadFile(filepath.Join(dir, tc.file))
+				blob, _ := os.ReadFile(filepath.Join(paths.StateDir(dir), tc.file))
 				_, err = decodeWebSettings(blob, 8899)
 			case "password":
 				_, _, err = NewAuth(dir)
@@ -291,7 +295,7 @@ func TestMigrationStartupRejectsCorruptAccessAndNativeConfig(t *testing.T) {
 		})
 	}
 	n, runtime, tunnels := rollbackFixture(t)
-	if err := os.WriteFile(filepath.Join(n.dir, "native.previous.json"), []byte("null"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.StateDir(n.dir), "native.previous.json"), []byte("null"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if n.Rollback(tunnels) == nil || runtime.starts != 0 || runtime.stops != 0 {
@@ -303,7 +307,7 @@ func TestMigrationStartupRejectsCorruptAccessAndNativeConfig(t *testing.T) {
 func TestMigrationCheckRejectsLinkedAndMissingFiles(t *testing.T) {
 	for _, linked := range []bool{false, true} {
 		dir := migrationFixture(t)
-		if err := os.Remove(filepath.Join(dir, "password")); err != nil {
+		if err := os.Remove(paths.Password(dir)); err != nil {
 			t.Fatal(err)
 		}
 		if linked {
@@ -311,12 +315,12 @@ func TestMigrationCheckRejectsLinkedAndMissingFiles(t *testing.T) {
 			if err := os.WriteFile(external, []byte("fixture-external-secret"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.Symlink(external, filepath.Join(dir, "password")); err != nil {
+			if err := os.Symlink(external, paths.Password(dir)); err != nil {
 				t.Fatal(err)
 			}
 		}
 		var output bytes.Buffer
-		if runMigrationCheck(&output, dir, 3, 8899) != 1 || strings.Contains(output.String(), "fixture-external") {
+		if runMigrationCheck(&output, paths.StateDir(dir), 3, 8899) != 1 || strings.Contains(output.String(), "fixture-external") {
 			t.Fatal("missing/linked snapshot file accepted or external content exposed")
 		}
 	}

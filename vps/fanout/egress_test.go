@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fanout/internal/paths"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,6 +68,9 @@ func TestOpenVPNEgressPythonBridgeWithoutCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
+	if err := paths.Ensure(dir); err != nil {
+		t.Fatal(err)
+	}
 	env := filepath.Join(dir, "intelligence.env")
 	if err := os.WriteFile(env, []byte("INTELLIGENCE_URL_TEMPLATE=\n"), 0600); err != nil {
 		t.Fatal(err)
@@ -92,7 +96,7 @@ func TestOpenVPNEgressPythonBridgeWithoutCredentials(t *testing.T) {
 		"expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano),
 	}}
 	blob, _ := json.Marshal(cache)
-	if err := os.WriteFile(filepath.Join(dir, "intelligence", "cache.json"), blob, 0600); err != nil {
+	if err := os.WriteFile(paths.IntelCacheOpenVPN(dir), blob, 0600); err != nil {
 		t.Fatal(err)
 	}
 	image = lookupOpenVPNEgressWith(dir, "73.1.1.1", func(cmd *exec.Cmd) ([]byte, error) { return cmd.Output() })
@@ -159,7 +163,7 @@ func TestSlotHealthPersistsPrivateIndependentEvidenceWithoutCredentials(t *testi
 	if err := m.saveState(); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, "slot_health.json")
+	path := paths.SlotHealth(dir)
 	blob, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fanout/internal/paths"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -57,6 +58,9 @@ func (r *faultNativeRuntime) stop() { r.stops++; r.running = false }
 func rollbackFixture(t *testing.T) (*Native, *faultNativeRuntime, []*Tunnel) {
 	t.Helper()
 	dir := t.TempDir()
+	if err := paths.Ensure(dir); err != nil {
+		t.Fatal(err)
+	}
 	store := &nativeStore{NextID: 2, Inbounds: []*nativeInbound{{ID: 1, Port: 30001, Protocol: "vless", Network: "tcp", Security: "none", Enable: true,
 		Remark: "accepted", BoundTo: "a", Clients: []nativeClient{{Email: "fixture", ID: rollbackFixtureClientID, Enable: true}}}}}
 	if err := store.save(dir); err != nil {
@@ -88,7 +92,7 @@ func TestConfigTransactionFaultBoundariesRestoreAcceptedNative(t *testing.T) {
 	for _, stage := range []string{"before_restart", "after_restart", "after_native_write", "before_commit"} {
 		t.Run(stage, func(t *testing.T) {
 			n, r, tunnels := rollbackFixture(t)
-			old, _ := os.ReadFile(filepath.Join(n.dir, "xray.json"))
+			old, _ := os.ReadFile(paths.Xray(n.dir))
 			n.transactionHook = func(at string) error {
 				if at == stage {
 					return errors.New("injected transaction boundary")
@@ -103,14 +107,14 @@ func TestConfigTransactionFaultBoundariesRestoreAcceptedNative(t *testing.T) {
 			if !r.running || n.unavailable {
 				t.Fatal("old process/config not restored")
 			}
-			blob, _ := os.ReadFile(filepath.Join(n.dir, "xray.json"))
+			blob, _ := os.ReadFile(paths.Xray(n.dir))
 			if string(blob) != string(old) {
 				t.Fatal("failed candidate replaced accepted active file")
 			}
-			if _, err := os.Stat(filepath.Join(n.dir, nativeJournal)); !os.IsNotExist(err) {
+			if _, err := os.Stat(filepath.Join(paths.StateDir(n.dir), nativeJournal)); !os.IsNotExist(err) {
 				t.Fatal("successful rollback left pending journal")
 			}
-			if _, err := os.Stat(filepath.Join(n.dir, "native.previous.json")); !os.IsNotExist(err) {
+			if _, err := os.Stat(paths.NativePrevious(n.dir)); !os.IsNotExist(err) {
 				t.Fatal("failed candidate rotated successful history")
 			}
 		})
@@ -127,7 +131,7 @@ func TestConfigTransactionValidatorRejectionNeverStopsAcceptedProcess(t *testing
 	if r.starts != 0 || r.stops != 0 || !r.running {
 		t.Fatal("validator failure interrupted old process")
 	}
-	files, err := filepath.Glob(filepath.Join(n.dir, ".xray-candidate-*"))
+	files, err := filepath.Glob(filepath.Join(paths.RunDir(n.dir), ".xray-candidate-*"))
 	if err != nil || len(files) != 0 {
 		t.Fatal("candidate file leaked after rejection")
 	}
@@ -218,7 +222,7 @@ func TestConfigTransactionDiskRollbackFailureRetainsRecoverableRecord(t *testing
 	if n.UpdateInbound(1, InboundPatch{Port: &port}, tunnels) == nil || r.running || !n.unavailable {
 		t.Fatal("unrecoverable write did not stop service")
 	}
-	journal := filepath.Join(n.dir, nativeJournal)
+	journal := filepath.Join(paths.StateDir(n.dir), nativeJournal)
 	stat, err := os.Stat(journal)
 	if err != nil || stat.Mode().Perm() != 0600 {
 		t.Fatal("private recovery record absent")
@@ -248,7 +252,7 @@ func TestConfigTransactionRestartRecoversInterruptedCommit(t *testing.T) {
 	if err := changed.save(n.dir); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(n.dir, "xray.json"), []byte(`{"uncommitted":true}`), 0600); err != nil {
+	if err := os.WriteFile(paths.Xray(n.dir), []byte(`{"uncommitted":true}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := recoverConfigTransaction(n.dir, nativeJournal, nativeConfigFiles); err != nil {
@@ -274,10 +278,13 @@ func TestConfigTransactionRejectsUntrustedRecoveryPaths(t *testing.T) {
 	defer os.Remove(outside)
 	tx := configTransaction{Version: 1, Files: []configFileBefore{{Name: "../rollback-test-outside", Exists: true, Data: []byte("bad")}}}
 	blob, _ := json.Marshal(tx)
-	if err := os.WriteFile(filepath.Join(dir, stateJournal), blob, 0600); err != nil {
+	if err := paths.Ensure(dir); err != nil {
 		t.Fatal(err)
 	}
-	if recoverConfigTransaction(dir, stateJournal, []string{"state.json"}) == nil {
+	if err := os.WriteFile(filepath.Join(paths.StateDir(dir), stateJournal), blob, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if recoverConfigTransaction(paths.StateDir(dir), stateJournal, []string{"state.json"}) == nil {
 		t.Fatal("recovery escaped managed filenames")
 	}
 	content, _ := os.ReadFile(outside)
@@ -324,7 +331,7 @@ func TestConfigTransactionManualNativeRollbackPreservesHistoryOnRefresh(t *testi
 	if !r.running {
 		t.Fatal("rollback did not apply accepted config")
 	}
-	previous, err := os.ReadFile(filepath.Join(n.dir, "native.previous.json"))
+	previous, err := os.ReadFile(paths.NativePrevious(n.dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -475,7 +482,7 @@ func TestConfigTransactionInterruptedStateRecoversPreviousStoppedPolicy(t *testi
 	if err := m.saveState(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := beginConfigTransaction(m.workDir, stateJournal, []string{"state.json"}); err != nil {
+	if _, err := beginConfigTransaction(paths.StateDir(m.workDir), stateJournal, []string{"state.json"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(statePath(m.workDir), []byte(`{"tunnels":[]}`), 0600); err != nil {
@@ -511,7 +518,7 @@ func TestConfigTransactionCertCleanupRetainsAcceptedAndHistory(t *testing.T) {
 	before := cloneNativeStore(n.store)
 	before.Inbounds[0].TLS = history
 	blob, _ := json.Marshal(before)
-	if err := os.WriteFile(filepath.Join(n.dir, "native.previous.json"), blob, 0600); err != nil {
+	if err := os.WriteFile(paths.NativePrevious(n.dir), blob, 0600); err != nil {
 		t.Fatal(err)
 	}
 	candidate := cloneNativeStore(n.store)
@@ -696,23 +703,24 @@ func TestConfigTransactionManagementCommitActivatesLastAndPreservesToken(t *test
 	if !activated || getWebSettings().SubToken != "fixture-old-subscription" {
 		t.Fatal("token changed during unrelated config commit")
 	}
-	if _, err := os.Stat(filepath.Join(dir, managementJournal)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(paths.StateDir(dir), managementJournal)); !os.IsNotExist(err) {
 		t.Fatal("committed transaction still pending")
 	}
 }
 
 func TestConfigTransactionManagementCrashRecoveryPreservesOldAccess(t *testing.T) {
 	_, _, dir := managementFixture(t)
-	if _, err := beginConfigTransaction(dir, managementJournal, managementConfigFiles); err != nil {
+	state := paths.StateDir(dir)
+	if _, err := beginConfigTransaction(state, managementJournal, managementConfigFiles); err != nil {
 		t.Fatal(err)
 	}
-	if err := atomicConfigWrite(filepath.Join(dir, "password"), []byte("uncommitted-password")); err != nil {
+	if err := atomicConfigWrite(paths.Password(dir), []byte("uncommitted-password")); err != nil {
 		t.Fatal(err)
 	}
-	if err := atomicConfigWrite(filepath.Join(dir, "basepath"), []byte("uncommitted-entry")); err != nil {
+	if err := atomicConfigWrite(paths.BasePath(dir), []byte("uncommitted-entry")); err != nil {
 		t.Fatal(err)
 	}
-	if err := recoverConfigTransaction(dir, managementJournal, managementConfigFiles); err != nil {
+	if err := recoverConfigTransaction(paths.StateDir(dir), managementJournal, managementConfigFiles); err != nil {
 		t.Fatal(err)
 	}
 	auth, _, err := NewAuth(dir)
@@ -727,7 +735,7 @@ func TestConfigTransactionManagementCrashRecoveryPreservesOldAccess(t *testing.T
 
 func TestConfigTransactionTokenWriteFailureRetainsInMemoryToken(t *testing.T) {
 	_, _, dir := managementFixture(t)
-	if _, err := beginConfigTransaction(dir, managementJournal, managementConfigFiles); err != nil {
+	if _, err := beginConfigTransaction(paths.StateDir(dir), managementJournal, managementConfigFiles); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := resetSubToken(); err == nil {
@@ -736,7 +744,7 @@ func TestConfigTransactionTokenWriteFailureRetainsInMemoryToken(t *testing.T) {
 	if getWebSettings().SubToken != "fixture-old-subscription" {
 		t.Fatal("failed token write replaced in-memory access token")
 	}
-	if err := recoverConfigTransaction(dir, managementJournal, managementConfigFiles); err != nil {
+	if err := recoverConfigTransaction(paths.StateDir(dir), managementJournal, managementConfigFiles); err != nil {
 		t.Fatal(err)
 	}
 }

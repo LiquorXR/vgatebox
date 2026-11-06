@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -107,7 +108,10 @@ func TestConsoleReconcileRetriesBindingFailureWithoutDuplicateAllocation(t *test
 
 func TestConsoleCorruptPlanFailsClosed(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "console.json"), []byte(`{"count":33}`), 0600)
+	if err := paths.Ensure(dir); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(paths.Console(dir), []byte(`{"count":33}`), 0600)
 	if _, err := newConsole(NewManager(32, dir)); err == nil {
 		t.Fatal("corrupt plan accepted")
 	}
@@ -116,9 +120,9 @@ func TestConsoleCorruptPlanFailsClosed(t *testing.T) {
 func TestConsoleMigrationCheckIncludesPlanAndJournalWithoutMutation(t *testing.T) {
 	for _, tc := range []struct{ name, body string }{{"console.json", `{"count":33}`}, {consoleJournal, `{}`}} {
 		dir := migrationFixture(t)
-		os.WriteFile(filepath.Join(dir, tc.name), []byte(tc.body), 0600)
+		os.WriteFile(filepath.Join(paths.StateDir(dir), tc.name), []byte(tc.body), 0600)
 		before := migrationTree(t, dir)
-		report := checkMigrationState(dir, 32, 8899)
+		report := checkMigrationState(paths.StateDir(dir), 32, 8899)
 		if report.ConfigValid || !reflect.DeepEqual(before, migrationTree(t, dir)) {
 			t.Fatal("invalid plan/journal accepted or check mutated files")
 		}
@@ -416,11 +420,11 @@ func TestConsoleShutdownCancelsJobsAndStopsReconciliation(t *testing.T) {
 func TestConsoleDiagnosticCleanupOwnershipIsNarrow(t *testing.T) {
 	root := "/var/lib/vgatebox/fanout"
 	ns := "foabcd240"
-	config := root + "/.connectivity-fixture/" + ns + ".ovpn"
+	config := root + "/run/.connectivity-fixture/" + ns + ".ovpn"
 	if !diagnosticConfigOwned(root, ns, "/usr/sbin/openvpn", config) {
 		t.Fatal("owned diagnostic rejected")
 	}
-	for _, path := range []string{root + "/" + ns + ".ovpn", root + "/.connectivity-fixture/foabcd1.ovpn", "/tmp/.connectivity-fixture/" + ns + ".ovpn", root + "/.connectivity-fixture/../../" + ns + ".ovpn"} {
+	for _, path := range []string{root + "/" + ns + ".ovpn", root + "/run/.connectivity-fixture/foabcd1.ovpn", "/tmp/.connectivity-fixture/" + ns + ".ovpn", root + "/run/.connectivity-fixture/../../" + ns + ".ovpn"} {
 		if diagnosticConfigOwned(root, ns, "/usr/sbin/openvpn", path) {
 			t.Fatal("foreign process could be killed")
 		}

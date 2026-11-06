@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fanout/internal/paths"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -19,7 +20,7 @@ func TestAutomationSettingsMinimumPersistAndRestart(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"refresh_minutes":60`) || !strings.Contains(w.Body.String(), `"check_minutes":30`) {
 		t.Fatal("wrong defaults")
 	}
-	path := filepath.Join(c.m.workDir, "automation.json")
+	path := paths.Automation(c.m.workDir)
 	before, _ := os.ReadFile(path)
 	for _, body := range []string{`{}`, `{"refresh_enabled":true,"refresh_minutes":29,"check_enabled":true,"check_minutes":15}`, `{"refresh_enabled":true,"refresh_minutes":60,"check_enabled":false,"check_minutes":14}`, `{"refresh_enabled":true,"refresh_minutes":60,"check_enabled":false,"check_minutes":0}`, `{"refresh_enabled":null,"refresh_minutes":60,"check_enabled":true,"check_minutes":15}`} {
 		w = httptest.NewRecorder()
@@ -171,7 +172,7 @@ func TestAutomationInterruptedCheckKeepsIntervalAndNoCandidateBackoff(t *testing
 	c := defaultTargetFixture(t)
 	started := time.Now().Add(-10 * time.Minute).UTC()
 	blob, _ := json.Marshal(automationRun{Status: "running", StartedAt: started})
-	if err := os.WriteFile(filepath.Join(c.m.workDir, "check-schedule-state.json"), blob, 0600); err != nil {
+	if err := os.WriteFile(paths.CheckSchedule(c.m.workDir), blob, 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.loadAutomation(); err != nil {
@@ -216,7 +217,7 @@ func TestAutomationWaitsForLocalAndExternalRefresh(t *testing.T) {
 	c.refreshMu.Unlock()
 	startedAt := time.Now().UTC()
 	blob, _ := json.Marshal(automationRun{Status: "running", StartedAt: startedAt})
-	if err := os.WriteFile(filepath.Join(c.m.workDir, "refresh-state.json"), blob, 0600); err != nil {
+	if err := os.WriteFile(paths.RefreshState(c.m.workDir), blob, 0600); err != nil {
 		t.Fatal(err)
 	}
 	c.automationTick(startedAt.Add(time.Minute))
@@ -228,7 +229,7 @@ func TestAutomationWaitsForLocalAndExternalRefresh(t *testing.T) {
 	}
 
 	blob, _ = json.Marshal(automationRun{Status: "running", StartedAt: startedAt.Add(-sourceRefreshWindow - time.Minute)})
-	if err := os.WriteFile(filepath.Join(c.m.workDir, "refresh-state.json"), blob, 0600); err != nil {
+	if err := os.WriteFile(paths.RefreshState(c.m.workDir), blob, 0600); err != nil {
 		t.Fatal(err)
 	}
 	c.automationTick(startedAt)

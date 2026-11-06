@@ -2,8 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"fanout/internal/paths"
 	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -26,7 +26,7 @@ func TestSaveStateKeepsPrevHost(t *testing.T) {
 	if err := m.saveState(); err != nil {
 		t.Fatal(err)
 	}
-	blob, err := os.ReadFile(filepath.Join(dir, "state.json"))
+	blob, err := os.ReadFile(paths.State(dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestPrevHostClearedAfterSettle(t *testing.T) {
 	if err := m.saveState(); err != nil {
 		t.Fatal(err)
 	}
-	blob, _ := os.ReadFile(filepath.Join(dir, "state.json"))
+	blob, _ := os.ReadFile(paths.State(dir))
 	var st persistedState
 	if err := json.Unmarshal(blob, &st); err != nil {
 		t.Fatal(err)
@@ -77,8 +77,11 @@ func TestPrevHostClearedAfterSettle(t *testing.T) {
 // 恢复时要把标记读回来，否则自愈逻辑根本不会触发。
 func TestRestoreStateReadsPrevHost(t *testing.T) {
 	dir := t.TempDir()
+	if err := paths.Ensure(dir); err != nil {
+		t.Fatal(err)
+	}
 	blob := `{"tunnels":[{"slot":1,"port":12345,"hostname":"vpn-new","country_code":"JP","config":"x","socks_user":"u","socks_pass":"p","prev_host":"vpn-old"}]}`
-	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(blob), 0600); err != nil {
+	if err := os.WriteFile(paths.State(dir), []byte(blob), 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -108,8 +111,11 @@ func TestRestoreStateReadsPrevHost(t *testing.T) {
 // 干净关闭也要保留原绑定，恢复时可能因节点离线而换候选。
 func TestRestoreStateArmsBindingEvenAfterCleanShutdown(t *testing.T) {
 	dir := t.TempDir()
+	if err := paths.Ensure(dir); err != nil {
+		t.Fatal(err)
+	}
 	blob := `{"tunnels":[{"slot":1,"port":12345,"hostname":"vpn-a","country_code":"JP","config":"x","socks_user":"u","socks_pass":"p"}]}`
-	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(blob), 0600); err != nil {
+	if err := os.WriteFile(paths.State(dir), []byte(blob), 0600); err != nil {
 		t.Fatal(err)
 	}
 	m := NewManager(20, dir)
@@ -136,8 +142,11 @@ func containsStr(s, sub string) bool {
 
 func TestRestoreStatePrefersCurrentPoolProfile(t *testing.T) {
 	dir := t.TempDir()
+	if err := paths.Ensure(dir); err != nil {
+		t.Fatal(err)
+	}
 	blob := `{"tunnels":[{"slot":2,"port":17929,"hostname":"vpn-a","country_code":"KR","config":"stale-profile","socks_user":"u","socks_pass":"p"}]}`
-	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(blob), 0600); err != nil {
+	if err := os.WriteFile(paths.State(dir), []byte(blob), 0600); err != nil {
 		t.Fatal(err)
 	}
 	m := NewManager(3, dir)

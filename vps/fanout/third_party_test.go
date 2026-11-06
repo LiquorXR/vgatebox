@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fanout/internal/paths"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -293,7 +293,7 @@ func TestThirdPartyPrivateAPIAndNoPasswordEcho(t *testing.T) {
 			t.Fatal("resource response exposes password")
 		}
 	}
-	if _, err := os.Stat(filepath.Join(n.dir, "native.json")); err != nil {
+	if _, err := os.Stat(paths.Native(n.dir)); err != nil {
 		t.Fatal(err)
 	}
 	// The edit form deliberately leaves the password blank. A metadata edit
@@ -352,7 +352,7 @@ func TestThirdPartyCheckDedupeStaleResultAndShutdown(t *testing.T) {
 	if err := c.third.start(n, 2); err == nil {
 		t.Fatal("new work accepted after shutdown")
 	}
-	if b, err := os.ReadFile(filepath.Join(n.dir, "third-party-checks.json")); err == nil {
+	if b, err := os.ReadFile(paths.ThirdPartyChecks(n.dir)); err == nil {
 		var v map[int]ThirdPartyRecord
 		if json.Unmarshal(b, &v) != nil {
 			t.Fatal("invalid result file")

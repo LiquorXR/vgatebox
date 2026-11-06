@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fanout/internal/paths"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -183,7 +184,7 @@ func TestSstpSettingsAndResultsSurviveRestartWithoutRestoringTunnels(t *testing.
 	if err := s.persist(); err != nil {
 		t.Fatal(err)
 	}
-	info, _ := os.Stat(filepath.Join(s.c.m.workDir, "sstp.json"))
+	info, _ := os.Stat(paths.SSTP(s.c.m.workDir))
 	if info.Mode().Perm() != 0600 {
 		t.Fatal("private state permissions")
 	}
@@ -201,9 +202,9 @@ func TestSstpSettingsAndResultsSurviveRestartWithoutRestoringTunnels(t *testing.
 		}
 	}
 	dir := migrationFixture(t)
-	os.WriteFile(filepath.Join(dir, "sstp.json"), []byte(`{"settings":{}}`), 0600)
+	os.WriteFile(paths.SSTP(dir), []byte(`{"settings":{}}`), 0600)
 	before := migrationTree(t, dir)
-	if checkMigrationState(dir, 32, 8899).ConfigValid {
+	if checkMigrationState(paths.StateDir(dir), 32, 8899).ConfigValid {
 		t.Fatal("corruption missed")
 	}
 	after := migrationTree(t, dir)
@@ -287,7 +288,7 @@ func TestSstpPersistenceFailureDoesNotPublishPass(t *testing.T) {
 		return CheckResult{Status: "passed"}
 	}
 	j := &CheckRun{Items: []CheckResult{{}}, finished: make(chan struct{})}
-	os.Mkdir(filepath.Join(s.c.m.workDir, "sstp.json"), 0700)
+	os.Mkdir(paths.SSTP(s.c.m.workDir), 0700)
 	s.runItem(context.Background(), j, 0, CheckResult{}, s.c.m.nodes[0], s.state.Settings)
 	if len(s.state.Results) != 0 || j.Items[0].Code != "result_save_failed" {
 		t.Fatal("unsaved pass published")

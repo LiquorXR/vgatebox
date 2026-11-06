@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fanout/internal/paths"
 	"net"
 	"net/http"
 	"os"
@@ -86,7 +87,7 @@ func liveNative(t *testing.T) (*Native, string) {
 		ib.BoundTo = ""
 	}
 	blob, _ = json.MarshalIndent(store, "", "  ")
-	if err := os.WriteFile(filepath.Join(dir, "native.json"), blob, 0600); err != nil {
+	if err := os.WriteFile(paths.Native(dir), blob, 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Mkdir(filepath.Join(dir, "bin"), 0700); err != nil {
@@ -122,7 +123,7 @@ func liveRuntimeReady(t *testing.T, n *Native) {
 		t.Fatal("accepted Xray listener missing")
 	}
 	c.Close()
-	cfg, err := os.ReadFile(filepath.Join(n.dir, "xray.json"))
+	cfg, err := os.ReadFile(paths.Xray(n.dir))
 	if err != nil || bytes.Contains(cfg, []byte(`"freedom"`)) || !bytes.Contains(cfg, []byte(`"blackhole"`)) {
 		t.Fatal("disposable runtime must remain blackhole")
 	}
@@ -132,7 +133,7 @@ func TestLiveNativeTransactions(t *testing.T) {
 	n, dir := liveNative(t)
 	liveRuntimeReady(t, n)
 	t.Run("static_rejection_preserves_process_and_files", func(t *testing.T) {
-		before := liveFiles(t, dir, nativeConfigFiles)
+		before := liveFiles(t, paths.StateDir(dir), nativeConfigFiles)
 		pid := n.proc.cmd.Process.Pid
 		finish := n.beginChange()
 		defer finish()
@@ -140,13 +141,13 @@ func TestLiveNativeTransactions(t *testing.T) {
 			t.Fatal("REALITY copy required")
 		}
 		n.store.Inbounds[0].Reality.PrivateKey = "invalid-key"
-		if n.apply(nil) == nil || n.proc.cmd.Process.Pid != pid || !reflect.DeepEqual(before, liveFiles(t, dir, nativeConfigFiles)) {
+		if n.apply(nil) == nil || n.proc.cmd.Process.Pid != pid || !reflect.DeepEqual(before, liveFiles(t, paths.StateDir(dir), nativeConfigFiles)) {
 			t.Fatal("real parser rejection changed accepted runtime or files")
 		}
 		liveRuntimeReady(t, n)
 	})
 	t.Run("occupied_port_restores_previous_runtime", func(t *testing.T) {
-		before := liveFiles(t, dir, nativeConfigFiles)
+		before := liveFiles(t, paths.StateDir(dir), nativeConfigFiles)
 		occupied, err := net.Listen("tcp4", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)
@@ -156,7 +157,7 @@ func TestLiveNativeTransactions(t *testing.T) {
 		if n.UpdateInbound(n.store.Inbounds[0].ID, InboundPatch{Port: &port}, nil) == nil {
 			t.Fatal("real Xray startup port conflict accepted")
 		}
-		if !reflect.DeepEqual(before, liveFiles(t, dir, nativeConfigFiles)) {
+		if !reflect.DeepEqual(before, liveFiles(t, paths.StateDir(dir), nativeConfigFiles)) {
 			t.Fatal("startup compensation changed accepted files")
 		}
 		liveRuntimeReady(t, n)
@@ -173,8 +174,8 @@ func TestLiveNativeTransactions(t *testing.T) {
 		liveRuntimeReady(t, n)
 	})
 	t.Run("real_commit_failure_blocks_then_recovers_from_journal", func(t *testing.T) {
-		before := liveFiles(t, dir, nativeConfigFiles)
-		target := filepath.Join(dir, "native.json")
+		before := liveFiles(t, paths.StateDir(dir), nativeConfigFiles)
+		target := paths.Native(dir)
 		if err := unix.Mount(target, target, "", unix.MS_BIND, ""); err != nil {
 			t.Fatal("cannot create isolated filesystem fault:", err)
 		}
@@ -204,7 +205,7 @@ func TestLiveNativeTransactions(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(recovered.Close)
-		if !reflect.DeepEqual(before, liveFiles(t, dir, nativeConfigFiles)) {
+		if !reflect.DeepEqual(before, liveFiles(t, paths.StateDir(dir), nativeConfigFiles)) {
 			t.Fatal("restart did not restore journaled files")
 		}
 		if err := recovered.OnTunnelsChanged(nil); err != nil {
@@ -227,13 +228,13 @@ func TestLiveNativeInterruptedChild(t *testing.T) {
 	if err := n.OnTunnelsChanged(nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := beginConfigTransaction(dir, nativeJournal, nativeConfigFiles); err != nil {
+	if _, err := beginConfigTransaction(paths.StateDir(dir), nativeJournal, nativeConfigFiles); err != nil {
 		t.Fatal(err)
 	}
 	changed := cloneNativeStore(n.store)
 	changed.Inbounds[0].Remark = "interrupted-uncommitted"
 	blob, _ := json.Marshal(changed)
-	if err := atomicConfigWrite(filepath.Join(dir, "native.json"), blob); err != nil {
+	if err := atomicConfigWrite(paths.Native(dir), blob); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "child-ready"), []byte(strconv.Itoa(n.proc.cmd.Process.Pid)), 0600); err != nil {
@@ -246,7 +247,7 @@ func TestLiveNativeInterruptedChild(t *testing.T) {
 
 func TestLiveNativeSIGKILLRecovery(t *testing.T) {
 	n, dir := liveNative(t)
-	before := liveFiles(t, dir, nativeConfigFiles)
+	before := liveFiles(t, paths.StateDir(dir), nativeConfigFiles)
 	n.Close()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestLiveNativeInterruptedChild$", "-test.timeout=1m")
 	cmd.Env = append(os.Environ(), "VGB_LIVE_CHILD=1", "VGB_LIVE_CHILD_DIR="+dir)
@@ -274,7 +275,7 @@ func TestLiveNativeSIGKILLRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(recovered.Close)
-	if !reflect.DeepEqual(before, liveFiles(t, dir, nativeConfigFiles)) {
+	if !reflect.DeepEqual(before, liveFiles(t, paths.StateDir(dir), nativeConfigFiles)) {
 		t.Fatal("SIGKILL recovery did not restore committed files")
 	}
 	if _, err := os.Stat(filepath.Join(dir, nativeJournal)); !os.IsNotExist(err) {
@@ -321,7 +322,7 @@ func TestLiveManagementFailures(t *testing.T) {
 		t.Fatal("occupied management port accepted")
 	}
 	assertOld()
-	target := filepath.Join(dir, "settings.json")
+	target := paths.Settings(dir)
 	if err := unix.Mount(target, target, "", unix.MS_BIND, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +331,7 @@ func TestLiveManagementFailures(t *testing.T) {
 		t.Fatal("real management write failure accepted")
 	}
 	assertOld()
-	if _, err := os.Stat(filepath.Join(dir, managementJournal)); err != nil {
+	if _, err := os.Stat(filepath.Join(paths.StateDir(dir), managementJournal)); err != nil {
 		t.Fatal("management recovery record lost")
 	}
 	if err := unix.Unmount(target, 0); err != nil {

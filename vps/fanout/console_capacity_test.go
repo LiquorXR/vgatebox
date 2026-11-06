@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"net"
 	"net/http/httptest"
@@ -267,7 +268,7 @@ func TestConsoleCheckSettingsValidateAndRetainCorruption(t *testing.T) {
 	if err != nil || !again.checkIPType {
 		t.Fatal("candidate type check setting not persisted", err)
 	}
-	p := filepath.Join(c.m.workDir, "check-settings.json")
+	p := paths.CheckSettings(c.m.workDir)
 	os.WriteFile(p, []byte(`{"parallelism":-5}`), 0600)
 	if _, err := newConsole(NewManager(maximumSlots, c.m.workDir)); err == nil {
 		t.Fatal("corrupt authoritative settings ignored")
@@ -284,6 +285,9 @@ func TestDynamicDiagnosticCleanupPreservesUserNetwork(t *testing.T) {
 	oldTag, oldBase := instTag, instBase
 	t.Cleanup(func() { instTag, instBase = oldTag, oldBase })
 	dir := t.TempDir()
+	if err := paths.Ensure(dir); err != nil {
+		t.Fatal(err)
+	}
 	if err := initInstance(dir); err != nil {
 		t.Fatal(err)
 	}
@@ -303,12 +307,12 @@ func TestDynamicDiagnosticCleanupPreservesUserNetwork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	modernDir, _ := os.MkdirTemp(dir, ".connectivity-")
+	modernDir, _ := os.MkdirTemp(paths.RunDir(dir), ".connectivity-")
 	blob, _ := json.Marshal(diagnosticResource{Slot: diagnostic.Slot, NetworkIndex: index, Node: node})
 	if err := atomicConfigWrite(filepath.Join(modernDir, "diagnostic.json"), blob); err != nil {
 		t.Fatal(err)
 	}
-	legacyDir, _ := os.MkdirTemp(dir, ".connectivity-")
+	legacyDir, _ := os.MkdirTemp(paths.RunDir(dir), ".connectivity-")
 	os.WriteFile(filepath.Join(legacyDir, legacy.nsName()+".ovpn"), []byte(node.Config), 0600)
 	if err := c.cleanupDiagnostics(); err != nil {
 		t.Fatal(err)
@@ -321,7 +325,7 @@ func TestDynamicDiagnosticCleanupPreservesUserNetwork(t *testing.T) {
 	if _, err := os.Stat(filepath.Join("/run/netns", user.nsName())); err != nil {
 		t.Fatal("user namespace was removed", err)
 	}
-	dirs, _ := filepath.Glob(filepath.Join(dir, ".connectivity-*"))
+	dirs, _ := filepath.Glob(filepath.Join(paths.RunDir(dir), ".connectivity-*"))
 	if len(dirs) != 0 {
 		t.Fatal("temporary state retained")
 	}
@@ -329,8 +333,8 @@ func TestDynamicDiagnosticCleanupPreservesUserNetwork(t *testing.T) {
 
 func TestDynamicDiagnosticCorruptManifestRetainsEvidence(t *testing.T) {
 	c := consoleFixture(t)
-	dir, _ := os.MkdirTemp(c.m.workDir, ".connectivity-")
-	p := filepath.Join(dir, "diagnostic.json")
+	dir, _ := os.MkdirTemp(paths.RunDir(c.m.workDir), ".connectivity-")
+	p := paths.Diagnostic(dir)
 	os.WriteFile(p, []byte(`{"slot":1,"network_index":0}`), 0600)
 	if c.cleanupDiagnostics() == nil {
 		t.Fatal("positive user identity accepted for cleanup")

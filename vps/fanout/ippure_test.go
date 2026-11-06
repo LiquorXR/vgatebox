@@ -1,8 +1,8 @@
 package main
 
 import (
+	"fanout/internal/paths"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -99,7 +99,7 @@ func TestIPPureCacheStoresOnlyCompletePassedAnswers(t *testing.T) {
 	if stats.Entries != 0 || stats.Hits != 1 {
 		t.Fatalf("cache stats: %+v", stats)
 	}
-	info, err := os.Stat(filepath.Join(m.workDir, "ippure-cache.json"))
+	info, err := os.Stat(paths.IPPureCache(m.workDir))
 	if err == nil && info.Mode().Perm() != 0600 {
 		t.Fatal("IPPure cache file is not private")
 	}
@@ -158,7 +158,7 @@ func TestIPPureCacheManualClearAndConfiguredTTL(t *testing.T) {
 	if _, ok := m.cachedIPPure(raw.IP, now); ok {
 		t.Fatal("manual clear left an entry")
 	}
-	if _, err := os.Stat(filepath.Join(m.workDir, "ippure-cache.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(paths.IPPureCache(m.workDir)); !os.IsNotExist(err) {
 		t.Fatal("manual clear left the cache file")
 	}
 	stats := m.ippureCacheStats()

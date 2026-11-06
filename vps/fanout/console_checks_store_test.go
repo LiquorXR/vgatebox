@@ -1,8 +1,8 @@
 package main
 
 import (
+	"fanout/internal/paths"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -10,7 +10,7 @@ import (
 func TestChecksPersistenceDebouncesAndForcesFlush(t *testing.T) {
 	c := consoleFixture(t)
 	c.m.nodes = []Node{{HostName: "a", Config: "fixture"}}
-	path := filepath.Join(c.m.workDir, "checks.json")
+	path := paths.Checks(c.m.workDir)
 	c.checksMu.Lock()
 	c.results["a"] = CheckResult{Host: "a", Status: "passed", CheckedAt: time.Now().UTC()}
 	c.markChecksDirtyLocked()

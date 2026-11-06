@@ -2,10 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"fanout/internal/paths"
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -154,7 +154,7 @@ func TestHostDirectSubscriptionScopesAndPersistence(t *testing.T) {
 	if err != nil || st.Inbounds[1].Enable || !st.Inbounds[1].HostDirect {
 		t.Fatal("direct intent lost")
 	}
-	before, _ := os.ReadFile(filepath.Join(n.dir, "native.json"))
+	before, _ := os.ReadFile(paths.Native(n.dir))
 	if err := n.setHostDirect(true, "unused.invalid", ts); err != nil {
 		t.Fatal(err)
 	}

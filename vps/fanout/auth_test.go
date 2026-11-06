@@ -1,10 +1,10 @@
 package main
 
 import (
+	"fanout/internal/paths"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -86,7 +86,10 @@ func TestLoginThrottleUnblocksAfterExpiry(t *testing.T) {
 // 新口令至少 12 位；已落盘的短口令仍可登录，只在下次修改时执行新规。
 func TestSetPasswordEnforcesMinLength(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "password"), []byte("oldshort1\n"), 0600); err != nil {
+	if err := paths.Ensure(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.Password(dir), []byte("oldshort1\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	a, created, err := NewAuth(dir)

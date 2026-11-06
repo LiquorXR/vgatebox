@@ -1,8 +1,8 @@
 package main
 
 import (
+	"fanout/internal/paths"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -103,7 +103,7 @@ func TestNetBaseStableAcrossRestart(t *testing.T) {
 	}
 	first, firstTag := instBase, instTag
 
-	blob, err := os.ReadFile(filepath.Join(dir, "netbase"))
+	blob, err := os.ReadFile(paths.NetBase(dir))
 	if err != nil {
 		t.Fatalf("网段没落盘: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestNetBaseFileCorrupted(t *testing.T) {
 
 	dir := t.TempDir()
 	for _, junk := range []string{"", "  ", "abc", "42", "999", "-1"} {
-		if err := os.WriteFile(filepath.Join(dir, "netbase"), []byte(junk), 0600); err != nil {
+		if err := os.WriteFile(paths.NetBase(dir), []byte(junk), 0600); err != nil {
 			t.Fatal(err)
 		}
 		if err := initInstance(dir); err != nil {

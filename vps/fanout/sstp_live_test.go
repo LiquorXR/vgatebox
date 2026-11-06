@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fanout/internal/paths"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,7 +61,7 @@ func TestLiveSstpIsolationAndRecovery(t *testing.T) {
 	if len(phases) < 2 {
 		t.Fatal("native client was not launched")
 	}
-	leftovers, _ := filepath.Glob(filepath.Join(dir, ".connectivity-*"))
+	leftovers, _ := filepath.Glob(filepath.Join(paths.RunDir(dir), ".connectivity-*"))
 	if len(leftovers) != 0 {
 		t.Fatal("native client resources left")
 	}
@@ -72,7 +73,7 @@ func TestLiveSstpIsolationAndRecovery(t *testing.T) {
 	tun := &Tunnel{Slot: l.slot, networkIndex: &l.networkIndex, Node: n}
 	tun.Node.Config = "proto tcp\nremote " + n.IP + " 4443\n"
 	tun.resetWork()
-	crashDir, _ := os.MkdirTemp(dir, ".connectivity-sstp-")
+	crashDir, _ := os.MkdirTemp(paths.RunDir(dir), ".connectivity-sstp-")
 	manifest, _ := json.Marshal(diagnosticResource{Config: tun.Node.Config, Slot: tun.Slot, NetworkIndex: l.networkIndex, Node: tun.Node})
 	os.WriteFile(filepath.Join(crashDir, "diagnostic.json"), manifest, 0600)
 	launch := filepath.Join(crashDir, tun.nsName()+".launch")
