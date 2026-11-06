@@ -24,6 +24,10 @@ RPM 创建上游所需的 `sstpc` 系统用户与组供连接后降权，已有�
 
 安装器不关闭 SELinux、firewalld 或服务商防火墙。请按实际端口放行管理和接入；管理服务为 root 的独立 systemd 服务。VPN Gate 还需要 TUN、network/mount namespace、veth、iptables NAT/filter 和 IPv4 转发能力。受限 VPS 需要服务商提供这些能力，不能通过安装软件补足。
 
+## 服务沙箱
+
+两个自带单元（`vgatebox-fanout.service`、`vgatebox-pool.service`）带 systemd 沙箱：`NoNewPrivileges`、`PrivateTmp`、`ProtectHome=read-only`、`ProtectSystem=strict`（写集合仅 `/var/lib/vgatebox`、`/etc/vgatebox`、`/etc/netns`、`/run/netns`、`/var/lib/vgatebox-deploy`、`/var/backups/vgatebox`）、`RestrictSUIDSGID`、`LockPersonality`、`RestrictRealtime`、`ProtectHostname`、`ProtectClock`。必须 root 运行（netns/iptables/openvpn），故不用 `User=`，也不收 Capability 与系统调用（子进程全被连带，见单元注释）；`PrivateDevices`（要 `/dev/net/tun`）、`PrivateNetwork`、`ProtectKernelTunables`（要开转发）、`RestrictNamespaces`（要建 netns）故意不收。回滚：用旧版完整包重装一次即覆盖回旧单元（`vgatebox update --version vX.Y.Z` 或安装包 `--mode vps`）。
+
 ## 自动验收边界
 
 矩阵使用 Debian 12/13 和 Ubuntu 22.04/24.04 的原始容器，安装真实依赖、启动 systemd、执行完整包新装与同版本更新，检查随机管理身份、真实订阅 HTTPS 链路、隔离网络规则和完整卸载。
