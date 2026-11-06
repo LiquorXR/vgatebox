@@ -240,6 +240,14 @@ class Installer:
         os.replace(incoming,self.l.lib)
         self.l.work.mkdir(parents=True,exist_ok=True,mode=0o700)
         self.l.work.chmod(0o700)
+        # 沙箱单元在 ReadWritePaths 里挂 /etc/netns：ProtectSystem=strict 下
+        # 启动挂载要求它事先存在，否则 226/NAMESPACE 起不来。
+        # /run/netns 由单元 RuntimeDirectory 自建；/etc/netns 持久共享，
+        # 只建不删（卸载不碰，里面可能有别家命名空间）。
+        netns=self.l.path('etc/netns')
+        if not netns.exists():
+            netns.mkdir(parents=True,mode=0o755)
+            netns.chmod(0o755)
         for src,dest,mode in [('deploy/vgatebox','usr/local/bin/vgatebox',0o755),('bin/vgatebox-manager','usr/local/bin/vgatebox-fanout',0o755),('bin/xray','var/lib/vgatebox/fanout/bin/xray',0o700)]:
             p=self.l.path(dest);p.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(self.stage/src,p);p.chmod(mode)
         config=self.l.path('etc/vgatebox/pool.json');config.parent.mkdir(parents=True,exist_ok=True,mode=0o700)

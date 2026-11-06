@@ -151,6 +151,8 @@ class InstallerTests(unittest.TestCase):
     def test_fresh_install_defaults_and_complete_package(self):
         self.i.install()
         self.assertEqual(json.loads((self.l.work / 'state' / 'settings.json').read_text())['port'], 8899)
+        # 沙箱单元挂载要求 /etc/netns 事先存在，否则 226/NAMESPACE 起不来。
+        self.assertTrue(self.l.path('etc/netns').is_dir())
         self.assertEqual((self.l.lib / 'scripts/toolbox.py').read_text(), 'new')
         self.assertEqual((self.l.work / 'bin/xray').read_text(), 'new')
         self.assertIn('IPPURE_ENABLED=1', self.l.path('etc/vgatebox/intelligence.env').read_text())
