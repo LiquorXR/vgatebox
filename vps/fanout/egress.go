@@ -7,10 +7,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -73,10 +73,10 @@ func lookupOpenVPNEgressContextWith(parent context.Context, workDir, ip string, 
 	ctx, cancel := context.WithTimeout(parent, 40*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "python3",
-		envOr("FANOUT_TOOLBOX_SCRIPT", "/usr/local/lib/vgatebox/scripts/toolbox.py"),
-		"--config", envOr("FANOUT_POOL_CONFIG", "/etc/vgatebox/pool.json"),
-		"--env-file", envOr("FANOUT_INTELLIGENCE_ENV_FILE", "/etc/vgatebox/intelligence.env"),
-		"profile-openvpn", "--ip", ip, "--country", "--cache", filepath.Join(workDir, "intelligence", "cache.json"))
+		paths.Toolbox(),
+		"--config", paths.PoolConfig(),
+		"--env-file", paths.IntelEnv(),
+		"profile-openvpn", "--ip", ip, "--country", "--cache", paths.IntelCacheOpenVPN(workDir))
 	out, err := run(cmd)
 	if err != nil {
 		// Never expose subprocess output, URLs or token-bearing provider errors.
@@ -220,7 +220,7 @@ func (m *Manager) saveSlotHealth() error {
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(m.workDir, "slot_health.json")
+	path := paths.SlotHealth(m.workDir)
 	f, err := os.CreateTemp(m.workDir, ".slot-health-*")
 	if err != nil {
 		return err

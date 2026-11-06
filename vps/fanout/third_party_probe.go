@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
+	"fanout/internal/paths"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -96,7 +96,7 @@ func lookupThirdPartyEgress(ctx context.Context, dir, ip string) EgressProfile {
 	unknown := EgressProfile{IP: ip, Protocol: "socks5", IPType: "unknown"}
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(bounded, "python3", envOr("FANOUT_TOOLBOX_SCRIPT", "/usr/local/lib/vgatebox/scripts/toolbox.py"), "--config", envOr("FANOUT_POOL_CONFIG", "/etc/vgatebox/pool.json"), "--env-file", envOr("FANOUT_INTELLIGENCE_ENV_FILE", "/etc/vgatebox/intelligence.env"), "profile-socks5", "--ip", ip, "--country", "--cache", filepath.Join(dir, "intelligence", "socks5-cache.json"))
+	cmd := exec.CommandContext(bounded, "python3", paths.Toolbox(), "--config", paths.PoolConfig(), "--env-file", paths.IntelEnv(), "profile-socks5", "--ip", ip, "--country", "--cache", paths.IntelCacheSOCKS5(dir))
 	out, err := cmdOutput(cmd)
 	if err != nil {
 		return unknown

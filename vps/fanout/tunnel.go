@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fanout/internal/paths"
 	"fmt"
 	"net"
 	"os"
@@ -262,16 +263,16 @@ func (t *Tunnel) teardownNetns() {
 // startOpenVPN 在 netns 内拉起 openvpn，并等待 tun0 拿到地址。
 func (t *Tunnel) startOpenVPN(dir string) error {
 	ns := t.nsName()
-	cfgPath := filepath.Join(dir, ns+".ovpn")
+	cfgPath := paths.SlotOVPN(dir, ns)
 	if err := os.WriteFile(cfgPath, []byte(t.Node.Config), 0600); err != nil {
 		return fmt.Errorf("写配置失败: %w", err)
 	}
-	authPath := filepath.Join(dir, "auth.txt")
+	authPath := paths.SlotAuth(dir)
 	if err := os.WriteFile(authPath, []byte("vpn\nvpn\n"), 0600); err != nil {
 		return fmt.Errorf("写凭据失败: %w", err)
 	}
 
-	logPath := filepath.Join(dir, ns+".log")
+	logPath := paths.SlotLog(dir, ns)
 	ctx := t.workContext()
 	cmd := exec.CommandContext(ctx, "ip", "netns", "exec", ns, "openvpn",
 		"--config", cfgPath,

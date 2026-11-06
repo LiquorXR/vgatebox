@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fanout/internal/paths"
 	"fmt"
 	"hash/fnv"
 	"os"
@@ -73,7 +74,7 @@ func shortHash(s string) string {
 
 // loadOrPickNetBase 读盘上记的网段；没有就挑一个空闲的存下来。
 func loadOrPickNetBase(workDir, abs string) (int, error) {
-	path := filepath.Join(workDir, "netbase")
+	path := paths.NetBase(workDir)
 	if blob, err := os.ReadFile(path); err == nil {
 		if n, cerr := strconv.Atoi(strings.TrimSpace(string(blob))); cerr == nil &&
 			n >= netBaseMin && n <= netBaseMax {
@@ -148,7 +149,7 @@ func hostUsedNetBases() map[int]bool {
 // 两份共用同一个目录比抢 netns 更糟：state.json 会互相覆盖，
 // 隧道记录直接丢。锁是进程级的，进程没了内核自动释放，不会留下死锁文件。
 func lockWorkDir(dir string) (func(), error) {
-	path := filepath.Join(dir, "lock")
+	path := paths.WorkLock(dir)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("打开锁文件失败: %w", err)

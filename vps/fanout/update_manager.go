@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"net/http"
 	"os"
@@ -60,7 +61,7 @@ type UpdateManager struct {
 }
 
 func newUpdateManager(dir string) *UpdateManager {
-	u := &UpdateManager{workDir: dir, statusPath: "/var/lib/vgatebox-deploy/status.json", latest: fetchLatestRelease}
+	u := &UpdateManager{workDir: dir, statusPath: paths.DeployStatus(), latest: fetchLatestRelease}
 	u.ready = func() error {
 		if panel, err := openPanel(); err != nil || panel.Kind() != "native" {
 			return fmt.Errorf("请使用该实例对应的部署入口更新")

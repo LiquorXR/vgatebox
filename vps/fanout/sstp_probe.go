@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"net"
 	"net/netip"
@@ -180,7 +181,7 @@ func (s *SstpManager) probeEndpoint(ctx context.Context, n Node, e SstpEndpoint,
 		_ = os.RemoveAll(dir)
 	}()
 	manifest, _ := json.Marshal(diagnosticResource{Config: t.Node.Config, Slot: t.Slot, NetworkIndex: lease.networkIndex, Node: t.Node})
-	if os.WriteFile(filepath.Join(dir, "diagnostic.json"), manifest, 0600) != nil || writeSstpFiles(dir, t.nsName()) != nil {
+	if os.WriteFile(paths.Diagnostic(dir), manifest, 0600) != nil || writeSstpFiles(dir, t.nsName()) != nil {
 		return r
 	}
 	progress("setup")
@@ -273,7 +274,7 @@ func lookupSstpEgress(ctx context.Context, dir, ip string) EgressProfile {
 	unknown := EgressProfile{IP: ip, Protocol: "sstp", IPType: "unknown", IntelligenceStatus: "not_configured"}
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(bounded, "python3", envOr("FANOUT_TOOLBOX_SCRIPT", "/usr/local/lib/vgatebox/scripts/toolbox.py"), "--config", envOr("FANOUT_POOL_CONFIG", "/etc/vgatebox/pool.json"), "--env-file", envOr("FANOUT_INTELLIGENCE_ENV_FILE", "/etc/vgatebox/intelligence.env"), "profile-sstp", "--ip", ip, "--country", "--cache", filepath.Join(dir, "intelligence", "sstp-cache.json"))
+	cmd := exec.CommandContext(bounded, "python3", paths.Toolbox(), "--config", paths.PoolConfig(), "--env-file", paths.IntelEnv(), "profile-sstp", "--ip", ip, "--country", "--cache", paths.IntelCacheSSTP(dir))
 	out, err := cmdOutput(cmd)
 	if err != nil {
 		return unknown

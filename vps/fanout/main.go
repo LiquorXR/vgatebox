@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fanout/internal/paths"
 	"flag"
 	"fmt"
 	"io"
@@ -9,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -28,7 +28,7 @@ func main() {
 // 命名避开 tunnel.go 中执行网络配置命令的 run。
 func runFanout(args []string, stdout, stderr io.Writer) int {
 	initStructuredLogging()
-	loadEnvFile(envOr("FANOUT_INTELLIGENCE_ENV_FILE", "/etc/vgatebox/intelligence.env"))
+	loadEnvFile(paths.IntelEnv())
 	fs := flag.NewFlagSet("fanout", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var (
@@ -233,7 +233,7 @@ func runFanout(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if created {
-		log.Printf("已生成访问口令，见 %s", filepath.Join(*workDir, "password"))
+		log.Printf("已生成访问口令，见 %s", paths.Password(*workDir))
 	}
 
 	bpCreated, err := initBasePath(*workDir)
@@ -242,7 +242,7 @@ func runFanout(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if bpCreated {
-		log.Printf("已生成访问路径，见 %s", filepath.Join(*workDir, "basepath"))
+		log.Printf("已生成访问路径，见 %s", paths.BasePath(*workDir))
 	}
 
 	handler := withRequestID(StripBasePath(auth.Wrap(mux)))

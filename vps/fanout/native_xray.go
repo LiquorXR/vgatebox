@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
 	"os"
 	"os/exec"
@@ -269,7 +270,7 @@ func writeXrayConfig(dir string, cfg map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, "xray.json")
+	path := paths.Xray(dir)
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, blob, 0600); err != nil {
 		return "", err
@@ -315,7 +316,7 @@ func (p *xrayProc) verify(path string) error { return verifyXrayConfig(p.bin, pa
 func (p *xrayProc) restart(cfgPath string) error {
 	p.stop()
 
-	logPath := filepath.Join(p.dir, "xray.log")
+	logPath := paths.XrayLog(p.dir)
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return fmt.Errorf("打开 Xray 日志失败: %w", err)
@@ -370,7 +371,7 @@ func (p *xrayProc) stop() {
 	_ = os.Remove(p.pidPath())
 }
 
-func (p *xrayProc) pidPath() string { return filepath.Join(p.dir, "xray.pid") }
+func (p *xrayProc) pidPath() string { return paths.XrayPID(p.dir) }
 
 func (p *xrayProc) writePID(pid int) error {
 	return atomicConfigWrite(p.pidPath(), []byte(strconv.Itoa(pid)))

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fanout/internal/paths"
 	"log/slog"
 	"net/http"
 	"os"
@@ -103,7 +104,7 @@ func handleHealthz(m *Manager) http.HandlerFunc {
 // validatedPoolGeneratedAt 解析共享候选池的生成时间，不存在或非法时返回 false。
 // 与 apiConsole 的读法一致（同文件、同 env），只读不写。
 func validatedPoolGeneratedAt() (time.Time, bool) {
-	blob, err := os.ReadFile(envOr("FANOUT_VALIDATED_POOL_FILE", "/var/lib/vgatebox/pool/node_pool.json"))
+	blob, err := os.ReadFile(paths.PoolFile())
 	if err != nil {
 		return time.Time{}, false
 	}
