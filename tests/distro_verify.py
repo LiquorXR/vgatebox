@@ -15,9 +15,10 @@ from vpngate_toolbox.common import get_bytes
 
 assert Path('/.dockerenv').exists()
 p = Path('/var/lib/vgatebox/fanout')
-settings = json.loads((p/'settings.json').read_text())
-base = '/' + (p/'basepath').read_text().strip().strip('/')
-password = (p/'password').read_text().strip()
+s = p / 'state'
+settings = json.loads((s/'settings.json').read_text())
+base = '/' + (s/'basepath').read_text().strip().strip('/')
+password = (s/'password').read_text().strip()
 assert len(base) > 8 and len(password) >= 12
 c = http.client.HTTPConnection('127.0.0.1', settings['port'], timeout=10)
 c.request('POST', base+'/login', urllib.parse.urlencode({'password': password}),
@@ -71,7 +72,7 @@ if sys.argv[1] in ('disable', 'disabled'):
         assert not data['exits'], 'Explicit zero target was overwritten during update'
         c.request('GET',base+'/api/console',headers={'Cookie':cookie})
         r=c.getresponse();summary=json.loads(r.read());assert summary['target']==0 and summary['target_configured']
-    state = {n: hashlib.sha256((p/n).read_bytes()).hexdigest()
+    state = {n: hashlib.sha256((s/n).read_bytes()).hexdigest()
              for n in ['basepath', 'password', 'settings.json', 'native.json']}
     if sys.argv[1] == 'disable':
         record.write_text(json.dumps(state)); record.chmod(0o600)
@@ -125,7 +126,7 @@ if sys.argv[1] in ('save','compare') and Path('/mihomo/mihomo').is_file():
     c2.close();verify_mihomo(Path('/mihomo/mihomo'),clash_body,expected)
 subprocess.run([str(p/'bin/xray'), 'version'], check=True, stdout=subprocess.DEVNULL)
 names = ['basepath', 'password', 'settings.json', 'native.json', 'automation.json']
-state = {n: hashlib.sha256((p/n).read_bytes()).hexdigest() for n in names}
+state = {n: hashlib.sha256((s/n).read_bytes()).hexdigest() for n in names}
 record = Path('/tmp/vgatebox-ci-state.json')
 if sys.argv[1] == 'save':
     record.write_text(json.dumps(state)); record.chmod(0o600)

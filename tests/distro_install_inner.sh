@@ -81,19 +81,21 @@ python3 - <<'PY'
 import json
 from pathlib import Path
 p=Path('/var/lib/vgatebox/fanout')
-Path('/tmp/vgb-ci-automation-settings').write_bytes((p/'automation.json').read_bytes())
-Path('/tmp/vgb-ci-before-refresh').write_bytes((p/'refresh-state.json').read_bytes())
-settings=json.loads((p/'automation.json').read_text());settings['refresh_enabled']=False
-(p/'automation.json').write_text(json.dumps(settings))
+s=p/'state'
+Path('/tmp/vgb-ci-automation-settings').write_bytes((s/'automation.json').read_bytes())
+Path('/tmp/vgb-ci-before-refresh').write_bytes((s/'refresh-state.json').read_bytes())
+settings=json.loads((s/'automation.json').read_text());settings['refresh_enabled']=False
+(s/'automation.json').write_text(json.dumps(settings))
 PY
 systemctl start vgatebox-pool.service
-cmp /tmp/vgb-ci-before-refresh /var/lib/vgatebox/fanout/refresh-state.json
+cmp /tmp/vgb-ci-before-refresh /var/lib/vgatebox/fanout/state/refresh-state.json
 SSL_CERT_FILE=/tmp/vgb-ci-source/cert.pem vgatebox refresh >/tmp/manual-source.log
 python3 - <<'PY'
 from pathlib import Path
 p=Path('/var/lib/vgatebox/fanout')
-assert (p/'refresh-state.json').read_bytes()!=Path('/tmp/vgb-ci-before-refresh').read_bytes(), 'Manual CLI refresh was gated by disabled automatic schedule'
-(p/'automation.json').write_bytes(Path('/tmp/vgb-ci-automation-settings').read_bytes())
+s=p/'state'
+assert (s/'refresh-state.json').read_bytes()!=Path('/tmp/vgb-ci-before-refresh').read_bytes(), 'Manual CLI refresh was gated by disabled automatic schedule'
+(s/'automation.json').write_bytes(Path('/tmp/vgb-ci-automation-settings').read_bytes())
 PY
 python3 - <<'PY'
 import json

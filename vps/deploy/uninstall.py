@@ -70,11 +70,16 @@ class Instance:
     def __init__(self, owner, relative):
         self.u, self.relative = owner, relative
         self.work = owner.path(relative)
+        # 统一目录后状态与运行态分家；旧版目录保持原位置，二者不可混读。
+        if relative == LEGACY_WORK:
+            self.state, self.run = self.work, self.work
+        else:
+            self.state, self.run = self.work / 'state', self.work / 'run'
         self.tag = '' if relative == LEGACY_WORK else instance_tag('/' + relative)
         self.prefix = 'fo' + self.tag
         self.pattern = re.compile(re.escape(self.prefix) + r'(-?[1-9][0-9]*)$')
         self.base = 99 if relative == LEGACY_WORK else None
-        p = self.work / 'netbase'
+        p = self.state / 'netbase'
         if p.exists():
             if p.is_symlink(): raise Refuse('网段记录为符号链接')
             value = p.read_text().strip()
@@ -83,7 +88,7 @@ class Instance:
             elif relative != LEGACY_WORK:
                 self.base = int(value)
         self.indices = {}
-        state = self.work / 'state.json'
+        state = self.state / 'state.json'
         if state.exists():
             if state.is_symlink(): raise Refuse('出口记录为符号链接')
             data = json.loads(state.read_text())
@@ -94,10 +99,10 @@ class Instance:
                     raise Refuse('出口记录列表格式异常，保留配置')
             for row in data.get('tunnels') or []: self.add(row['slot'], slot_index(row['slot']))
             for slot in data.get('deleted_slots') or []: self.add(slot, slot_index(slot))
-        for p in self.work.glob('*.ovpn'):
+        for p in self.run.glob('*.ovpn'):
             m = self.pattern.fullmatch(p.stem)
             if m and int(m[1]) > 0: self.add(int(m[1]), slot_index(int(m[1])))
-        for d in self.work.glob('.connectivity-*'):
+        for d in self.run.glob('.connectivity-*'):
             if d.is_symlink() or not d.is_dir(): raise Refuse('检测目录归属异常')
             p = d / 'diagnostic.json'
             if p.exists():

@@ -69,21 +69,21 @@ class UninstallTests(unittest.TestCase):
         self.assertFalse(timer.exists());self.assertFalse(service.exists());self.protected()
 
     def test_zero_slots_serialized_as_null_keeps_deleted_resource_cleanup(self):
-        put(self.root/u.WORK/'state.json',json.dumps({'tunnels':None,'deleted_slots':[1]}))
+        put(self.root/u.WORK/'state'/'state.json',json.dumps({'tunnels':None,'deleted_slots':[1]}))
         self.i.execute()
         self.assertFalse(self.r.ns)
         self.assertFalse((self.root/u.WORK).exists())
         self.assertEqual((self.root/'etc/x-ui/x-ui.db').read_text(),'panel-must-survive')
 
     def test_null_lists_allowed_but_malformed_lists_refused_without_deletion(self):
-        put(self.root/u.WORK/'state.json',json.dumps({'tunnels':None,'deleted_slots':None}))
+        put(self.root/u.WORK/'state'/'state.json',json.dumps({'tunnels':None,'deleted_slots':None}))
         self.assertEqual(u.Instance(self.i,u.WORK).indices,{})
         for key in ('tunnels','deleted_slots'):
             for value in ({},False,'',0):
                 with self.subTest(key=key,value=value):
-                    put(self.root/u.WORK/'state.json',json.dumps({key:value}))
+                    put(self.root/u.WORK/'state'/'state.json',json.dumps({key:value}))
                     with self.assertRaises(u.Refuse):self.i.plan()
-                    self.assertTrue((self.root/u.WORK/'state.json').exists())
+                    self.assertTrue((self.root/u.WORK/'state'/'state.json').exists())
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
@@ -95,8 +95,8 @@ class UninstallTests(unittest.TestCase):
                 put(self.root/name/'marker')
             else: put(self.root/name)
         for unit in u.UNITS: put(self.root/'etc/systemd/system'/unit, (ROOT/'vps/deploy'/unit).read_text())
-        put(self.root/u.WORK/'netbase','187')
-        put(self.root/u.WORK/'state.json',json.dumps({'tunnels':[{'slot':1}]}))
+        put(self.root/u.WORK/'state'/'netbase','187')
+        put(self.root/u.WORK/'state'/'state.json',json.dumps({'tunnels':[{'slot':1}]}))
         put(self.root/'var/backups/vgatebox/install-old/project.tar.gz')
         put(self.root/'etc/x-ui/x-ui.db','panel-must-survive')
         put(self.root/'etc/sysctl.conf','net.ipv4.ip_forward=1\n')
@@ -142,7 +142,7 @@ class UninstallTests(unittest.TestCase):
 
     def test_purge_and_legacy_remove_verified_old_files_and_diagnostic_networks(self):
         self.legacy(); ns,_=self.network(u.WORK,-3,16000,187)
-        put(self.root/u.WORK/'.connectivity-test/diagnostic.json','{"slot":-3,"network_index":16000}')
+        put(self.root/u.WORK/'run'/'.connectivity-test/diagnostic.json','{"slot":-3,"network_index":16000}')
         self.i.purge=self.i.legacy=True; self.i.execute()
         for name in (*u.LEGACY_PATHS,'usr/local/bin/f','var/backups/vgatebox'):
             self.assertFalse((self.root/name).exists(),name)
@@ -156,14 +156,14 @@ class UninstallTests(unittest.TestCase):
         self.assertNotIn('synthetic-private',output.getvalue())
         self.assertFalse((self.root/'run/lock').exists())
         self.assertFalse(any(a[0]=='systemctl' and a[1] in ('disable','stop') for a in self.r.events))
-        self.assertTrue((self.root/u.WORK/'state.json').exists())
+        self.assertTrue((self.root/u.WORK/'state'/'state.json').exists())
 
     def test_stop_failure_or_namespace_process_keeps_configuration(self):
         self.r.fail_stop=True
         with self.assertRaises(u.Refuse): self.i.execute()
         self.r.fail_stop=False; self.r.busy='1234'
         with self.assertRaises(u.Refuse): self.i.execute()
-        self.assertTrue((self.root/u.WORK/'state.json').exists()); self.protected()
+        self.assertTrue((self.root/u.WORK/'state'/'state.json').exists()); self.protected()
 
     def test_inactive_units_skip_reset_even_when_reset_would_fail(self):
         self.r.fail_reset = True
@@ -181,7 +181,7 @@ class UninstallTests(unittest.TestCase):
     def test_real_reset_failure_keeps_state_and_purge_backup(self):
         self.r.states[u.UNITS[0]] = 'failed'; self.r.fail_reset = True; self.i.purge = True
         with self.assertRaisesRegex(u.Refuse, u.UNITS[0]): self.i.execute()
-        self.assertTrue((self.root/u.WORK/'state.json').exists())
+        self.assertTrue((self.root/u.WORK/'state'/'state.json').exists())
         self.assertTrue((self.root/'var/backups/vgatebox/install-old/project.tar.gz').exists())
         self.protected()
 
@@ -228,7 +228,7 @@ class UninstallTests(unittest.TestCase):
             with self.assertRaises(u.Refuse): self.i.execute()
         self.r.updates='vgatebox-update-12345678.service loaded active running updating'
         with self.assertRaises(u.Refuse): self.i.execute()
-        self.assertTrue((self.root/u.WORK/'state.json').exists())
+        self.assertTrue((self.root/u.WORK/'state'/'state.json').exists())
 
     def test_instance_lock_unrelated_legacy_custom_service_and_fragment_are_protected(self):
         with self.i.lock(u.WORK+'/lock'):
@@ -250,9 +250,9 @@ class UninstallTests(unittest.TestCase):
         p.unlink(); p.mkdir()
         with mock.patch.object(u.os.path,'ismount',side_effect=lambda p:Path(p)==self.root/u.WORK):
             with self.assertRaises(u.Refuse): self.i.plan()
-        (self.root/u.WORK/'netbase').unlink()
+        (self.root/u.WORK/'state'/'netbase').unlink()
         with self.assertRaises(u.Refuse): self.i.plan()
-        put(self.root/u.WORK/'netbase','187')
+        put(self.root/u.WORK/'state'/'netbase','187')
         self.r.links['foreign']={'ifname':'foreign','addr_info':[{'family':'inet','local':'10.187.2.1'}]}
         with self.assertRaises(u.Refuse): self.i.plan()
         self.protected()
@@ -302,6 +302,6 @@ class UninstallTests(unittest.TestCase):
                 self.assertEqual(u.main([]),1)
             with mock.patch.object(u.sys.stdin,'isatty',return_value=True), mock.patch('builtins.input',return_value='no'):
                 self.assertEqual(u.main([]),0)
-            self.assertTrue((self.root/u.WORK/'state.json').exists())
+            self.assertTrue((self.root/u.WORK/'state'/'state.json').exists())
             self.assertEqual(u.main(['--yes']),0)
             self.assertFalse((self.root/u.WORK).exists())

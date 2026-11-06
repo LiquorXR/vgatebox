@@ -55,6 +55,7 @@ class Layout:
         self.job = self.state / 'status.json'
         self.journal = self.state / 'transaction.json'
         self.work = self.path('var/lib/vgatebox/fanout')
+        self.work_state = self.work / 'state'
         self.lib = self.path('usr/local/lib/vgatebox')
     def path(self, name): return self.root / name
 
@@ -249,7 +250,7 @@ class Installer:
             intel.chmod(0o600)
         env=self.l.path('etc/default/vgatebox-fanout');env.parent.mkdir(parents=True,exist_ok=True)
         if not env.exists():env.write_text('FANOUT_VALIDATED_POOL_FILE=/var/lib/vgatebox/pool/node_pool.json\nFANOUT_SLOT_PORT_BASE=17928\n');env.chmod(0o600)
-        settings=self.l.work/'settings.json'
+        settings=self.l.work_state/'settings.json'
         if not settings.exists():atomic_json(settings,{'port':8899,'listen_addr':'0.0.0.0','residential_only':False})
         if pool is not None:
             output=self.l.path('var/lib/vgatebox/pool');output.mkdir(parents=True,exist_ok=True,mode=0o700)
@@ -267,12 +268,12 @@ class Installer:
             conn=None
             try:
                 if not self.r.active(UNITS[0]):raise ValueError('service_not_active')
-                settings=json.loads((self.l.work/'settings.json').read_text())
+                settings=json.loads((self.l.work_state/'settings.json').read_text())
                 host=settings.get('listen_addr') or '127.0.0.1'
                 if host in ('0.0.0.0','all','::'):host='127.0.0.1'
-                base='/'+(self.l.work/'basepath').read_text().strip().strip('/')
+                base='/'+(self.l.work_state/'basepath').read_text().strip().strip('/')
                 conn=http.client.HTTPConnection(host,int(settings['port']),timeout=3)
-                body=urllib.parse.urlencode({'password':(self.l.work/'password').read_text().strip()})
+                body=urllib.parse.urlencode({'password':(self.l.work_state/'password').read_text().strip()})
                 conn.request('POST',base+'/login',body,{'Content-Type':'application/x-www-form-urlencoded'})
                 response=conn.getresponse();response.read();cookie=response.getheader('Set-Cookie','').split(';')[0]
                 if not cookie:raise ValueError('login_not_ready')
@@ -290,13 +291,13 @@ class Installer:
     def enable_initial_direct(self):
         # Called only for a new work directory, after authenticated health has
         # succeeded. Never reinterpret existing disabled/unbound entries.
-        settings=json.loads((self.l.work/'settings.json').read_text())
+        settings=json.loads((self.l.work_state/'settings.json').read_text())
         host=settings.get('listen_addr') or '127.0.0.1'
         if host in ('0.0.0.0','all','::'):host='127.0.0.1'
-        base='/'+(self.l.work/'basepath').read_text().strip().strip('/')
+        base='/'+(self.l.work_state/'basepath').read_text().strip().strip('/')
         conn=http.client.HTTPConnection(host,int(settings['port']),timeout=15)
         try:
-            body=urllib.parse.urlencode({'password':(self.l.work/'password').read_text().strip()})
+            body=urllib.parse.urlencode({'password':(self.l.work_state/'password').read_text().strip()})
             conn.request('POST',base+'/login',body,{'Content-Type':'application/x-www-form-urlencoded'})
             response=conn.getresponse();response.read();cookie=response.getheader('Set-Cookie','').split(';')[0]
             if not cookie:raise RuntimeError('initial_direct_login_failed')

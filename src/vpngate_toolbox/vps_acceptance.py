@@ -449,7 +449,7 @@ def fault_test(manager, xray, slot, recovery_timeout):
 
 def compare_state(before, after):
     def facts(directory):
-        directory = Path(directory)
+        directory = Path(directory) / "state"
         settings = json.loads((directory / "settings.json").read_text())
         state = json.loads((directory / "state.json").read_text())
         native = json.loads((directory / "native.json").read_text())
@@ -465,8 +465,8 @@ def compare_state(before, after):
                 ({k: v for k, v in r.items() if k not in {"bound_to", "bound_slot", "name_mode"}} for r in native["inbounds"]), key=lambda r: r["id"])}
     a, b = facts(before), facts(after)
     checks = {k: a[k] == b[k] for k in a}
-    before_policies = {r["slot"]: r.get("policy") for r in json.loads((Path(before)/"state.json").read_text())["tunnels"]}
-    after_policies = {r["slot"]: r.get("policy") for r in json.loads((Path(after)/"state.json").read_text())["tunnels"]}
+    before_policies = {r["slot"]: r.get("policy") for r in json.loads((Path(before)/"state"/"state.json").read_text())["tunnels"]}
+    after_policies = {r["slot"]: r.get("policy") for r in json.loads((Path(after)/"state"/"state.json").read_text())["tunnels"]}
     checks["explicit_slot_policies_preserved"] = all(p is None or after_policies.get(slot) == p for slot, p in before_policies.items())
     return {"status": "passed" if all(checks.values()) else "failed", "verified_at": utc_now(), "checks": checks}
 

@@ -138,7 +138,7 @@ class InstallerTests(unittest.TestCase):
             'token': 'synthetic-token', 'state.json': '{"synthetic":"credentials"}',
             'native.json': '{"synthetic":"clients"}', 'sstp_results.json': '{"synthetic":"results"}',
         }
-        for n, value in private.items(): put(self.l.work / n, value)
+        for n, value in private.items(): put(self.l.work / 'state' / n, value)
         put(self.l.path('etc/vgatebox/pool.json'), '{"synthetic":"custom"}')
         put(self.l.path('etc/vgatebox/intelligence.env'), 'SYNTHETIC=private')
         put(self.l.path('var/lib/vgatebox/pool/node_pool.json'), '{"nodes":[{"node_id":"old"}]}')
@@ -150,7 +150,7 @@ class InstallerTests(unittest.TestCase):
 
     def test_fresh_install_defaults_and_complete_package(self):
         self.i.install()
-        self.assertEqual(json.loads((self.l.work / 'settings.json').read_text())['port'], 8899)
+        self.assertEqual(json.loads((self.l.work / 'state' / 'settings.json').read_text())['port'], 8899)
         self.assertEqual((self.l.lib / 'scripts/toolbox.py').read_text(), 'new')
         self.assertEqual((self.l.work / 'bin/xray').read_text(), 'new')
         self.assertIn('IPPURE_ENABLED=1', self.l.path('etc/vgatebox/intelligence.env').read_text())
@@ -162,7 +162,7 @@ class InstallerTests(unittest.TestCase):
     def test_upgrade_preserves_all_private_settings_and_consistent_backup(self):
         private = self.existing()
         self.i.install()
-        for n, value in private.items(): self.assertEqual((self.l.work / n).read_text(), value)
+        for n, value in private.items(): self.assertEqual((self.l.work / 'state' / n).read_text(), value)
         self.assertEqual(self.l.path('etc/vgatebox/intelligence.env').read_text(), 'SYNTHETIC=private')
         backup = next(self.l.path('var/backups/vgatebox').rglob('project.tar.gz'))
         self.assertEqual(backup.stat().st_mode & 0o777, 0o600)
@@ -213,7 +213,7 @@ class InstallerTests(unittest.TestCase):
         private = self.existing()
         self.l.path('var/lib/vgatebox/pool/node_pool.json').unlink()
         self.i.install()
-        for n, value in private.items(): self.assertEqual((self.l.work / n).read_text(), value)
+        for n, value in private.items(): self.assertEqual((self.l.work / 'state' / n).read_text(), value)
         self.assertFalse(self.l.path('var/lib/vgatebox/pool/node_pool.json').exists())
         self.assertEqual(self.job()['status'], 'completed')
 
@@ -260,7 +260,7 @@ class InstallerTests(unittest.TestCase):
         with self.assertRaises(RuntimeError): self.i.install()
         self.assertFalse((self.l.lib / 'VERSION').exists())
         self.assertEqual((self.l.lib / 'marker').read_text(), 'old-usr/local/lib/vgatebox')
-        for n, value in private.items(): self.assertEqual((self.l.work / n).read_text(), value)
+        for n, value in private.items(): self.assertEqual((self.l.work / 'state' / n).read_text(), value)
         self.assertEqual(self.r.states, before)
         self.assertTrue(self.job()['rolled_back'])
         self.assertFalse(self.l.journal.exists())
