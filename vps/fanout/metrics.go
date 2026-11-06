@@ -48,6 +48,10 @@ func noteHTTPRequest(path string, status int) {
 }
 
 func writeMetricLine(sb *strings.Builder, name, help, typ, labels string, value int64) {
+	if labels == "" {
+		fmt.Fprintf(sb, "# HELP %s %s\n# TYPE %s %s\n%s %d\n", name, help, name, typ, name, value)
+		return
+	}
 	fmt.Fprintf(sb, "# HELP %s %s\n# TYPE %s %s\n%s{%s} %d\n", name, help, name, typ, name, labels, value)
 }
 
