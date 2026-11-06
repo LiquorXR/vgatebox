@@ -195,7 +195,7 @@ func (s *SstpManager) probeEndpoint(ctx context.Context, n Node, e SstpEndpoint,
 	command := []string{"netns", "exec", t.nsName(), "unshare", "--mount", "--propagation", "private", "--", "/bin/sh", filepath.Join(dir, t.nsName()+".launch"), dir, sstpc, e.Host, t.nsName(), net.JoinHostPort(n.IP, strconv.Itoa(e.Port))}
 	cmd = exec.Command("ip", command...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
-	logFile, err := os.OpenFile(filepath.Join(dir, "sstp.log"), os.O_CREATE|os.O_WRONLY, 0600)
+	logFile, err := os.OpenFile(paths.SSTPLog(dir), os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return r
 	}

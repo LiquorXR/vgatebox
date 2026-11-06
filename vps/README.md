@@ -83,7 +83,7 @@ INTELLIGENCE_TOKEN=
 
 自定义 URL 必须是 HTTPS、包含 `{ip}`，响应格式与现有 adapter 一致，例如包含 `ip`、`country_code`、`asn.asn/name/type` 和 `privacy.is_hosting/is_residential`。可选 token 通过 `X-API-Key` 请求头传递，使用正常 HTTPS 证书验证；配置和 token 不进入订阅或管理页。配置变更在下一次建连时读取，不自动中断当前 Slot，也不需要 Cloudflare 或 Actions 凭据。
 
-缓存位于管理工作目录 `intelligence/cache.json`，由 provider/IP 共同索引，多个 Slot 使用文件锁串行更新；默认有效期为 `pool.json` 的 `intelligence_ttl_seconds`（24 小时）。缓存保留原查询时间，复用时重新执行统一分类规则，不以缓存命中延长有效期。画像进程最多等待 40 秒（含缓存锁等待），超时显示画像不可用。当前版本不会为持续运行的 Slot 自动定时重查画像；到期在 API/UI 中显示 stale/unknown，下一次建连重新查询。IPPure 默认路径另有独立缓存（SQLite 可用时存共享库的 `ippure` 记录集，无库时回退 `ippure-cache.json` 文件，0600，默认 24 小时，可在检测设置中调整或手动清除），按出口 IP 命中，只保存字段完整且验证通过的结果；查询失败、IP 不一致或字段不足不会写入缓存，重连同一出口 IP 直接复用。
+缓存位于管理工作目录 `cache/intelligence/cache.json`，由 provider/IP 共同索引，多个 Slot 使用文件锁串行更新；默认有效期为 `pool.json` 的 `intelligence_ttl_seconds`（24 小时）。缓存保留原查询时间，复用时重新执行统一分类规则，不以缓存命中延长有效期。画像进程最多等待 40 秒（含缓存锁等待），超时显示画像不可用。当前版本不会为持续运行的 Slot 自动定时重查画像；到期在 API/UI 中显示 stale/unknown，下一次建连重新查询。IPPure 默认路径另有独立缓存（SQLite 可用时存共享库的 `ippure` 记录集，无库时回退 `ippure-cache.json` 文件，0600，默认 24 小时，可在检测设置中调整或手动清除），按出口 IP 命中，只保存字段完整且验证通过的结果；查询失败、IP 不一致或字段不足不会写入缓存，重连同一出口 IP 直接复用。
 
 `slot_health` 保存本机运行快照：Slot、节点标识、配置 SHA256、固定端口、独立 expected/actual、验证时间及画像证据。SQLite 可用时存共享库的 `slot_health` 文档，无库时回退旧 `slot_health.json` 文件（0600）；内容含原始画像响应，但不含 SOCKS 凭据；管理 API 不返回原始响应。该快照不是历史审计日志，状态保存时会替换；重启恢复不将磁盘画像视为 live/healthy，必须重新验活。
 

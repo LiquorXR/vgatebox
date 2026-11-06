@@ -116,6 +116,9 @@ func SlotOVPN(dir, ns string) string { return filepath.Join(dir, ns+".ovpn") }
 func SlotAuth(dir string) string     { return filepath.Join(dir, "auth.txt") }
 func SlotLog(dir, ns string) string  { return filepath.Join(dir, ns+".log") }
 
+// SSTPLog 是 sstp 探测任务目录里的固定日志名（随任务目录走，一般在 run/ 下）。
+func SSTPLog(dir string) string { return filepath.Join(dir, "sstp.log") }
+
 // PanelMode 是旧版外部后端选择文件的哨兵，只读用于拒绝危险升级，
 // 永远留在 workDir 根（老安装的值就在那里；搬走会漏检“新旧面板并存”）。
 func PanelMode(root string) string { return filepath.Join(root, "panel_mode") }

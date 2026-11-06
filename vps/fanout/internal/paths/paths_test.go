@@ -53,6 +53,9 @@ func TestAccessorsResolveUnderSubdirs(t *testing.T) {
 	if got := SlotLog(run, "fo1"); got != filepath.Join(run, "fo1.log") {
 		t.Errorf("slot log = %q", got)
 	}
+	if got := SSTPLog(run); got != filepath.Join(run, "sstp.log") {
+		t.Errorf("sstp log = %q", got)
+	}
 }
 
 func TestEnsureCreatesDirs(t *testing.T) {
