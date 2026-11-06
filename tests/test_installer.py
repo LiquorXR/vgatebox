@@ -161,6 +161,9 @@ class InstallerTests(unittest.TestCase):
 
     def test_upgrade_preserves_all_private_settings_and_consistent_backup(self):
         private = self.existing()
+        # SQLite  sidecars 必须随整树备份，否则恢复的库不完整。
+        for name in ('vgatebox.db', 'vgatebox.db-wal', 'vgatebox.db-shm'):
+            put(self.l.work / 'state' / name, 'synthetic-' + name)
         self.i.install()
         for n, value in private.items(): self.assertEqual((self.l.work / 'state' / n).read_text(), value)
         self.assertEqual(self.l.path('etc/vgatebox/intelligence.env').read_text(), 'SYNTHETIC=private')
@@ -169,6 +172,8 @@ class InstallerTests(unittest.TestCase):
         with tarfile.open(backup) as t:
             self.assertEqual(t.extractfile('var/lib/vgatebox/fanout/flushed').read(), b'consistent-after-stop')
             for name in d.OWNED: self.assertIn(name, t.getnames())
+            for name in ('vgatebox.db', 'vgatebox.db-wal', 'vgatebox.db-shm'):
+                self.assertIn('var/lib/vgatebox/fanout/state/' + name, t.getnames())
         self.assertEqual(self.r.states[d.UNITS[0]], {'active': True, 'enabled': True})
 
     def test_external_panel_mode_aborts_upgrade_before_stopping_services(self):
