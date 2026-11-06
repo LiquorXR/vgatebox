@@ -131,6 +131,14 @@
       "auth": "session"
     },
     {
+      "path": "/api/console/version",
+      "methods": [
+        "GET"
+      ],
+      "handler": "Console.apiConsoleVersion",
+      "auth": "session"
+    },
+    {
       "path": "/api/cred",
       "methods": [
         "POST"

@@ -213,6 +213,7 @@ func (c *Console) apiAutomation(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 409, map[string]string{"error": "周期设置保存失败"})
 			return
 		}
+		c.bumpConsoleVersion()
 		c.applyTTLSettings(time.Now().UTC())
 	} else if r.Method != http.MethodGet {
 		w.WriteHeader(405)
@@ -275,6 +276,7 @@ func (c *Console) automationCheckFinished(j *CheckRun) {
 	if atomicConfigWrite(filepath.Join(c.m.workDir, "check-schedule-state.json"), blob) != nil {
 		a.err = "周期状态无法保存，自动任务暂停"
 	}
+	c.bumpConsoleVersion()
 }
 
 func (c *Console) automationTick(now time.Time) {

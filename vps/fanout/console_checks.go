@@ -372,6 +372,7 @@ func (c *Console) startCheck(in CheckRequest) (*CheckRun, error) {
 			case j.wake <- struct{}{}:
 			default:
 			}
+			c.bumpConsoleVersion()
 			return j, nil
 		}
 		j.mu.Unlock()
@@ -392,6 +393,7 @@ func (c *Console) startCheck(in CheckRequest) (*CheckRun, error) {
 	}
 	job := &CheckRun{ID: hex.EncodeToString(buf), Status: "running", Kind: "checks", Items: items, Total: len(items), Parallelism: in.Parallelism, IPTypeCheck: checkIPType, cancel: cancel, ctx: ctx, finished: make(chan struct{}), wake: make(chan struct{}, 1), nodes: byHost}
 	c.check = job
+	c.bumpConsoleVersion()
 	go c.runChecks(ctx, job)
 	return job, nil
 }

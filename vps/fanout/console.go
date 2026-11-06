@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	qrcode "github.com/skip2/go-qrcode"
@@ -59,6 +60,12 @@ type Console struct {
 	ttlMu                 sync.RWMutex
 	checksDirty           bool
 	checksFlushInterval   time.Duration
+	// version 是控制台可见状态的单调版本号，供 /api/console/version 轮询：
+	// 前端先轮询小版本号，变化时才拉全量 /api/console。
+	// 所有 apiConsole 可见的变更点都必须 bump（savePlan、planError 变化、
+	// saveState/RefreshNodes 经 m.console、检测启停与结果、刷新启停、自动化与检测设置）。
+	// 只增不减，atomic 保证并发安全，调用方无需持锁。
+	version atomic.Uint64
 	// Test seams exercise intent/persistence without creating real namespaces.
 	start  func(Node, SlotPolicy) (*Tunnel, error)
 	remove func(int) error
@@ -154,6 +161,12 @@ func validateExitPlan(p *ExitPlan, limit int) error {
 	return nil
 }
 
+// bumpConsoleVersion 递增控制台可见状态版本号。atomic 实现，调用方无需持锁。
+func (c *Console) bumpConsoleVersion() { c.version.Add(1) }
+
+// consoleVersion 返回当前版本号，供 /api/console/version 与 apiConsole 应答。
+func (c *Console) consoleVersion() uint64 { return c.version.Load() }
+
 func (c *Console) savePlan(p ExitPlan) error {
 	blob, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
@@ -172,6 +185,7 @@ func (c *Console) savePlan(p ExitPlan) error {
 		return err
 	}
 	c.plan = &p
+	c.bumpConsoleVersion()
 	return nil
 }
 
@@ -195,6 +209,14 @@ func (c *Console) applyTarget(p ExitPlan) error {
 }
 
 func (c *Console) reconcile() error {
+	// planError 是 apiConsole 可见字段：变化才递增版本号，避免 15s 空转对账
+	// 触发前端全量拉取。调用方均持有 targetMu，读写安全。
+	prevPlanError := c.planError
+	defer func() {
+		if c.planError != prevPlanError {
+			c.bumpConsoleVersion()
+		}
+	}()
 	if c.ctx.Err() != nil {
 		return c.ctx.Err()
 	}
@@ -335,6 +357,7 @@ func (c *Console) routes(mux *http.ServeMux) {
 	c.sstp.routes(mux)
 	c.third.routes(mux)
 	mux.HandleFunc("/api/console", c.apiConsole)
+	mux.HandleFunc("/api/console/version", c.apiConsoleVersion)
 	mux.HandleFunc("/api/console/target", c.apiApplyTarget)
 	mux.HandleFunc("/api/console/direct", c.apiHostDirect)
 	mux.HandleFunc("/api/console/socks", c.apiPublicSocks)
@@ -482,6 +505,16 @@ func (c *Console) cleanupArchivedInbounds(slot int) error {
 	return nil
 }
 
+// apiConsoleVersion 返回控制台可见状态的单调版本号（小响应，供高频轮询）。
+// 前端先轮询它，变化时才拉全量 /api/console；只接受 GET。
+func (c *Console) apiConsoleVersion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(405)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"version": c.consoleVersion()})
+}
+
 func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(405)
@@ -580,7 +613,7 @@ func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 200, map[string]any{"version": version, "capacity": c.m.maxSlots, "target": target, "target_configured": plan != nil, "suggested_target": suggestedTarget, "allocated": len(view.Exits), "ready": ready, "stopped": stopped, "waiting": max(0, target-ready-stopped), "candidates": len(nodes), "pool_read_at": fetched, "pool_generated_at": generated, "pool_source": publicPoolSource(pool.Source), "automation": c.automationView(time.Now().UTC()), "default_server_name": serverName, "plan": plan, "plan_error": planErr, "refresh": refresh, "check": checkView, "check_settings": c.checkSettingsView(time.Now().UTC()), "results": results, "regions": c.m.Regions(), "memory": memory})
+	writeJSON(w, 200, map[string]any{"version": version, "console_version": c.consoleVersion(), "capacity": c.m.maxSlots, "target": target, "target_configured": plan != nil, "suggested_target": suggestedTarget, "allocated": len(view.Exits), "ready": ready, "stopped": stopped, "waiting": max(0, target-ready-stopped), "candidates": len(nodes), "pool_read_at": fetched, "pool_generated_at": generated, "pool_source": publicPoolSource(pool.Source), "automation": c.automationView(time.Now().UTC()), "default_server_name": serverName, "plan": plan, "plan_error": planErr, "refresh": refresh, "check": checkView, "check_settings": c.checkSettingsView(time.Now().UTC()), "results": results, "regions": c.m.Regions(), "memory": memory})
 }
 
 func (c *Console) apiPoolRefresh(w http.ResponseWriter, r *http.Request) {
@@ -630,6 +663,7 @@ func (c *Console) startPoolRefresh(scheduled bool) (<-chan struct{}, error) {
 	finished := make(chan struct{})
 	c.refreshDone = finished
 	c.refreshMu.Unlock()
+	c.bumpConsoleVersion()
 	log.Print("[pool-refresh] started")
 	go func() {
 		defer close(finished)
@@ -668,6 +702,7 @@ func (c *Console) startPoolRefresh(scheduled bool) (<-chan struct{}, error) {
 			c.refreshCause = cause
 		}
 		log.Printf("[pool-refresh] status=%s cause=%s candidates=%d", c.refreshState, c.refreshCause, len(nodes))
+		c.bumpConsoleVersion()
 	}()
 	return finished, nil
 }

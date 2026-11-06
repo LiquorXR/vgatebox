@@ -97,6 +97,12 @@ func (m *Manager) saveState() error {
 	if err := tx.commit(); err != nil {
 		return fail(err)
 	}
+	// 落盘成功意味着 Slot 意图/状态可能变化（启停/换节点/策略/凭据/删除），
+	// apiConsole 的 allocated/ready/stopped/waiting 由此而来，递增版本号。
+	// 测试中 Manager 常无 Console，nil 保护。
+	if m.console != nil {
+		m.console.bumpConsoleVersion()
+	}
 	if err := m.saveSlotHealth(); err != nil {
 		log.Printf("保存出口观察快照失败: %v", err)
 	}

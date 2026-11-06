@@ -21,8 +21,8 @@ type apiRoute struct {
 }
 
 // allAPIRoutes 返回全部后端路由契约，按 path 排序。
-// main.go 的 37 条 + Console 的 13 条 + SstpManager 的 5 条 +
-// ThirdPartyManager 的 5 条 = 60 条。
+// main.go 的 37 条 + Console 的 14 条 + SstpManager 的 5 条 +
+// ThirdPartyManager 的 5 条 = 61 条。
 func allAPIRoutes() []apiRoute {
 	return []apiRoute{
 		{Path: "/", Methods: []string{"GET", "HEAD"}, Handler: "handleIndex", Auth: "mixed"},
@@ -40,6 +40,7 @@ func allAPIRoutes() []apiRoute {
 		{Path: "/api/console/socks", Methods: []string{"GET", "POST"}, Handler: "Console.apiPublicSocks", Auth: "session"},
 		{Path: "/api/console/source-settings", Methods: []string{"GET", "POST"}, Handler: "Console.apiSourceSettings", Auth: "session"},
 		{Path: "/api/console/target", Methods: []string{"POST"}, Handler: "Console.apiApplyTarget", Auth: "session"},
+		{Path: "/api/console/version", Methods: []string{"GET"}, Handler: "Console.apiConsoleVersion", Auth: "session"},
 		{Path: "/api/cred", Methods: []string{"POST"}, Handler: "apiCred", Auth: "session"},
 		{Path: "/api/exits", Methods: []string{"GET"}, Handler: "apiExits", Auth: "session"},
 		{Path: "/api/export/xray", Methods: []string{"GET"}, Handler: "apiExportXray", Auth: "session"},

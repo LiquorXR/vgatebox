@@ -232,6 +232,7 @@ export interface RegionStat {
 
 export interface ConsoleSummary {
   version: string;
+  console_version?: number;
   capacity: number;
   target: number;
   target_configured: boolean;
@@ -254,6 +255,11 @@ export interface ConsoleSummary {
   results: Record<string, CheckResult>;
   regions: RegionStat[];
   memory: Record<string, number>;
+}
+
+// GET /api/console/version 的小响应：只有单调版本号。
+export interface ConsoleVersion {
+  version: number;
 }
 
 export interface SubInfo {

@@ -76,6 +76,11 @@ func (m *Manager) RefreshNodes() (int, error) {
 	m.nodes = nodes
 	m.fetched = time.Now()
 	m.mu.Unlock()
+	// 候选池内容变化是 apiConsole 可见变更（candidates/regions），递增版本号。
+	// 只有池文件 mtime 变化（WatchNodePool）或显式刷新才会走到这里，无空转递增。
+	if m.console != nil {
+		m.console.bumpConsoleVersion()
+	}
 	// Never wait for plan changes from a reconnect worker: deleting a Slot may
 	// be waiting for that worker to finish. A buffered wake coalesces refreshes.
 	if m.console != nil {

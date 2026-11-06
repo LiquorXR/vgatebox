@@ -15,6 +15,9 @@ const (
 
 func (c *Console) markChecksDirtyLocked() {
 	c.checksDirty = true
+	// 检测结果每次变更都递增：运行期进度（passed/失败数）在 apiConsole 可见，
+	// 前端 2s 版本轮询据此拉全量，保持与现状一致的实时进度。
+	c.bumpConsoleVersion()
 }
 
 func (c *Console) checksFlushDelay() time.Duration {
@@ -110,6 +113,8 @@ func (c *Console) retainChecksLocked(now time.Time) {
 	}
 	if changed {
 		c.checksDirty = true
+		// 过期/离池裁剪直接改 results，不走 markChecksDirtyLocked，这里补递增。
+		c.bumpConsoleVersion()
 	}
 	c.m.pruneConnectivity(now, observationTTL, allowed)
 	c.m.pruneLocalEvidence(now, allowed)

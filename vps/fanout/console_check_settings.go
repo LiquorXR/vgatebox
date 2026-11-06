@@ -119,6 +119,7 @@ func (c *Console) saveCheckSettingsAll(n int, ipTypeCheck bool, resultMinutes, o
 	c.ippureTTLHours = ippureHours
 	c.ttlMu.Unlock()
 	c.m.connectBudget.setLimit(n)
+	c.bumpConsoleVersion()
 	return nil
 }
 
