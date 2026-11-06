@@ -234,7 +234,7 @@ func TestConfigTransactionDiskRollbackFailureRetainsRecoverableRecord(t *testing
 	if err := os.Remove(nativeStatePath(n.dir)); err != nil {
 		t.Fatal(err)
 	}
-	if err := recoverConfigTransaction(n.dir, nativeJournal, nativeConfigFiles); err != nil {
+	if err := recoverConfigTransaction(paths.StateDir(n.dir), nativeJournal, nativeConfigFiles); err != nil {
 		t.Fatal(err)
 	}
 	assertAcceptedNative(t, n)
@@ -242,7 +242,7 @@ func TestConfigTransactionDiskRollbackFailureRetainsRecoverableRecord(t *testing
 
 func TestConfigTransactionRestartRecoversInterruptedCommit(t *testing.T) {
 	n, _, _ := rollbackFixture(t)
-	_, err := beginConfigTransaction(n.dir, nativeJournal, nativeConfigFiles)
+	_, err := beginConfigTransaction(paths.StateDir(n.dir), nativeJournal, nativeConfigFiles)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,12 +255,12 @@ func TestConfigTransactionRestartRecoversInterruptedCommit(t *testing.T) {
 	if err := os.WriteFile(paths.Xray(n.dir), []byte(`{"uncommitted":true}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := recoverConfigTransaction(n.dir, nativeJournal, nativeConfigFiles); err != nil {
+	if err := recoverConfigTransaction(paths.StateDir(n.dir), nativeJournal, nativeConfigFiles); err != nil {
 		t.Fatal(err)
 	}
 	assertAcceptedNative(t, n)
 	before, _ := os.ReadFile(nativeStatePath(n.dir))
-	if err := recoverConfigTransaction(n.dir, nativeJournal, nativeConfigFiles); err != nil {
+	if err := recoverConfigTransaction(paths.StateDir(n.dir), nativeJournal, nativeConfigFiles); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := os.ReadFile(nativeStatePath(n.dir))
