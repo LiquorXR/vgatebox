@@ -31,8 +31,8 @@ def child(host_net, host_mount):
         def put(name, text='disposable fixture'):
             p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text)
         for unit in u.UNITS: put('etc/systemd/system/'+unit,(ROOT/'vps/deploy'/unit).read_text())
-        put(u.WORK+'/netbase','187');put(u.WORK+'/state.json','{"tunnels":[{"slot":1}]}')
-        put(u.WORK+'/.connectivity-test/diagnostic.json','{"slot":-1,"network_index":16383}')
+        put(u.WORK+'/state/netbase','187');put(u.WORK+'/state/state.json','{"tunnels":[{"slot":1}]}')
+        put(u.WORK+'/run/.connectivity-test/diagnostic.json','{"slot":-1,"network_index":16383}')
         put('usr/local/bin/vgatebox');put('usr/local/bin/vgatebox-fanout');put('usr/local/lib/vgatebox/marker')
         put('etc/x-ui/x-ui.db','protected-panel');put('usr/bin/openvpn','protected-dependency')
         put('var/backups/vgatebox/install-old/project.tar.gz')
@@ -84,7 +84,7 @@ def child(host_net, host_mount):
             try: tool.execute()
             except u.Refuse: pass
             else: raise AssertionError('live namespace process was not protected')
-            assert (root/u.WORK/'state.json').exists()
+            assert (root/u.WORK/'state'/'state.json').exists()
             assert process.poll() is None
         finally:
             process.terminate();process.wait(timeout=5)

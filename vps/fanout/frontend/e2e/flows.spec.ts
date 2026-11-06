@@ -40,9 +40,13 @@ test("subscription copy link and qr", async ({ page }) => {
   const copyBtn = page.getByRole("button", { name: "复制订阅链接" });
   await expect(copyBtn).toBeEnabled();
   await copyBtn.click();
-  // 无头 CI 的系统剪贴板可能被拒：成功按钮翻“已复制”，失败出 toast；
-  // 这里只断言交互有回执，链接本身由二维码断言覆盖。
-  await expect(page.getByText("已复制").or(page.getByText("复制失败"))).toBeVisible();
+  // 成功时按钮与 toast 同翻“已复制”，失败只出 toast：都只认 toast
+  //（role=status），避开按钮+toast 双命中；链接本身由二维码断言覆盖。
+  const receipt = page
+    .getByRole("status")
+    .getByText("已复制")
+    .or(page.getByRole("status").getByText("复制失败"));
+  await expect(receipt).toBeVisible();
   const qr = page.getByRole("img", { name: "订阅二维码" });
   await expect(qr).toBeVisible();
   expect(await qr.getAttribute("src")).toContain("/api/console/qr");
@@ -63,8 +67,9 @@ test("delete waiting exit back to zero", async ({ page }) => {
   await expect(dialog).toContainText("删除后目标数量会减少 1");
   await dialog.getByRole("button", { name: "删除出口" }).click();
   await expect(page.getByText("出口已删除，目标数量已减少 1")).toBeVisible();
-  await expect(page.getByText("没有符合条件的出口")).toBeVisible();
+  // 先等后端目标归零，再断言空态：列表靠版本轮询刷新，抢跑会 flake。
   await expect
     .poll(async () => (await consoleSummary(page)).target, { timeout: 30000 })
     .toBe(0);
+  await expect(page.getByText("没有符合条件的出口")).toBeVisible();
 });
