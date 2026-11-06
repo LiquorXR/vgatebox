@@ -62,13 +62,13 @@ func validateAutomationSettings(s automationSettings) error {
 func (c *Console) loadAutomation() error {
 	a := &automationManager{settings: defaultAutomationSettings(), check: automationRun{Status: "never", AnchorAt: time.Now().UTC()}}
 	for _, item := range []struct {
-		name  string
+		path  string
 		value any
-	}{{"automation.json", &a.settings}, {"check-schedule-state.json", &a.check}} {
-		blob, err := os.ReadFile(filepath.Join(c.m.workDir, item.name))
+	}{{paths.Automation(c.m.workDir), &a.settings}, {paths.CheckSchedule(c.m.workDir), &a.check}} {
+		blob, err := os.ReadFile(item.path)
 		if os.IsNotExist(err) {
 			blob, _ = json.Marshal(item.value)
-			if err := atomicConfigWrite(filepath.Join(c.m.workDir, item.name), blob); err != nil {
+			if err := atomicConfigWrite(item.path, blob); err != nil {
 				return fmt.Errorf("周期设置初始化失败")
 			}
 		} else {
@@ -76,7 +76,7 @@ func (c *Console) loadAutomation() error {
 			if err != nil || json.Unmarshal(blob, &fields) != nil || fields == nil || json.Unmarshal(blob, item.value) != nil {
 				return fmt.Errorf("周期设置或状态损坏，保留文件")
 			}
-			if item.name == "automation.json" {
+			if filepath.Base(item.path) == "automation.json" {
 				for _, key := range []string{"refresh_enabled", "refresh_minutes", "check_enabled", "check_minutes"} {
 					if raw, ok := fields[key]; ok && string(raw) == "null" {
 						return fmt.Errorf("周期设置不能为 null")
