@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fanout/internal/paths"
 	"io"
 	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -262,11 +262,13 @@ func TestSlotPolicyValidationFailureDoesNotMutateRunningIntent(t *testing.T) {
 }
 
 func TestSlotPolicySaveFailureBlocksAndKeepsPriorPolicy(t *testing.T) {
-	m := NewManager(3, filepath.Join(t.TempDir(), "missing"))
+	m := NewManager(3, t.TempDir())
 	p := syntheticPolicy()
 	tunnel := &Tunnel{Slot: 1, Status: "up", Policy: &p}
 	tunnel.resetWork()
 	m.tunnels[1] = tunnel
+	// saveState 开头即 Ensure，缺目录不再是可靠的失败注入；改用提交钩子。
+	m.stateWriteHook = func(string) error { return errors.New("injected save failure") }
 	q := p
 	q.Country = "JP"
 	if m.SetSlotPolicy(1, q) == nil {
@@ -548,6 +550,9 @@ func TestSlotPolicyRuntimeExpiryBlocksAndExportDeletionIsExplicit(t *testing.T) 
 func TestSlotPolicyLegacyStoppedStateMigratesLoadedDefaults(t *testing.T) {
 	withResidentialOnly(t, boolPtr(false))
 	dir := t.TempDir()
+	if err := paths.Ensure(dir); err != nil {
+		t.Fatal(err)
+	}
 	old := `{"tunnels":[{"slot":2,"port":17929,"hostname":"old","country_code":"JP","config":"profile","socks_user":"u","socks_pass":"p","stopped":true}]}`
 	if err := os.WriteFile(statePath(dir), []byte(old), 0600); err != nil {
 		t.Fatal(err)
@@ -569,6 +574,9 @@ func TestSlotPolicyBadRestoreDoesNotStartDefaultOrPartialSlots(t *testing.T) {
 		`{"tunnels":[{"slot":1,"port":17928,"stopped":true},{"slot":2,"port":17928,"stopped":true}]}`,
 	} {
 		dir := t.TempDir()
+		if err := paths.Ensure(dir); err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(statePath(dir), []byte(body), 0600); err != nil {
 			t.Fatal(err)
 		}
