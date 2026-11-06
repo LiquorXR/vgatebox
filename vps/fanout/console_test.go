@@ -36,7 +36,7 @@ func consoleFixture(t *testing.T) *Console {
 	}
 	c.remove = func(s int) error { m.mu.Lock(); defer m.mu.Unlock(); delete(m.tunnels, s); return nil }
 	c.ensure = func([]*Tunnel, string) error { return nil }
-	t.Cleanup(c.shutdown)
+	t.Cleanup(func() { c.shutdown(); c.closeStores() })
 	return c
 }
 
@@ -415,6 +415,24 @@ func TestConsoleShutdownCancelsJobsAndStopsReconciliation(t *testing.T) {
 	if _, err := c.startCheck(CheckRequest{Kind: "candidates", Hosts: []string{"cancel-at-stop"}}); err == nil {
 		t.Fatal("new diagnostic accepted after shutdown")
 	}
+	c.closeStores()
+}
+
+func TestShutdownOrderKeepsStoreUsableUntilClose(t *testing.T) {
+	c := consoleFixture(t)
+	if c.checkDB == nil {
+		t.Skip("SQLite unavailable")
+	}
+	c.m.tunnels[1] = &Tunnel{Slot: 1, Port: 17928, Status: "stopped", Node: Node{HostName: "a"}}
+	c.shutdown()
+	// 关库前停隧道链路的落盘必须照常进库，不能只剩报错日志。
+	if err := c.m.saveState(); err != nil {
+		t.Fatalf("save after shutdown failed: %v", err)
+	}
+	if _, err := c.checkStore.LoadAll(); err != nil {
+		t.Fatalf("store unreadable before close: %v", err)
+	}
+	c.closeStores()
 }
 
 func TestConsoleDiagnosticCleanupOwnershipIsNarrow(t *testing.T) {

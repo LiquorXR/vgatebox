@@ -119,7 +119,7 @@ func TestPersistedSchemaVersionWritten(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.shutdown()
+	defer func() { c.shutdown(); c.closeStores() }()
 	if err := c.savePlan(ExitPlan{Count: 0}); err != nil {
 		t.Fatal(err)
 	}

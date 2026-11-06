@@ -180,6 +180,7 @@ func runFanout(args []string, stdout, stderr io.Writer) int {
 		log.Println("正在清理所有隧道...")
 		console.shutdown()
 		mgr.Shutdown()
+		console.closeStores()
 		closePanel()
 		unlock() // os.Exit 会绕过 defer，这里手动放锁
 		os.Exit(0)
