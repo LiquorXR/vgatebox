@@ -291,32 +291,38 @@ func (s *SstpManager) runScheduled(now time.Time) {
 func (s *SstpManager) routes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/resources/sstp", s.apiView)
 	mux.HandleFunc("/api/resources/sstp/settings", s.apiSettings)
-	mux.HandleFunc("/api/resources/sstp/check", func(w http.ResponseWriter, r *http.Request) {
-		var in CheckRequest
-		if readConsoleJSON(w, r, &in) != nil {
-			writeJSON(w, 400, map[string]string{"error": "请求格式无效"})
-			return
-		}
-		j, err := s.start(in)
-		if err != nil {
-			writeJSON(w, 409, map[string]string{"error": err.Error()})
-			return
-		}
-		writeJSON(w, 202, j.view())
-	})
-	mux.HandleFunc("/api/resources/sstp/cancel", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(405)
-			return
-		}
-		s.mu.Lock()
-		if s.job != nil {
-			s.job.cancel()
-		}
-		s.mu.Unlock()
-		writeJSON(w, 202, map[string]bool{"ok": true})
-	})
+	mux.HandleFunc("/api/resources/sstp/check", s.apiStartCheck)
+	mux.HandleFunc("/api/resources/sstp/cancel", s.apiCancelCheck)
 	mux.HandleFunc("/api/resources/sstp/export", s.apiExport)
+}
+
+// apiStartCheck 从当前 SSTP 候选清单启动一次检测，只接受 POST JSON。
+func (s *SstpManager) apiStartCheck(w http.ResponseWriter, r *http.Request) {
+	var in CheckRequest
+	if readConsoleJSON(w, r, &in) != nil {
+		writeJSON(w, 400, map[string]string{"error": "请求格式无效"})
+		return
+	}
+	j, err := s.start(in)
+	if err != nil {
+		writeJSON(w, 409, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 202, j.view())
+}
+
+// apiCancelCheck 取消正在运行的 SSTP 检测，只接受 POST。
+func (s *SstpManager) apiCancelCheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(405)
+		return
+	}
+	s.mu.Lock()
+	if s.job != nil {
+		s.job.cancel()
+	}
+	s.mu.Unlock()
+	writeJSON(w, 202, map[string]bool{"ok": true})
 }
 
 func (s *SstpManager) apiView(w http.ResponseWriter, r *http.Request) {

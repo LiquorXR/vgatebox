@@ -335,22 +335,7 @@ func (c *Console) routes(mux *http.ServeMux) {
 	c.sstp.routes(mux)
 	c.third.routes(mux)
 	mux.HandleFunc("/api/console", c.apiConsole)
-	mux.HandleFunc("/api/console/target", func(w http.ResponseWriter, r *http.Request) {
-		var p ExitPlan
-		if err := readConsoleJSON(w, r, &p); err != nil {
-			writeJSON(w, 400, map[string]string{"error": err.Error()})
-			return
-		}
-		if panel, err := openPanel(); err != nil || panel.Kind() != "native" {
-			writeJSON(w, 409, map[string]string{"error": "自动数量管理仅用于内置 Xray 模式"})
-			return
-		}
-		if err := c.applyTarget(p); err != nil {
-			writeJSON(w, 409, map[string]string{"error": firstLine(err.Error())})
-			return
-		}
-		writeJSON(w, 200, map[string]bool{"ok": true})
-	})
+	mux.HandleFunc("/api/console/target", c.apiApplyTarget)
 	mux.HandleFunc("/api/console/direct", c.apiHostDirect)
 	mux.HandleFunc("/api/console/socks", c.apiPublicSocks)
 	mux.HandleFunc("/api/console/refresh", c.apiPoolRefresh)
@@ -361,60 +346,84 @@ func (c *Console) routes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/console/check", c.apiCheck)
 	mux.HandleFunc("/api/console/check/cancel", c.apiCheckCancel)
 	mux.HandleFunc("/api/console/slot/delete", c.apiDeleteSlot)
-	mux.HandleFunc("/api/console/qr", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(405)
-			return
-		}
-		if _, err := subscriptionSlots(r.URL.Query().Get("slots")); err != nil {
-			http.Error(w, "出口选择无效", 400)
-			return
-		}
-		if _, err := subscriptionProxyIDs(r.URL.Query().Get("proxies")); err != nil {
+	mux.HandleFunc("/api/console/qr", c.apiConsoleQR)
+}
+
+// apiApplyTarget 收敛“设置自动出口数量”意图：只接受 POST JSON，
+// 仅内置 Xray 模式可用，成功返回 {"ok":true}。
+func (c *Console) apiApplyTarget(w http.ResponseWriter, r *http.Request) {
+	var p ExitPlan
+	if err := readConsoleJSON(w, r, &p); err != nil {
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	if panel, err := openPanel(); err != nil || panel.Kind() != "native" {
+		writeJSON(w, 409, map[string]string{"error": "自动数量管理仅用于内置 Xray 模式"})
+		return
+	}
+	if err := c.applyTarget(p); err != nil {
+		writeJSON(w, 409, map[string]string{"error": firstLine(err.Error())})
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// apiConsoleQR 把当前订阅链接渲染成二维码 PNG，只接受 GET。
+// 参数与 /sub 保持一致（slots/proxies/direct/vpn/third/target），
+// 口令仍由 subToken 签发，失败时返回对应 4xx/5xx。
+func (c *Console) apiConsoleQR(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(405)
+		return
+	}
+	if _, err := subscriptionSlots(r.URL.Query().Get("slots")); err != nil {
+		http.Error(w, "出口选择无效", 400)
+		return
+	}
+	if _, err := subscriptionProxyIDs(r.URL.Query().Get("proxies")); err != nil {
+		http.Error(w, "第三方选择无效", 400)
+		return
+	}
+	tok, err := subToken()
+	if err != nil {
+		http.Error(w, "订阅未就绪", 500)
+		return
+	}
+	link := subFullURL(r, tok)
+	if slots := r.URL.Query().Get("slots"); slots != "" {
+		link += "&slots=" + slots
+	}
+	if ids := r.URL.Query().Get("proxies"); ids != "" {
+		if r.URL.Query().Get("third") == "0" {
 			http.Error(w, "第三方选择无效", 400)
 			return
 		}
-		tok, err := subToken()
-		if err != nil {
-			http.Error(w, "订阅未就绪", 500)
-			return
-		}
-		link := subFullURL(r, tok)
-		if slots := r.URL.Query().Get("slots"); slots != "" {
-			link += "&slots=" + slots
-		}
-		if ids := r.URL.Query().Get("proxies"); ids != "" {
-			if r.URL.Query().Get("third") == "0" {
-				http.Error(w, "第三方选择无效", 400)
+		link += "&proxies=" + ids
+	}
+	for _, key := range []string{"direct", "vpn", "third"} {
+		if v := r.URL.Query().Get(key); v != "" {
+			if v != "0" && v != "1" {
+				http.Error(w, "订阅范围无效", 400)
 				return
 			}
-			link += "&proxies=" + ids
+			link += "&" + key + "=" + v
 		}
-		for _, key := range []string{"direct", "vpn", "third"} {
-			if v := r.URL.Query().Get(key); v != "" {
-				if v != "0" && v != "1" {
-					http.Error(w, "订阅范围无效", 400)
-					return
-				}
-				link += "&" + key + "=" + v
-			}
-		}
-		if target := r.URL.Query().Get("target"); target != "" {
-			if target != "clash" && target != "mihomo" && target != "base64" && target != "links" {
-				http.Error(w, "订阅格式无效", 400)
-				return
-			}
-			link += "&target=" + target
-		}
-		png, err := qrcode.Encode(link, qrcode.Medium, 256)
-		if err != nil {
-			http.Error(w, "二维码生成失败", 500)
+	}
+	if target := r.URL.Query().Get("target"); target != "" {
+		if target != "clash" && target != "mihomo" && target != "base64" && target != "links" {
+			http.Error(w, "订阅格式无效", 400)
 			return
 		}
-		w.Header().Set("Content-Type", "image/png")
-		w.Header().Set("Cache-Control", "no-store")
-		_, _ = w.Write(png)
-	})
+		link += "&target=" + target
+	}
+	png, err := qrcode.Encode(link, qrcode.Medium, 256)
+	if err != nil {
+		http.Error(w, "二维码生成失败", 500)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(png)
 }
 
 // apiDeleteSlot removes one explicit automatic exit and reduces the target

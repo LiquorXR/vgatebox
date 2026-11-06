@@ -19,22 +19,38 @@ import (
 var version = "dev"
 
 func main() {
+	os.Exit(runFanout(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// runFanout 承载原 main 的全部启动流程，返回进程退出码。
+// main 只剩参数透传，便于测试 flag 解析与版本/迁移检查等早期退出分支，
+// 也是后续继续拆分启动步骤（监听构建、路由注册）的落点。
+// 命名避开 tunnel.go 中执行网络配置命令的 run。
+func runFanout(args []string, stdout, stderr io.Writer) int {
 	loadEnvFile(envOr("FANOUT_INTELLIGENCE_ENV_FILE", "/etc/vgatebox/intelligence.env"))
+	fs := flag.NewFlagSet("fanout", flag.ContinueOnError)
+	fs.SetOutput(stderr)
 	var (
-		webPort  = flag.Int("web", 8899, "Web 管理端口")
-		maxSlots = flag.Int("max", maximumSlots, "管理员设置的出口容量（默认使用实例地址容量）")
-		workDir  = flag.String("dir", "/var/lib/vgatebox/fanout", "工作目录")
+		webPort  = fs.Int("web", 8899, "Web 管理端口")
+		maxSlots = fs.Int("max", maximumSlots, "管理员设置的出口容量（默认使用实例地址容量）")
+		workDir  = fs.String("dir", "/var/lib/vgatebox/fanout", "工作目录")
 	)
-	panelMode := flag.String("panel", "", "节点链接后端：仅支持 native（内置 Xray）；空值等同 native")
-	publicIP := flag.String("ip", "", "母机公网 IPv4，用于分享链接/SOCKS5 地址；留空则自动探测")
-	showVersion := flag.Bool("version", false, "显示版本后退出")
-	checkState := flag.Bool("check-state", false, "只读检查内置模式状态副本的迁移配置，不启动服务")
-	flag.Parse()
+	panelMode := fs.String("panel", "", "节点链接后端：仅支持 native（内置 Xray）；空值等同 native")
+	publicIP := fs.String("ip", "", "母机公网 IPv4，用于分享链接/SOCKS5 地址；留空则自动探测")
+	showVersion := fs.Bool("version", false, "显示版本后退出")
+	checkState := fs.Bool("check-state", false, "只读检查内置模式状态副本的迁移配置，不启动服务")
+	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
+		return 2
+	}
 	if ippureEnabled() {
 		log.Printf("IP 类型画像：IPPure 已启用")
 	}
 	if *maxSlots < 1 || *maxSlots > maximumSlots {
-		log.Fatalf("出口容量范围为 1-%d", maximumSlots)
+		log.Printf("出口容量范围为 1-%d", maximumSlots)
+		return 1
 	}
 
 	if *publicIP == "" {
@@ -42,53 +58,61 @@ func main() {
 	}
 
 	if *showVersion {
-		fmt.Println("vgatebox", version)
-		return
+		fmt.Fprintln(stdout, "vgatebox", version)
+		return 0
 	}
 	if *checkState {
-		os.Exit(runMigrationCheck(os.Stdout, *workDir, *maxSlots, *webPort))
+		return runMigrationCheck(stdout, *workDir, *maxSlots, *webPort)
 	}
 
 	if os.Geteuid() != 0 {
-		log.Fatal("需要 root 权限（要创建 netns 和改 iptables）")
+		log.Print("需要 root 权限（要创建 netns 和改 iptables）")
+		return 1
 	}
 	if err := os.MkdirAll(*workDir, 0700); err != nil {
-		log.Fatalf("创建工作目录失败: %v", err)
+		log.Printf("创建工作目录失败: %v", err)
+		return 1
 	}
 
 	// 先记下母机的网络命名空间，后面所有子进程都从这里起。
 	// 必须赶在建任何隧道之前，那之后线程就可能被带进隧道里了
 	if err := initMainNetns(); err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return 1
 	}
 
 	// 同一个工作目录只许跑一个实例：两份会共用 state.json 互相覆盖，隧道记录直接丢
 	unlock, err := lockWorkDir(*workDir)
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return 1
 	}
 	defer unlock()
 
 	// 定下这台机器上属于本实例的 netns 名与网段。默认目录沿用老名字，
 	// 换了目录就自动隔离，免得两个实例互相拆隧道（见 instance.go）
 	if err := initInstance(*workDir); err != nil {
-		log.Fatalf("初始化实例标识失败: %v", err)
+		log.Printf("初始化实例标识失败: %v", err)
+		return 1
 	}
 	if instTag != "" {
 		log.Printf("非默认工作目录，本实例用 netns fo%s* 与网段 10.%d.x", instTag, instBase)
 	}
 
 	if err := recoverConfigTransaction(*workDir, managementJournal, managementConfigFiles); err != nil {
-		log.Fatalf("恢复管理配置失败: %v", err)
+		log.Printf("恢复管理配置失败: %v", err)
+		return 1
 	}
 	setPublicIPOverride(*publicIP)
 	go hostPublicIP() // 预热探测，别让首个请求阻塞
 	if err := prepareHost(); err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return 1
 	}
 
 	if err := configurePanel(*workDir, *panelMode); err != nil {
-		log.Fatalf("节点链接后端配置失败: %v", err)
+		log.Printf("节点链接后端配置失败: %v", err)
+		return 1
 	}
 	if p, err := openPanel(); err != nil {
 		log.Printf("节点链接后端暂不可用（可在 Web 界面查看原因）: %v", err)
@@ -98,14 +122,15 @@ func main() {
 
 	// 用户显式给了 -web 就以命令行为准，否则沿用界面上存过的端口
 	portExplicit := false
-	flag.Visit(func(f *flag.Flag) {
+	fs.Visit(func(f *flag.Flag) {
 		if f.Name == "web" {
 			portExplicit = true
 		}
 	})
 	webCfg, err := loadWebSettings(*workDir, *webPort, portExplicit)
 	if err != nil {
-		log.Fatalf("加载 Web 设置失败: %v", err)
+		log.Printf("加载 Web 设置失败: %v", err)
+		return 1
 	}
 
 	mgr := NewManager(*maxSlots, *workDir)
@@ -118,13 +143,16 @@ func main() {
 
 	console, err := newConsole(mgr)
 	if err != nil {
-		log.Fatalf("加载出口计划失败: %v", err)
+		log.Printf("加载出口计划失败: %v", err)
+		return 1
 	}
 	if err := console.cleanupDiagnostics(); err != nil {
-		log.Fatalf("临时检测清理失败: %v", err)
+		log.Printf("临时检测清理失败: %v", err)
+		return 1
 	}
 	if n, err := mgr.restoreState(); err != nil {
-		log.Fatalf("恢复上次状态失败，拒绝忽略已保存策略: %v", err)
+		log.Printf("恢复上次状态失败，拒绝忽略已保存策略: %v", err)
+		return 1
 	} else if n > 0 {
 		log.Printf("正在恢复上次的 %d 条隧道", n)
 	}
@@ -133,7 +161,8 @@ func main() {
 	// Gate Slots to trigger an outbound reconciliation after process restart.
 	if p, err := openPanel(); err == nil {
 		if err := p.OnTunnelsChanged(mgr.Tunnels()); err != nil {
-			log.Fatalf("恢复内置接入失败: %v", err)
+			log.Printf("恢复内置接入失败: %v", err)
+			return 1
 		}
 	}
 
@@ -197,7 +226,8 @@ func main() {
 
 	auth, created, err := NewAuth(*workDir)
 	if err != nil {
-		log.Fatalf("初始化访问口令失败: %v", err)
+		log.Printf("初始化访问口令失败: %v", err)
+		return 1
 	}
 	if created {
 		log.Printf("已生成访问口令，见 %s", filepath.Join(*workDir, "password"))
@@ -205,7 +235,8 @@ func main() {
 
 	bpCreated, err := initBasePath(*workDir)
 	if err != nil {
-		log.Fatalf("初始化访问路径失败: %v", err)
+		log.Printf("初始化访问路径失败: %v", err)
+		return 1
 	}
 	if bpCreated {
 		log.Printf("已生成访问路径，见 %s", filepath.Join(*workDir, "basepath"))
@@ -228,8 +259,10 @@ func main() {
 		log.Printf("SOCKS5 端口在 %d-%d 之间随机分配", randPortMin, randPortMax)
 	}
 	if err := srv.serve(); err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return 1
 	}
+	return 0
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

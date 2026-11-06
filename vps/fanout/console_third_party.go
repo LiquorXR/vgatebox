@@ -150,66 +150,74 @@ func thirdPartyNative(w http.ResponseWriter) *Native {
 
 func (s *ThirdPartyManager) routes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/resources/third-party", s.apiResources)
-	mux.HandleFunc("/api/resources/third-party/check", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/resources/third-party/check", s.apiStartCheck)
+	for _, action := range []string{"delete", "toggle", "subscribe"} {
+		mux.HandleFunc("/api/resources/third-party/"+action, s.thirdPartyActionHandler(action))
+	}
+}
+
+// apiStartCheck 对指定第三方代理启动一次连通检测，只接受 POST JSON。
+func (s *ThirdPartyManager) apiStartCheck(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	var req struct {
+		ID int `json:"id"`
+	}
+	if err := readConsoleJSON(w, r, &req); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "需要代理编号"})
+		return
+	}
+	n := thirdPartyNative(w)
+	if n == nil {
+		return
+	}
+	if err := s.start(n, req.ID); err != nil {
+		writeJSON(w, 409, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 202, map[string]any{"id": req.ID, "status": "running"})
+}
+
+// thirdPartyActionHandler 收敛 delete/toggle/subscribe 三个变更入口：
+// 只接受 POST JSON，delete 删入站，toggle/subscribe 改对应开关。
+func (s *ThirdPartyManager) thirdPartyActionHandler(action string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		var req struct {
-			ID int `json:"id"`
+			ID        int  `json:"id"`
+			Enabled   bool `json:"enabled"`
+			Subscribe bool `json:"subscribe"`
 		}
 		if err := readConsoleJSON(w, r, &req); err != nil {
-			writeJSON(w, 400, map[string]string{"error": "需要代理编号"})
+			writeJSON(w, 400, map[string]string{"error": "请求格式无效"})
 			return
 		}
 		n := thirdPartyNative(w)
 		if n == nil {
 			return
 		}
-		if err := s.start(n, req.ID); err != nil {
-			writeJSON(w, 409, map[string]string{"error": err.Error()})
+		_, err := n.thirdPartySnapshot(req.ID)
+		if err != nil {
+			writeJSON(w, 404, map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, 202, map[string]any{"id": req.ID, "status": "running"})
-	})
-	for _, action := range []string{"delete", "toggle", "subscribe"} {
-		action := action
-		mux.HandleFunc("/api/resources/third-party/"+action, func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Cache-Control", "no-store")
-			var req struct {
-				ID        int  `json:"id"`
-				Enabled   bool `json:"enabled"`
-				Subscribe bool `json:"subscribe"`
+		if action == "delete" {
+			err = n.DeleteInbounds([]int{req.ID}, s.c.m.Tunnels())
+		} else {
+			value := req.Enabled
+			if action == "subscribe" {
+				value = req.Subscribe
 			}
-			if err := readConsoleJSON(w, r, &req); err != nil {
-				writeJSON(w, 400, map[string]string{"error": "请求格式无效"})
-				return
-			}
-			n := thirdPartyNative(w)
-			if n == nil {
-				return
-			}
-			_, err := n.thirdPartySnapshot(req.ID)
-			if err != nil {
-				writeJSON(w, 404, map[string]string{"error": err.Error()})
-				return
-			}
-			if action == "delete" {
-				err = n.DeleteInbounds([]int{req.ID}, s.c.m.Tunnels())
-			} else {
-				value := req.Enabled
-				if action == "subscribe" {
-					value = req.Subscribe
-				}
-				err = n.setThirdPartyFlag(req.ID, action, value, s.c.m.Tunnels())
-			}
-			if err != nil {
-				writeJSON(w, 409, map[string]string{"error": "配置未生效，已保留原设置"})
-				return
-			}
-			if action != "subscribe" {
-				s.cancel(req.ID)
-			}
-			invalidateInbounds()
-			writeJSON(w, 200, map[string]bool{"ok": true})
-		})
+			err = n.setThirdPartyFlag(req.ID, action, value, s.c.m.Tunnels())
+		}
+		if err != nil {
+			writeJSON(w, 409, map[string]string{"error": "配置未生效，已保留原设置"})
+			return
+		}
+		if action != "subscribe" {
+			s.cancel(req.ID)
+		}
+		invalidateInbounds()
+		writeJSON(w, 200, map[string]bool{"ok": true})
 	}
 }
 
