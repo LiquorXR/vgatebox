@@ -11,7 +11,7 @@ import { afterEach, vi } from "vitest";
 import App from "@/App.vue";
 import { toasts } from "@/lib/toast";
 import { createAppRouter } from "@/router";
-import { apiPayloads, qrPngBase64 } from "./fixtures";
+import { apiPayloads, nodesView, qrPngBase64 } from "./fixtures";
 
 export interface ApiCall {
   path: string;
@@ -88,6 +88,29 @@ export function installApiMock(overrides: Record<string, unknown> = {}): ApiMock
 
     if (url.pathname === "/api/sub" && url.searchParams.get("target") === "links") {
       return new Response("vless://example", { status: 200, headers: { "Content-Type": "text/plain" } });
+    }
+
+    // /api/nodes 按真实后端语义支持 limit/offset：不带 limit 返回完整 payload，
+    // 与旧行为一致；带 limit 按 next_offset 切片。
+    if (url.pathname === "/api/nodes") {
+      const base = responses[url.pathname] as { nodes?: unknown[] } | undefined;
+      const list = base?.nodes ?? nodesView.nodes;
+      const limitRaw = url.searchParams.get("limit");
+      if (limitRaw === null) return jsonResponse(responses[url.pathname] ?? nodesView);
+      const limit = Number(limitRaw);
+      const offset = Number(url.searchParams.get("offset") ?? "0");
+      const page = list.slice(offset, offset + limit);
+      const end = offset + page.length;
+      return jsonResponse({
+        nodes: page,
+        fetched: nodesView.fetched,
+        total: list.length,
+        available: list.length,
+        residential_only: false,
+        limit,
+        offset,
+        next_offset: end < list.length ? end : null,
+      });
     }
 
     const payload = responses[url.pathname];

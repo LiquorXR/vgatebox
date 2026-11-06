@@ -275,6 +275,10 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// maxNodesPageLimit 封顶单页条数，避免一次拉全量大池拖慢界面。
+// 不带 limit 时走旧行为：字段与顺序完全一致，不多不少。
+const maxNodesPageLimit = 1000
+
 func apiNodes(m *Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		nodes, fetched := m.Nodes()
@@ -292,13 +296,47 @@ func apiNodes(m *Manager) http.HandlerFunc {
 			nodes = kept
 		}
 		shown := len(nodes)
-		writeJSON(w, http.StatusOK, map[string]any{
+		view := map[string]any{
 			"nodes":            nodes,
 			"fetched":          fetched,
 			"total":            total,
 			"available":        shown,
 			"residential_only": residentialOnly(),
-		})
+		}
+		// 分页只在显式带 limit 时生效，切的是过滤后的列表；
+		// total/available 仍是全量口径，调用方用 next_offset 翻页。
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			limit, err := strconv.Atoi(raw)
+			if err != nil || limit < 1 || limit > maxNodesPageLimit {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "limit 参数无效"})
+				return
+			}
+			offset := 0
+			if oraw := r.URL.Query().Get("offset"); oraw != "" {
+				var oerr error
+				offset, oerr = strconv.Atoi(oraw)
+				if oerr != nil || offset < 0 {
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "offset 参数无效"})
+					return
+				}
+			}
+			if offset > len(nodes) {
+				offset = len(nodes)
+			}
+			end := offset + limit
+			if end > len(nodes) {
+				end = len(nodes)
+			}
+			view["nodes"] = nodes[offset:end]
+			view["limit"] = limit
+			view["offset"] = offset
+			var next any
+			if end < len(nodes) {
+				next = end
+			}
+			view["next_offset"] = next
+		}
+		writeJSON(w, http.StatusOK, view)
 	}
 }
 

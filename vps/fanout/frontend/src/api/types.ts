@@ -117,6 +117,10 @@ export interface NodesView {
   total: number;
   available: number;
   residential_only: boolean;
+  // 分页字段只在带 limit 请求时出现；不带 limit 时保持旧形状。
+  limit?: number;
+  offset?: number;
+  next_offset?: number | null;
 }
 
 export interface CheckResult {

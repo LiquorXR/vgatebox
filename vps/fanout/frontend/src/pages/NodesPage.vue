@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { Database, RefreshCw, Search, Settings2, ShieldCheck, TimerReset, X } from "@lucide/vue";
-import { useMutation, useQueryClient } from "@tanstack/vue-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/vue-query";
 import { computed, reactive, ref, watch } from "vue";
 import { api, post } from "@/api/client";
-import { keys, useConsoleQuery, useNodesQuery } from "@/api/queries";
-import type { AutomationView, CheckResult, EgressProfile, Node } from "@/api/types";
+import { keys, useConsoleQuery } from "@/api/queries";
+import type { AutomationView, CheckResult, EgressProfile, Node, NodesView } from "@/api/types";
 import DialogShell from "@/components/DialogShell.vue";
 import EmptyState from "@/components/EmptyState.vue";
 import PageHeader from "@/components/PageHeader.vue";
@@ -20,11 +20,31 @@ import { checkStatusLabel, checkStatusTone, errorLabel, ipTypeLabel, ipTypeLabel
 import { toast, toastError } from "@/lib/toast";
 
 const PAGE_SIZE = 50;
+// 服务端分页：首屏拉 200，超了点“加载更多”按 next_offset 续拉累加。
+const SERVER_PAGE = 200;
 const queryClient = useQueryClient();
 const { data: summary } = useConsoleQuery();
-const { data: view, isLoading, isError, error, refetch } = useNodesQuery(true);
+const {
+  data: nodePages,
+  isLoading,
+  isError,
+  error,
+  refetch,
+  fetchNextPage,
+  hasNextPage,
+  isFetchingNextPage,
+} = useInfiniteQuery({
+  queryKey: [...keys.nodes, SERVER_PAGE],
+  queryFn: ({ pageParam }) => api<NodesView>(`api/nodes?all=1&limit=${SERVER_PAGE}&offset=${pageParam}`),
+  initialPageParam: 0,
+  getNextPageParam: (lastPage) => lastPage.next_offset ?? undefined,
+  refetchInterval: 20000,
+  refetchIntervalInBackground: false,
+  staleTime: 5000,
+});
 
-const nodes = computed(() => view.value?.nodes || []);
+const nodes = computed(() => (nodePages.value?.pages ?? []).flatMap((page) => page.nodes));
+const serverTotal = computed(() => nodePages.value?.pages[0]?.total ?? 0);
 const search = ref("");
 const countryFilter = ref("");
 const statusFilter = ref("all");
@@ -394,7 +414,7 @@ const detailNode = ref<Node | null>(null);
             <ProgressBar :value="checkPercent" size="sm" class="mt-2" label="候选检测进度" />
           </div>
 
-          <div v-if="isLoading && !view" class="p-4"><SkeletonBlock :lines="8" /></div>
+          <div v-if="isLoading && !nodePages" class="p-4"><SkeletonBlock :lines="8" /></div>
           <div v-else-if="!filtered.length" class="p-4">
             <EmptyState title="没有符合条件的候选" description="调整筛选条件，或刷新来源获取新的候选清单。">
               <template #icon><Database :size="26" /></template>
@@ -469,6 +489,10 @@ const detailNode = ref<Node | null>(null);
               <UiButton size="sm" variant="ghost" :disabled="page <= 1" @click="page -= 1">上一页</UiButton>
               <UiButton size="sm" variant="ghost" :disabled="page >= pageCount" @click="page += 1">下一页</UiButton>
             </div>
+          </div>
+          <div v-if="hasNextPage" class="flex items-center justify-between gap-2 border-t border-line px-4 py-2.5 text-[11px] text-muted">
+            <span>已加载 {{ nodes.length }} / 共 {{ serverTotal }} 个候选</span>
+            <UiButton size="sm" variant="ghost" :loading="isFetchingNextPage" @click="fetchNextPage()">加载更多候选</UiButton>
           </div>
         </Panel>
       </div>
