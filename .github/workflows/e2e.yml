@@ -53,8 +53,8 @@ jobs:
           done
           curl -sf http://127.0.0.1:18080/healthz
           {
-            echo "E2E_BASE_PATH=/$(sudo cat /tmp/vgb-e2e/basepath | tr -d ' \n\r')"
-            echo "E2E_PASSWORD=$(sudo cat /tmp/vgb-e2e/password | tr -d ' \n\r')"
+            echo "E2E_BASE_PATH=/$(sudo cat /tmp/vgb-e2e/state/basepath | tr -d ' \n\r')"
+            echo "E2E_PASSWORD=$(sudo cat /tmp/vgb-e2e/state/password | tr -d ' \n\r')"
           } >> "$GITHUB_ENV"
       - name: Install Playwright browsers
         run: |

@@ -268,17 +268,18 @@ class VpsAcceptanceTests(unittest.TestCase):
         import shutil
         with tempfile.TemporaryDirectory() as tmp:
             before, after = Path(tmp)/"before", Path(tmp)/"after"
-            shutil.copytree(ROOT/"vps/fanout/testdata/migration-v031", before)
-            shutil.copytree(before, after)
-            state = json.loads((after/"state.json").read_text())
+            # compare_state 读 <dir>/state/*.json（统一目录），夹具照此包一层。
+            shutil.copytree(ROOT/"vps/fanout/testdata/migration-v031", before/"state")
+            shutil.copytree(before/"state", after/"state")
+            state = json.loads((after/"state"/"state.json").read_text())
             state["tunnels"][0]["hostname"] = "fixture-new-node"
-            (after/"state.json").write_text(json.dumps(state))
-            native = json.loads((after/"native.json").read_text())
+            (after/"state"/"state.json").write_text(json.dumps(state))
+            native = json.loads((after/"state"/"native.json").read_text())
             native["inbounds"][0]["bound_to"] = "fixture-new-node"
-            (after/"native.json").write_text(json.dumps(native))
+            (after/"state"/"native.json").write_text(json.dumps(native))
             self.assertEqual(a.compare_state(before, after)["status"], "passed")
             native["inbounds"][0]["clients"][0]["id"] = "fixture-rotated-id"
-            (after/"native.json").write_text(json.dumps(native))
+            (after/"state"/"native.json").write_text(json.dumps(native))
             result = a.compare_state(before, after)
             self.assertFalse(result["checks"]["inbound_clients_and_keys_preserved"])
             self.assertNotIn("fixture-", json.dumps(result))
