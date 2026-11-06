@@ -309,10 +309,10 @@ class InstallerTests(unittest.TestCase):
         record = {'id': self.i.id, 'phase': 'installing', 'before': self.i.service_snapshot(),
                   'existing_paths': list(d.OWNED), 'backup': str(archive)}
         self.i.stop(record['before']); self.i.backup(record); self.i.journal(record)
-        put(self.l.work / 'password', 'damaged')
+        put(self.l.work / 'state' / 'password', 'damaged')
         put(self.l.lib / 'unexpected-new-file', 'new')
         self.i.recover()
-        self.assertEqual((self.l.work / 'password').read_text(), 'synthetic-password')
+        self.assertEqual((self.l.work / 'state' / 'password').read_text(), 'synthetic-password')
         self.assertFalse((self.l.lib / 'unexpected-new-file').exists())
         self.assertTrue(self.r.active(d.UNITS[0]))
 
