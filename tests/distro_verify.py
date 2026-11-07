@@ -48,7 +48,7 @@ if sys.argv[1] == 'bootstrap':
         c.request('POST', base+'/api/stop?slot='+str(e['slot']), headers={'Cookie':cookie})
         r=c.getresponse();r.read();assert r.status==200
     record=Path('/tmp/vgatebox-ci-state.json');before=json.loads(record.read_text())
-    state={n:hashlib.sha256((p/n).read_bytes()).hexdigest() for n in before}
+    state={n:hashlib.sha256((s/n).read_bytes()).hexdigest() for n in before}
     assert all(state[n]==before[n] for n in before if n!='native.json'), 'Auto allocation changed management identity'
     record.write_text(json.dumps(state))
     identities=[{k:e[k] for k in ['slot','port','socks_user','socks_pass','policy']} for e in exits]
