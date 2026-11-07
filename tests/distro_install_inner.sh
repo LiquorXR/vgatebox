@@ -70,7 +70,11 @@ if env -u SSL_CERT_FILE -u SSL_CERT_DIR python3 /usr/local/lib/vgatebox/scripts/
   exit 1
 fi
 test ! -e /tmp/vgb-untrusted-source/node_pool.json
-printf '%s\n' '[Service]' 'Environment=SSL_CERT_FILE=/tmp/vgb-ci-source/cert.pem' > /run/systemd/system/vgatebox-pool.service.d/fixture.conf
+# vgatebox-pool.service runs with PrivateTmp=yes, so its /tmp is isolated from
+# the fixture's /tmp/vgb-ci-source. Copy the generated CI CA to a
+# service-visible path (already in ReadWritePaths) and point SSL there.
+install -m 644 /tmp/vgb-ci-source/cert.pem /etc/vgatebox/ci-source-ca.pem
+printf '%s\n' '[Service]' 'Environment=SSL_CERT_FILE=/etc/vgatebox/ci-source-ca.pem' > /run/systemd/system/vgatebox-pool.service.d/fixture.conf
 systemctl daemon-reload
 if ! systemctl start vgatebox-pool.service; then
   journalctl -u vgatebox-pool.service --no-pager -n 35
@@ -89,7 +93,7 @@ settings=json.loads((s/'automation.json').read_text());settings['refresh_enabled
 PY
 systemctl start vgatebox-pool.service
 cmp /tmp/vgb-ci-before-refresh /var/lib/vgatebox/fanout/state/refresh-state.json
-SSL_CERT_FILE=/tmp/vgb-ci-source/cert.pem vgatebox refresh >/tmp/manual-source.log
+SSL_CERT_FILE=/etc/vgatebox/ci-source-ca.pem vgatebox refresh >/tmp/manual-source.log
 python3 - <<'PY'
 from pathlib import Path
 p=Path('/var/lib/vgatebox/fanout')
