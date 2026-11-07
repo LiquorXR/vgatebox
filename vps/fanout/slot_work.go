@@ -94,6 +94,39 @@ func (t *Tunnel) markRecovered(latency float64) {
 	t.mu.Unlock()
 }
 
+// queuePendingSwap 记录排队意向：to!=nil 为 SwapTo 指定节点，auto 为 Swap。
+// 调用方（starting 中）不再报错，发布成功后由 swapPending 异步执行。
+func (t *Tunnel) queuePendingSwap(node *Node, auto bool) {
+	t.mu.Lock()
+	t.pendingSwapTo, t.pendingSwapAuto = node, auto
+	t.mu.Unlock()
+}
+
+func (t *Tunnel) clearPendingSwap() {
+	t.mu.Lock()
+	t.pendingSwapTo, t.pendingSwapAuto = nil, false
+	t.mu.Unlock()
+}
+
+func (t *Tunnel) hasPendingSwap() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.pendingSwapAuto || t.pendingSwapTo != nil
+}
+
+// takePendingSwap 原子取出排队意向：node==nil 且 auto 为真表示自动挑。
+// publishUp 内因已持 t.mu 而内联此逻辑，此处供其他调用方。
+func (t *Tunnel) takePendingSwap() (node *Node, auto, ok bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.pendingSwapAuto && t.pendingSwapTo == nil {
+		return nil, false, false
+	}
+	node, auto = t.pendingSwapTo, t.pendingSwapAuto
+	t.pendingSwapTo, t.pendingSwapAuto = nil, false
+	return node, auto, true
+}
+
 func (m *Manager) claimNode(t *Tunnel, node Node, ctx context.Context) bool {
 	for {
 		m.mu.Lock()
@@ -171,8 +204,14 @@ func (m *Manager) publishUp(t *Tunnel, ctx context.Context) bool {
 		return false
 	}
 	t.Status, t.Err = "up", ""
-	// 建连成功：热备已消费，失败计数清零。
+	// 建连成功：热备已消费，失败计数清零；排队意向原子取出后异步执行
+	// （调用方持有 opMu，同步调 reconnectTo 会自死锁）。
 	t.prewarmNode, t.failCounts = nil, nil
+	pendingNode, pendingAuto := t.pendingSwapTo, t.pendingSwapAuto
+	t.pendingSwapTo, t.pendingSwapAuto = nil, false
+	if pendingAuto || pendingNode != nil {
+		go m.swapPending(t, pendingNode, pendingAuto)
+	}
 	return true
 }
 
@@ -244,7 +283,7 @@ func (m *Manager) setSlotPolicyLocked(t *Tunnel, normalized SlotPolicy) error {
 	t.opMu.Unlock()
 	t.clearFlap()
 	t.clearSpeculation()
-	m.reconnectTo(t, oldHost, nil)
+	m.reconnectTo(t, oldHost, nil, "策略已更新，正在按新策略重新验活")
 	return nil
 }
 
@@ -271,7 +310,7 @@ func (m *Manager) Resume(slot int) error {
 	t.mu.Unlock()
 	t.clearFlap()
 	t.clearSpeculation()
-	m.reconnectTo(t, t.Node.HostName, nil)
+	m.reconnectTo(t, t.Node.HostName, nil, "手动启动，正在重新连接")
 	return nil
 }
 

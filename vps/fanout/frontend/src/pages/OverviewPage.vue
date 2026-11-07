@@ -7,6 +7,7 @@ import { api, post } from "@/api/client";
 import { keys, useConsoleQuery, useExitsQuery } from "@/api/queries";
 import type { Exit, SubInfo } from "@/api/types";
 import EmptyState from "@/components/EmptyState.vue";
+import LatencyTrend from "@/components/LatencyTrend.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import Panel from "@/components/Panel.vue";
 import ProgressBar from "@/components/ProgressBar.vue";
@@ -257,7 +258,7 @@ function openExit(exit: Exit) {
                   </span>
                 </span>
                 <StatusBadge :label="exitStatusLabel(exit.status)" :tone="exitStatusTone(exit.status)" size="sm" :pulse="exit.status === 'starting'" class="justify-self-start" />
-                <span class="tnum hidden text-xs text-muted sm:block">{{ formatLatency(exit.latency_ms) }}</span>
+                <span class="hidden items-center gap-1 text-xs text-muted sm:flex"><span class="tnum">{{ formatLatency(exit.latency_ms) }}</span><LatencyTrend :trend="exit.latency_trend" /></span>
                 <ArrowRight :size="14" class="text-faint" />
               </button>
             </div>

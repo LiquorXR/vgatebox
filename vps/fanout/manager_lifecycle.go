@@ -377,6 +377,8 @@ func (m *Manager) Stop(slot int) error {
 	t.changeMu.Lock()
 	defer t.changeMu.Unlock()
 	t.stop()
+	// 停即弃：排队意向不再执行，避免 Resume 后冒出过期操作。
+	t.clearPendingSwap()
 	if err := m.saveState(); err != nil {
 		log.Printf("保存状态失败: %v", err)
 		m.notifyPanel()
@@ -436,8 +438,11 @@ func (m *Manager) Swap(slot int) error {
 	if t.Status == "stopped" {
 		return fmt.Errorf("Slot 已停止，请先启动")
 	}
+	// 连接中不再拒绝：记下自动换节点意向，发布成功后执行。
+	// 用户在界面上经 pending_swap 可见排队态。
 	if t.Status == "starting" {
-		return fmt.Errorf("这个出口正在连接中，稍等一下")
+		t.queuePendingSwap(nil, true)
+		return nil
 	}
 
 	node, err := m.pickSwapTarget(t)
@@ -447,7 +452,7 @@ func (m *Manager) Swap(slot int) error {
 	oldHost := t.Node.HostName
 	t.clearFlap()
 	t.clearSpeculation()
-	m.reconnectTo(t, oldHost, &node)
+	m.reconnectTo(t, oldHost, &node, "手动换节点，正在连接新节点")
 	return nil
 }
 
@@ -476,9 +481,6 @@ func (m *Manager) SwapTo(slot int, host string) error {
 	if t.Status == "stopped" {
 		return fmt.Errorf("Slot 已停止，请先启动")
 	}
-	if t.Status == "starting" {
-		return fmt.Errorf("这个出口正在连接中，稍等一下")
-	}
 	policy := t.policySnapshot()
 	if image := freshCandidateImage(node); image != nil {
 		if err := policy.checkImage(*image); err != nil {
@@ -494,12 +496,50 @@ func (m *Manager) SwapTo(slot int, host string) error {
 	if oldHost == node.HostName {
 		return fmt.Errorf("这个节点已经是当前出口")
 	}
+	// 连接中先校验、后排队：目标合法性立即反馈，执行等发布成功。
+	if t.Status == "starting" {
+		cp := node
+		t.queuePendingSwap(&cp, false)
+		return nil
+	}
 	t.rememberSwap(oldHost)
 	t.rememberSwap(node.HostName)
 	t.clearFlap()
 	t.clearSpeculation()
-	m.reconnectTo(t, oldHost, &node)
+	m.reconnectTo(t, oldHost, &node, "手动换节点，正在连接新节点")
 	return nil
+}
+
+// swapPending 执行排队意向（publishUp 成功后异步调用）。
+// 用实时校验后委托给 Swap/SwapTo，保证与手动操作同语义；
+// Slot 已停/已删则丢弃（Stop 即弃）。
+func (m *Manager) swapPending(t *Tunnel, node *Node, auto bool) {
+	if !m.tunnelActive(t) {
+		return
+	}
+	t.mu.Lock()
+	stopped := t.Status == "stopped"
+	t.mu.Unlock()
+	if stopped {
+		return
+	}
+	var err error
+	if auto {
+		err = m.Swap(t.Slot)
+	} else if node != nil {
+		err = m.SwapTo(t.Slot, node.HostName)
+	}
+	if err != nil {
+		log.Printf("隧道 %d 排队换节点未执行: %v", t.Slot, err)
+	}
+}
+
+// hasPendingSwap 供 API 区分“已排队”与“执行中”。
+func (m *Manager) hasPendingSwap(slot int) bool {
+	m.mu.RLock()
+	t := m.tunnels[slot]
+	m.mu.RUnlock()
+	return t != nil && t.hasPendingSwap()
 }
 
 // pickSwapTarget 给"换节点"挑下一个目标，并把该跳过的节点记进历史。

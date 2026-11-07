@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 var errDiagnosticPreempted = errors.New("diagnostic yielded to exit recovery")
@@ -79,6 +80,7 @@ func (m *Manager) releaseDiagnostic(host string, lease *diagnosticLease) {
 func (t *Tunnel) probePhase(phase string) {
 	t.mu.Lock()
 	t.probeStage = phase
+	t.probeStageAt = time.Now()
 	t.mu.Unlock()
 	if t.onProbePhase != nil {
 		t.onProbePhase(phase)

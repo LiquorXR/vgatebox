@@ -60,12 +60,15 @@ export interface Exit {
   country: string;
   exit_ip: string;
   phase?: string;
+  phase_elapsed_s?: number;
+  pending_swap?: boolean;
   status: string;
   err?: string;
   since: string;
   egress?: EgressProfile | null;
   policy?: SlotPolicy;
   latency_ms?: number;
+  latency_trend?: string;
   can_rollback_policy?: boolean;
   public_socks?: SocksExposure | null;
   socks_user?: string;

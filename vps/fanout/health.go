@@ -147,12 +147,13 @@ func (m *Manager) healthRound(ctx context.Context, state *healthRoundState) {
 			state.fails[t.Slot] = 0
 			state.deferred[t.Slot] = false
 			state.degraded[t.Slot] = 0
+			m.refreshKillSwitchIfDue(t)
 		case healthBlocked:
 			state.fails[t.Slot] = 0
 			state.deferred[t.Slot] = false
 			state.degraded[t.Slot] = 0
 			log.Printf("隧道 %d (%s) 出口证据已失效，立即换节点重连", t.Slot, t.Node.HostName)
-			m.reconnectHealth(t)
+			m.reconnectHealth(t, "出口证据已失效，正在换节点重连")
 		case healthDegraded:
 			state.fails[t.Slot] = 0
 			state.deferred[t.Slot] = false
@@ -170,7 +171,7 @@ func (m *Manager) healthRound(ctx context.Context, state *healthRoundState) {
 			// 本轮重连与后续手动换节点都不再优先重试它。
 			t.setPerfFloor(t.smoothLatency())
 			t.rememberSwap(t.Node.HostName)
-			m.reconnectHealth(t)
+			m.reconnectHealth(t, "持续变慢，正在换节点重连")
 		case healthDeferred:
 			// A busy Slot is not evidence of failure, but it must not look
 			// healthy either: leave the streak untouched and retry next round.
@@ -186,17 +187,25 @@ func (m *Manager) healthRound(ctx context.Context, state *healthRoundState) {
 			}
 			log.Printf("隧道 %d (%s) 已掉线，正在换节点重连", t.Slot, t.Node.HostName)
 			state.fails[t.Slot] = 0
-			m.reconnectHealth(t)
+			m.reconnectHealth(t, "已掉线，正在换节点重连")
 		}
 	}
 }
 
-func (m *Manager) reconnectHealth(t *Tunnel) {
+func (m *Manager) reconnectHealth(t *Tunnel, cause string) {
 	if m.healthReconnect != nil {
 		m.healthReconnect(t, t.Node.HostName)
 		return
 	}
-	m.reconnect(t, t.Node.HostName)
+	t.changeMu.Lock()
+	defer t.changeMu.Unlock()
+	t.mu.Lock()
+	up := t.Status == "up" || t.Status == "degraded" || t.Status == "blocked"
+	t.mu.Unlock()
+	if !up {
+		return
+	}
+	m.reconnectTo(t, t.Node.HostName, nil, cause)
 }
 
 func (m *Manager) checkTunnelHealth(parent context.Context, t *Tunnel) (healthState, float64) {
@@ -332,25 +341,14 @@ func (m *Manager) healthOpWaitValue() time.Duration {
 	return healthOpWait
 }
 
-// reconnect 就地把一条隧道换到别的节点上，保持槽位与端口不变，
+// reconnectTo 就地把一条隧道换到别的节点上，保持槽位与端口不变，
 // 这样已经分发出去的客户端配置仍然可用。
 //
 // oldHost 必须是本次重连前那条隧道真正绑着的节点名。调用方若已经
 // 改过 t.Node（比如手动换节点），就要把改之前的名字传进来，
 // 否则 rebind 找不到旧绑定，入站会掉成孤儿。
-func (m *Manager) reconnect(t *Tunnel, oldHost string) {
-	t.changeMu.Lock()
-	defer t.changeMu.Unlock()
-	t.mu.Lock()
-	up := t.Status == "up" || t.Status == "degraded" || t.Status == "blocked"
-	t.mu.Unlock()
-	if !up {
-		return
-	}
-	m.reconnectTo(t, oldHost, nil)
-}
-
-func (m *Manager) reconnectTo(t *Tunnel, oldHost string, node *Node) {
+// cause 写进界面可见的 Err，为空时用通用文案。
+func (m *Manager) reconnectTo(t *Tunnel, oldHost string, node *Node, cause string) {
 	t.blockWork()
 	t.opMu.Lock()
 	if !m.tunnelActive(t) {
@@ -358,7 +356,11 @@ func (m *Manager) reconnectTo(t *Tunnel, oldHost string, node *Node) {
 		return
 	}
 	t.mu.Lock()
-	t.Status, t.Err, t.ExitIP = "starting", "正在按 Slot 策略重新验活", ""
+	reason := "正在按 Slot 策略重新验活"
+	if cause != "" {
+		reason = cause
+	}
+	t.Status, t.Err, t.ExitIP = "starting", reason, ""
 	if node != nil {
 		t.Node = *node
 	}

@@ -7,9 +7,11 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 type vpnRemote struct {
@@ -124,6 +126,10 @@ func installKillSwitch(t *Tunnel) error {
 	if err := run("ip", "netns", "exec", t.nsName(), "sysctl", "-q", "-w", "net.ipv6.conf.all.disable_ipv6=1"); err != nil {
 		return fmt.Errorf("禁用 namespace IPv6 失败: %w", err)
 	}
+	t.mu.Lock()
+	t.vpnRemotes = remotes
+	t.killswitchRefreshedAt = time.Now()
+	t.mu.Unlock()
 	return nil
 }
 
@@ -132,7 +138,9 @@ func removeKillSwitch(t *Tunnel) {
 	peer := ""
 	veth, peer = t.vethNames()
 	cidr := t.linkCIDR()
-	remotes := parseVPNRemotes(t.Node.Config, t.Node.IP)
+	// 按建链快照删：运行期 DNS 轮换后现场重解析会漏掉旧 IP。
+	// 无快照（如安装失败半途）回退现场解析。
+	remotes := t.storedRemotes()
 	for _, r := range remotes {
 		removeRule("filter", "FORWARD", "-i", veth, "-s", cidr, "-d", r.ip, "-p", r.proto, "--dport", r.port, "-j", "ACCEPT")
 		_ = run("ip", "netns", "exec", t.nsName(), "iptables", "-w", "5", "-D", "OUTPUT", "-o", peer, "-d", r.ip, "-p", r.proto, "--dport", r.port, "-j", "ACCEPT")
@@ -144,4 +152,97 @@ func removeKillSwitch(t *Tunnel) {
 func removeRule(table, chain string, spec ...string) {
 	args := append([]string{"-w", "5", "-t", table, "-D", chain}, spec...)
 	runQuiet("iptables", args...)
+}
+
+// killswitchRefreshInterval 是运行期 DNS 重解析周期：只增量加规则，
+// 删规则永远只在 teardown，避免抖动窗口误杀控制面。
+const killswitchRefreshInterval = 5 * time.Minute
+
+// storedRemotes 返回建链快照，无记录回退现场解析。
+func (t *Tunnel) storedRemotes() []vpnRemote {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.vpnRemotes) > 0 {
+		return append([]vpnRemote(nil), t.vpnRemotes...)
+	}
+	return parseVPNRemotes(t.Node.Config, t.Node.IP)
+}
+
+func (t *Tunnel) killswitchDue() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return time.Since(t.killswitchRefreshedAt) > killswitchRefreshInterval
+}
+
+// missingRemotes 求 fresh 相对 installed 的增量（去重），纯函数。
+func missingRemotes(installed, fresh []vpnRemote) []vpnRemote {
+	seen := map[string]bool{}
+	for _, r := range installed {
+		seen[r.ip+":"+r.port+"/"+r.proto] = true
+	}
+	var out []vpnRemote
+	for _, r := range fresh {
+		if key := r.ip + ":" + r.port + "/" + r.proto; !seen[key] {
+			seen[key] = true
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// nsRuleInsert 幂等插入一条 netns 内 iptables 规则（母机侧 ensureRuleInsert 的命名空间版）。
+func nsRuleInsert(ns, chain string, spec ...string) error {
+	check := append([]string{"netns", "exec", ns, "iptables", "-w", "5", "-C", chain}, spec...)
+	if cmdRun(exec.Command("ip", check...)) == nil {
+		return nil
+	}
+	ins := append([]string{"netns", "exec", ns, "iptables", "-w", "5", "-I", chain, "1"}, spec...)
+	if out, err := cmdCombined(exec.Command("ip", ins...)); err != nil {
+		return fmt.Errorf("ip %s: %v: %s", strings.Join(ins, " "), err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// refreshKillSwitchIfDue 在健康 OK 轮按周期增量放行 DNS 轮换出的新远端。
+// 同步调用但只拿 opMu 试探锁：正有建链/重连在飞则跳过，不挡健康决策。
+func (m *Manager) refreshKillSwitchIfDue(t *Tunnel) {
+	if !t.killswitchDue() {
+		return
+	}
+	m.refreshKillSwitch(t)
+}
+
+func (m *Manager) refreshKillSwitch(t *Tunnel) {
+	if !t.opMu.TryLock() {
+		return
+	}
+	defer t.opMu.Unlock()
+	t.mu.Lock()
+	config, ip := t.Node.Config, t.Node.IP
+	installed := append([]vpnRemote(nil), t.vpnRemotes...)
+	t.mu.Unlock()
+	if config == "" {
+		return
+	}
+	// 先记时间再放行：失败也等下个周期，避免坏命名空间每轮刷屏。
+	t.mu.Lock()
+	t.killswitchRefreshedAt = time.Now()
+	t.mu.Unlock()
+	missing := missingRemotes(installed, parseVPNRemotes(config, ip))
+	if len(missing) == 0 {
+		return
+	}
+	ns := t.nsName()
+	veth, peer := t.vethNames()
+	cidr := t.linkCIDR()
+	for _, r := range missing {
+		ensureRuleInsert("filter", "FORWARD", "-i", veth, "-s", cidr, "-d", r.ip, "-p", r.proto, "--dport", r.port, "-j", "ACCEPT")
+		if err := nsRuleInsert(ns, "OUTPUT", "-o", peer, "-d", r.ip, "-p", r.proto, "--dport", r.port, "-j", "ACCEPT"); err != nil {
+			log.Printf("隧道 %d killswitch 增量放行失败: %v", t.Slot, err)
+			return
+		}
+	}
+	t.mu.Lock()
+	t.vpnRemotes = append(installed, missing...)
+	t.mu.Unlock()
 }

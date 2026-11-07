@@ -108,6 +108,10 @@ func apiSwap(m *Manager) http.HandlerFunc {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 			return
 		}
+		if m.hasPendingSwap(slot) {
+			writeJSON(w, http.StatusOK, map[string]string{"ok": "已排队，当前连接完成后执行"})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]string{"ok": "正在换节点"})
 	}
 }

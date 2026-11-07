@@ -30,6 +30,8 @@ type Exit struct {
 	Country           string         `json:"country"`
 	ExitIP            string         `json:"exit_ip"`
 	Phase             string         `json:"phase,omitempty"`
+	PhaseElapsedS     int64          `json:"phase_elapsed_s,omitempty"`
+	PendingSwap       bool           `json:"pending_swap,omitempty"`
 	Status            string         `json:"status"`
 	Err               string         `json:"err,omitempty"`
 	Since             time.Time      `json:"since"`
@@ -128,7 +130,7 @@ func (m *Manager) ExitsOf() ExitsView {
 		view.Exits = append(view.Exits, Exit{
 			Slot: snapshot.Slot, Port: snapshot.Port, Host: snapshot.Node.HostName,
 			Region: snapshot.Node.CountryCode, Country: nodeLabel(snapshot.Node),
-			ExitIP: snapshot.ExitIP, Status: snapshot.Status, Phase: snapshot.Phase, Err: snapshot.Err, Since: snapshot.Since,
+			ExitIP: snapshot.ExitIP, Status: snapshot.Status, Phase: snapshot.Phase, PhaseElapsedS: snapshot.PhaseElapsedS, PendingSwap: snapshot.PendingSwap, Err: snapshot.Err, Since: snapshot.Since,
 			Egress: snapshot.Egress,
 			Policy: t.policySnapshot(), LatencyMS: snapshot.LatencyMS, LatencyTrend: snapshot.LatencyTrend,
 			CanRollbackPolicy: snapshot.CanRollbackPolicy,

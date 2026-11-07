@@ -12,6 +12,10 @@ type tunnelView struct {
 	Port              int            `json:"port"`
 	Node              Node           `json:"node"`
 	Phase             string         `json:"phase,omitempty"`
+	// PhaseElapsedS 是当前阶段已耗时（秒，仅 starting 展示）。
+	PhaseElapsedS     int64          `json:"phase_elapsed_s,omitempty"`
+	// PendingSwap 表示 starting 期间收到的换节点意向已排队。
+	PendingSwap       bool           `json:"pending_swap,omitempty"`
 	Status            string         `json:"status"`
 	ExitIP            string         `json:"exit_ip"`
 	Err               string         `json:"err,omitempty"`
@@ -40,8 +44,15 @@ func (t *Tunnel) snapshot() tunnelView {
 			trend = "steady"
 		}
 	}
-	view := tunnelView{Slot: t.Slot, Port: t.Port, Node: t.Node, Status: t.Status, Phase: t.probeStage, ExitIP: t.ExitIP, Err: t.Err,
-		Since: t.Since, Cred: t.Cred, Policy: t.Policy, LatencyMS: t.LatencyMS, LatencyTrend: trend, Egress: t.egressSnapshotLocked(false), CanRollbackPolicy: t.previousPolicy != nil}
+	phaseElapsed := int64(0)
+	if t.Status == "starting" && !t.probeStageAt.IsZero() {
+		if elapsed := time.Since(t.probeStageAt); elapsed > 0 {
+			phaseElapsed = int64(elapsed.Seconds())
+		}
+	}
+	pending := t.pendingSwapAuto || t.pendingSwapTo != nil
+	view := tunnelView{Slot: t.Slot, Port: t.Port, Node: t.Node, Status: t.Status, Phase: t.probeStage, PhaseElapsedS: phaseElapsed, ExitIP: t.ExitIP, Err: t.Err,
+		Since: t.Since, Cred: t.Cred, Policy: t.Policy, LatencyMS: t.LatencyMS, LatencyTrend: trend, PendingSwap: pending, Egress: t.egressSnapshotLocked(false), CanRollbackPolicy: t.previousPolicy != nil}
 	if view.Status == "up" && !t.acceptsSocksLocked() {
 		view.Status, view.Err = "blocked", "当前出口证据不满足策略，等待重新验活"
 	}

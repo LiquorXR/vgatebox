@@ -9,6 +9,7 @@ import type { Exit, ExitInbound, ExitPlan, SlotPolicy } from "@/api/types";
 import DialogShell from "@/components/DialogShell.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import EmptyState from "@/components/EmptyState.vue";
+import LatencyTrend from "@/components/LatencyTrend.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import Panel from "@/components/Panel.vue";
 import ProgressBar from "@/components/ProgressBar.vue";
@@ -580,13 +581,14 @@ const statusOptions = [
             </div>
             <div class="space-y-1">
               <StatusBadge :label="exitStatusLabel(exit.status)" :tone="exitStatusTone(exit.status)" size="sm" :pulse="exit.status === 'starting'" />
+              <span v-if="exit.pending_swap" class="block text-[10px] text-warn">排队换节点中</span>
               <span v-if="checkItemState(exit)" class="flex items-center gap-1 text-[10px] text-info">
                 <Spinner v-if="checkItemState(exit)?.running" :size="10" />
                 {{ checkItemState(exit)?.label }}
               </span>
             </div>
             <span class="truncate text-xs text-muted">{{ exit.exit_ip || "—" }}</span>
-            <span class="tnum text-xs text-muted">{{ formatLatency(exit.latency_ms) }}</span>
+            <span class="flex items-center justify-end gap-1 text-xs text-muted"><span class="tnum">{{ formatLatency(exit.latency_ms) }}</span><LatencyTrend :trend="exit.latency_trend" /></span>
             <span class="flex items-center justify-end gap-1">
               <UiButton size="sm" variant="ghost" aria-label="查看详情" @click.stop="openExit(exit)"><ChevronRight :size="15" /></UiButton>
             </span>
@@ -688,13 +690,14 @@ const statusOptions = [
       <div v-else class="space-y-5">
         <div class="flex flex-wrap items-center gap-2">
           <StatusBadge :label="exitStatusLabel(selectedExit.status)" :tone="exitStatusTone(selectedExit.status)" :pulse="selectedExit.status === 'starting'" />
-          <span v-if="selectedExit.phase" class="text-[11px] text-faint">{{ selectedExit.phase }}</span>
+          <span v-if="selectedExit.phase" class="text-[11px] text-faint">{{ phaseLabels[selectedExit.phase] || selectedExit.phase }}<span v-if="selectedExit.phase_elapsed_s"> · {{ selectedExit.phase_elapsed_s }}s</span></span>
+          <span v-if="selectedExit.pending_swap" class="text-[11px] text-warn">排队换节点中，当前连接完成后执行</span>
           <span v-if="selectedExit.err" class="text-[11px] text-bad">{{ selectedExit.err }}</span>
         </div>
 
         <dl class="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border border-line bg-surface-2 p-3 text-xs">
           <div><dt class="text-faint">出口编号</dt><dd class="tnum mt-0.5 font-medium">{{ pad2(selectedExit.slot) }}</dd></div>
-          <div><dt class="text-faint">延迟</dt><dd class="tnum mt-0.5 font-medium">{{ formatLatency(selectedExit.latency_ms) }}</dd></div>
+          <div><dt class="text-faint">延迟</dt><dd class="mt-0.5 flex items-center gap-1 font-medium"><span class="tnum">{{ formatLatency(selectedExit.latency_ms) }}</span><LatencyTrend :trend="selectedExit.latency_trend" /></dd></div>
           <div><dt class="text-faint">实际出口</dt><dd class="mt-0.5 truncate font-mono text-[11px]">{{ selectedExit.exit_ip || "—" }}</dd></div>
           <div><dt class="text-faint">来源地区</dt><dd class="mt-0.5">{{ countryName(selectedExit.region) }}（{{ selectedExit.region || "??" }}）</dd></div>
           <div><dt class="text-faint">启动于</dt><dd class="mt-0.5">{{ formatDateTime(selectedExit.since) }}</dd></div>

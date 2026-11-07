@@ -185,5 +185,5 @@ func (m *Manager) rotateIfPerfWorse(t *Tunnel) {
 		t.Slot, t.smoothLatency(), floor, node.HostName)
 	oldHost := t.Node.HostName
 	t.rememberSwap(oldHost)
-	m.reconnectTo(t, oldHost, &node)
+	m.reconnectTo(t, oldHost, &node, "新出口仍慢，正在换下一个节点")
 }
