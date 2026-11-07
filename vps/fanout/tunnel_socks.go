@@ -88,10 +88,9 @@ func (t *Tunnel) acceptsSocksLocked() bool {
 		return false
 	}
 	if t.Policy != nil {
-		// degraded 仍全量服务：画像门保留，延迟门放行（延迟超限已由健康检查
-		// 标记观察并终将升级为重连，这里拒掉新连接等于提前断流）。
-		if t.egress == nil || t.Policy.checkImage(*t.egress) != nil ||
-			(t.Status != "degraded" && t.Policy.checkLatency(t.LatencyMS) != nil) {
+		// 正确性门只看画像证据：延迟超限走 degraded 观察，由健康检查驱动
+		// 升级为重连，不在这里拒新连接（建连时首个样本已验过上限）。
+		if t.egress == nil || t.Policy.checkImage(*t.egress) != nil {
 			return false
 		}
 	}
