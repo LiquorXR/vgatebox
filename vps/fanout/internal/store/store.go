@@ -2,7 +2,7 @@
 //
 // 范围（P3-3，ADR-0007）：只收调用方自有、不被 Python 读写的三类——
 // 检测结果（checks.json）、出口观察快照（slot_health.json）、
-// IPPure 画像缓存（ippure-cache.json）。
+// IP 类型缓存（ip-type-cache.json）。
 // 意图类文件（state/native/settings/console/automation/pool 共享态）
 // 因 Python 侧（installer、distro_verify、vps_acceptance、pool_schedule）
 // 直接读 JSON 而留在文件，SQLite 化等 Python 读者迁移后再议。
@@ -93,7 +93,7 @@ func (s FileDocStore) Save(blob json.RawMessage) error {
 }
 
 // FileMapStore 把 map[string]Entry 存成一个 JSON 对象文件，
-// 形状与现状 checks.json / ippure-cache.json 的“对象套对象”一致。
+// 形状与现状 checks.json / ip-type-cache.json 的“对象套对象”一致。
 type FileMapStore struct{ Path string }
 
 func (s FileMapStore) LoadAll() (map[string]Entry, error) {

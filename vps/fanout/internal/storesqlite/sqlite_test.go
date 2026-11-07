@@ -95,7 +95,7 @@ func TestMapStoreReplaceAll(t *testing.T) {
 		t.Fatalf("clear = %v %v", got, err)
 	}
 	// 同库另一域不受影响。
-	other := db.MapStore("ippure")
+	other := db.MapStore("ip_type")
 	if err := other.SaveAll(map[string]store.Entry{"k": {Data: json.RawMessage(`{}`)}}); err != nil {
 		t.Fatal(err)
 	}

@@ -33,7 +33,7 @@ func allAPIRoutes() []apiRoute {
 		{Path: "/api/console/check/cancel", Methods: []string{"POST"}, Handler: "Console.apiCheckCancel", Auth: "session"},
 		{Path: "/api/console/check/settings", Methods: []string{"GET", "POST"}, Handler: "Console.apiCheckSettings", Auth: "session"},
 		{Path: "/api/console/direct", Methods: []string{"POST"}, Handler: "Console.apiHostDirect", Auth: "session"},
-		{Path: "/api/console/ippure-cache", Methods: []string{"GET", "POST", "DELETE"}, Handler: "Console.apiIPPureCache", Auth: "session"},
+		{Path: "/api/console/ip-type-cache", Methods: []string{"GET", "POST", "DELETE"}, Handler: "Console.apiIPTypeCache", Auth: "session"},
 		{Path: "/api/console/qr", Methods: []string{"GET"}, Handler: "Console.apiConsoleQR", Auth: "session"},
 		{Path: "/api/console/refresh", Methods: []string{"POST"}, Handler: "Console.apiPoolRefresh", Auth: "session"},
 		{Path: "/api/console/slot/delete", Methods: []string{"POST"}, Handler: "Console.apiDeleteSlot", Auth: "session"},

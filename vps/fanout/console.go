@@ -52,7 +52,7 @@ type Console struct {
 	checkParallelism      int
 	checkIPType           bool
 	observationTTLMinutes int
-	ippureTTLHours        int
+	ipTypeTTLHours        int
 	ttlMu                 sync.RWMutex
 	checksDirty           bool
 	checksFlushInterval   time.Duration
@@ -117,7 +117,8 @@ func newConsole(m *Manager) (*Console, error) {
 	c.checkStore, c.checkDB = openCheckStore(m.workDir)
 	if c.checkDB != nil {
 		m.slotHealthDoc = c.checkDB.DocStore("slot_health")
-		m.ippureMap = c.checkDB.MapStore("ippure")
+		migrateLegacyIPTypeStore(c.checkDB)
+		m.setIPTypeMap(c.checkDB.MapStore("ip_type"))
 	} else {
 		m.slotHealthDoc = store.FileDocStore{Path: paths.SlotHealth(m.workDir)}
 	}

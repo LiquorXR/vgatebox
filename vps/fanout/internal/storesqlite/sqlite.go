@@ -4,7 +4,7 @@
 //
 // 设计取舍：
 //   - 单库多域：docs（单文档）与 entries（store+key 寻址）两张表，
-//     checks/ippure/slot_health 共用一个库文件。
+//     checks/ip_type/slot_health 共用一个库文件。
 //   - 单连接（SetMaxOpenConns(1)）：管理器本就是单写者，写操作毫秒级；
 //     避免多连接下的 PRAGMA 漂移与 busy 重试。
 //   - 文件 0600：先 OpenFile 建空文件定权限，再 sql.Open（SQLite 建文件

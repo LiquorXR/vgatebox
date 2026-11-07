@@ -179,8 +179,7 @@ func (c *Console) probeCandidate(parent context.Context, node Node, slot int, pr
 	helper := NewManager(1, dir)
 	helper.connectBudget = c.m.connectBudget
 	helper.evidenceDir = c.m.evidenceDir
-	helper.ippureMap = c.m.ippureMap
-	helper.setIPPureTTL(c.m.ippureTTLValue())
+	helper.shareIPTypeCache(c.m)
 	helper.tunnels[t.Slot] = t
 	defer func() { progress("cleanup"); t.stop(); _ = os.RemoveAll(filepath.Join("/etc/netns", t.nsName())) }()
 	if err := helper.tryNode(t); err != nil {

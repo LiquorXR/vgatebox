@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -19,7 +20,7 @@ import (
 // SOCKS listener provides that path without exposing the proxy publicly.
 const (
 	defaultIPPureURL  = "https://my.ippure.com/v1/info"
-	defaultIPPureTTL  = 24 * time.Hour
+	defaultIPTypeTTL  = 24 * time.Hour
 	ippureRuleVersion = "ippure-1"
 )
 
@@ -33,17 +34,32 @@ type ippureResponse struct {
 	IsResidential  *bool  `json:"isResidential"`
 }
 
-type ippureCacheEntry struct {
+type ipTypeCacheEntry struct {
 	Profile  EgressProfile `json:"profile"`
 	CachedAt time.Time     `json:"cached_at"`
 }
 
-type ippureCacheFile struct {
+type ipTypeCacheFile struct {
 	Version int                         `json:"version"`
-	Entries map[string]ippureCacheEntry `json:"entries"`
+	Entries map[string]ipTypeCacheEntry `json:"entries"`
 }
 
-type ippureCacheStats struct {
+// ipTypeCache is the single in-process cache shared by production exits and
+// candidate checks. A helper Manager must share this pointer, not create its
+// own map; otherwise entries and hit/query counts diverge between surfaces.
+type ipTypeCache struct {
+	mu       sync.Mutex
+	entries  map[string]ipTypeCacheEntry
+	loaded   bool
+	hits     int
+	queries  int
+	ttl      time.Duration
+	storeRef store.MapStore
+	workDir  string
+	path     string
+}
+
+type ipTypeCacheStats struct {
 	Entries int `json:"entries"`
 	Hits    int `json:"hits"`
 	Queries int `json:"queries"`
@@ -113,7 +129,7 @@ func asnPtr(asn int) *string {
 // OpenVPN profile. isResidential is the only explicit residential signal
 // IPPure provides; missing or false never becomes strict_residential.
 func profileFromIPPure(raw ippureResponse, expectedIP string, now time.Time) (EgressProfile, error) {
-	return profileFromIPPureTTL(raw, expectedIP, now, defaultIPPureTTL)
+	return profileFromIPPureTTL(raw, expectedIP, now, defaultIPTypeTTL)
 }
 
 func profileFromIPPureTTL(raw ippureResponse, expectedIP string, now time.Time, ttl time.Duration) (EgressProfile, error) {
@@ -123,7 +139,7 @@ func profileFromIPPureTTL(raw ippureResponse, expectedIP string, now time.Time, 
 		return image, fmt.Errorf("ippure_ip_mismatch")
 	}
 	if ttl <= 0 {
-		ttl = defaultIPPureTTL
+		ttl = defaultIPTypeTTL
 	}
 	expires := now.Add(ttl)
 	country := strings.ToUpper(strings.TrimSpace(raw.CountryCode))
@@ -166,10 +182,10 @@ func profileFromIPPureTTL(raw ippureResponse, expectedIP string, now time.Time, 
 	return image, nil
 }
 
-// ippureCacheable accepts only a complete, passed answer. A successful
+// ipTypeCacheable accepts only a complete, passed answer. A successful
 // "not residential" answer is cached as unknown; failures, IP mismatches and
 // incomplete evidence are queried again next time.
-func ippureCacheable(raw ippureResponse, image EgressProfile, expectedIP string) bool {
+func ipTypeCacheable(raw ippureResponse, image EgressProfile, expectedIP string) bool {
 	if expectedIP == "" || raw.IP != expectedIP || image.IP != expectedIP || image.IntelligenceStatus != "passed" {
 		return false
 	}
@@ -215,41 +231,112 @@ func (t *Tunnel) probeIPPure(parent context.Context, expectedIP string, ttl time
 		return profile, raw, false
 	}
 	image.Raw = out
-	return image, raw, ippureCacheable(raw, image, expectedIP)
+	return image, raw, ipTypeCacheable(raw, image, expectedIP)
 }
 
-func (m *Manager) ippureTTLValue() time.Duration {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.ippureTTL > 0 {
-		return m.ippureTTL
-	}
-	return defaultIPPureTTL
-}
-
-func (m *Manager) setIPPureTTL(ttl time.Duration) {
+func newIPTypeCache(storeRef store.MapStore, workDir, path string, ttl time.Duration) *ipTypeCache {
 	if ttl <= 0 {
-		ttl = defaultIPPureTTL
+		ttl = defaultIPTypeTTL
 	}
-	m.mu.Lock()
-	m.ippureTTL = ttl
-	m.mu.Unlock()
+	return &ipTypeCache{
+		entries:  map[string]ipTypeCacheEntry{},
+		ttl:      ttl,
+		storeRef: storeRef,
+		workDir:  workDir,
+		path:     path,
+	}
 }
 
-func (m *Manager) ippureCachePath() string {
+// ipTypeState lazily binds the cache to the manager's store and TTL. newConsole
+// installs the SQLite MapStore before the first lookup, so construction stays
+// lazy and bare Manager tests keep the legacy JSON file fallback.
+func (m *Manager) ipTypeState() *ipTypeCache {
+	m.ipTypeInitMu.Lock()
+	defer m.ipTypeInitMu.Unlock()
+	if m.ipType != nil {
+		return m.ipType
+	}
+	dir := m.ipTypeCacheDir()
+	path := paths.IPTypeCache(dir)
+	legacyPath := paths.LegacyIPTypeCache(dir)
+	s := m.ipTypeMap
+	if s == nil {
+		migrateLegacyIPTypeFile(legacyPath, path)
+		s = legacyIPTypeFile{path: path}
+	} else {
+		// DB 模式不读取旧文件；迁移完旧记录集后清掉残留文件。
+		_ = os.Remove(legacyPath)
+	}
+	ttl := m.ipTypeTTL
+	if ttl <= 0 {
+		ttl = defaultIPTypeTTL
+	}
+	m.ipType = newIPTypeCache(s, m.workDir, path, ttl)
+	return m.ipType
+}
+
+func (m *Manager) setIPTypeMap(s store.MapStore) {
+	m.ipTypeInitMu.Lock()
+	m.ipTypeMap = s
+	m.ipType = nil
+	m.ipTypeInitMu.Unlock()
+}
+
+// shareIPTypeCache makes a candidate-check helper account against the
+// long-lived manager: entries, hits, queries and TTL are all shared.
+func (m *Manager) shareIPTypeCache(parent *Manager) {
+	if parent == nil {
+		return
+	}
+	shared := parent.ipTypeState()
+	m.ipTypeInitMu.Lock()
+	m.ipType = shared
+	m.ipTypeInitMu.Unlock()
+}
+
+func (m *Manager) ipTypeTTLValue() time.Duration {
+	c := m.ipTypeState()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.ttl > 0 {
+		return c.ttl
+	}
+	return defaultIPTypeTTL
+}
+
+func (m *Manager) setIPTypeTTL(ttl time.Duration) {
+	if ttl <= 0 {
+		ttl = defaultIPTypeTTL
+	}
+	m.ipTypeInitMu.Lock()
+	m.ipTypeTTL = ttl
+	c := m.ipType
+	if c != nil {
+		c.mu.Lock()
+		c.ttl = ttl
+		c.mu.Unlock()
+	}
+	m.ipTypeInitMu.Unlock()
+}
+
+func (m *Manager) ipTypeCacheDir() string {
 	dir := m.evidenceDir
 	if strings.TrimSpace(dir) == "" {
 		dir = m.workDir
 	}
-	return paths.IPPureCache(dir)
+	return dir
 }
 
-// legacyIPPureFile 是旧 ippure-cache.json 形状的 MapStore 适配：
+func (m *Manager) ipTypeCachePath() string {
+	return paths.IPTypeCache(m.ipTypeCacheDir())
+}
+
+// legacyIPTypeFile 是 ippure-cache.json 时代的文件形状适配：
 // 文件里是 {"version":1,"entries":{ip:{profile,cached_at}}}，
 // 进出时与 store.Entry 互转。只在 SQLite 不可用时使用。
-type legacyIPPureFile struct{ path string }
+type legacyIPTypeFile struct{ path string }
 
-func (s legacyIPPureFile) LoadAll() (map[string]store.Entry, error) {
+func (s legacyIPTypeFile) LoadAll() (map[string]store.Entry, error) {
 	out := map[string]store.Entry{}
 	blob, err := os.ReadFile(s.path)
 	if err != nil {
@@ -258,9 +345,9 @@ func (s legacyIPPureFile) LoadAll() (map[string]store.Entry, error) {
 		}
 		return nil, err
 	}
-	var file ippureCacheFile
+	var file ipTypeCacheFile
 	if err := json.Unmarshal(blob, &file); err != nil || file.Entries == nil {
-		return nil, fmt.Errorf("invalid ippure cache file: %w", err)
+		return nil, fmt.Errorf("invalid ip type cache file: %w", err)
 	}
 	for ip, e := range file.Entries {
 		data, err := json.Marshal(e.Profile)
@@ -276,14 +363,14 @@ func (s legacyIPPureFile) LoadAll() (map[string]store.Entry, error) {
 	return out, nil
 }
 
-func (s legacyIPPureFile) SaveAll(entries map[string]store.Entry) error {
-	file := ippureCacheFile{Version: 1, Entries: map[string]ippureCacheEntry{}}
+func (s legacyIPTypeFile) SaveAll(entries map[string]store.Entry) error {
+	file := ipTypeCacheFile{Version: 1, Entries: map[string]ipTypeCacheEntry{}}
 	for ip, e := range entries {
 		var p EgressProfile
 		if err := json.Unmarshal(e.Data, &p); err != nil {
 			return err
 		}
-		file.Entries[ip] = ippureCacheEntry{Profile: p, CachedAt: e.CheckedAt}
+		file.Entries[ip] = ipTypeCacheEntry{Profile: p, CachedAt: e.CheckedAt}
 	}
 	blob, err := json.Marshal(file)
 	if err != nil {
@@ -292,22 +379,19 @@ func (s legacyIPPureFile) SaveAll(entries map[string]store.Entry) error {
 	return atomicConfigWrite(s.path, blob)
 }
 
-func (m *Manager) ippureStore() store.MapStore {
-	if m.ippureMap != nil {
-		return m.ippureMap
-	}
-	return legacyIPPureFile{path: m.ippureCachePath()}
+func (m *Manager) ipTypeStore() store.MapStore {
+	return m.ipTypeState().storeRef
 }
 
-func (m *Manager) loadIPPureCacheLocked() {
-	if m.ippureCacheLoaded {
+func (c *ipTypeCache) loadLocked() {
+	if c.loaded {
 		return
 	}
-	m.ippureCacheLoaded = true
-	if m.ippureCache == nil {
-		m.ippureCache = map[string]ippureCacheEntry{}
+	c.loaded = true
+	if c.entries == nil {
+		c.entries = map[string]ipTypeCacheEntry{}
 	}
-	entries, err := m.ippureStore().LoadAll()
+	entries, err := c.storeRef.LoadAll()
 	if err != nil {
 		return
 	}
@@ -320,20 +404,20 @@ func (m *Manager) loadIPPureCacheLocked() {
 			p.Provider != "ippure" || p.RuleVersion != ippureRuleVersion {
 			continue
 		}
-		m.ippureCache[ip] = ippureCacheEntry{Profile: p, CachedAt: e.CheckedAt}
+		c.entries[ip] = ipTypeCacheEntry{Profile: p, CachedAt: e.CheckedAt}
 	}
 }
 
-func (m *Manager) saveIPPureCacheLocked() error {
-	if m.ippureCache == nil {
-		m.ippureCache = map[string]ippureCacheEntry{}
+func (c *ipTypeCache) saveLocked() error {
+	if c.entries == nil {
+		c.entries = map[string]ipTypeCacheEntry{}
 	}
 	// 缓存目录可能随布局补建：先补再写，权限问题仍 loud 失败。
-	if err := paths.Ensure(m.workDir); err != nil {
+	if err := paths.Ensure(c.workDir); err != nil {
 		return err
 	}
-	entries := make(map[string]store.Entry, len(m.ippureCache))
-	for ip, e := range m.ippureCache {
+	entries := make(map[string]store.Entry, len(c.entries))
+	for ip, e := range c.entries {
 		data, err := json.Marshal(e.Profile)
 		if err != nil {
 			return err
@@ -344,44 +428,43 @@ func (m *Manager) saveIPPureCacheLocked() error {
 		}
 		entries[ip] = store.Entry{Data: data, CheckedAt: e.CachedAt, ExpiresAt: expires}
 	}
-	s := m.ippureStore()
-	if err := s.SaveAll(entries); err != nil {
+	if err := c.storeRef.SaveAll(entries); err != nil {
 		return err
 	}
 	// DB 模式下删残留旧文件，避免两处缓存来源混淆；文件模式跳过
 	//（刚写入的就是它）。失败只忽略：缓存已落库，可再生。
-	if _, ok := s.(legacyIPPureFile); !ok {
-		_ = os.Remove(m.ippureCachePath())
+	if _, ok := c.storeRef.(legacyIPTypeFile); !ok {
+		_ = os.Remove(c.path)
 	}
 	return nil
 }
 
-func (m *Manager) cachedIPPure(ip string, now time.Time) (EgressProfile, bool) {
+func (c *ipTypeCache) cached(ip string, now time.Time) (EgressProfile, bool) {
 	if strings.TrimSpace(ip) == "" {
 		return EgressProfile{}, false
 	}
-	m.ippureMu.Lock()
-	defer m.ippureMu.Unlock()
-	m.loadIPPureCacheLocked()
-	entry, ok := m.ippureCache[ip]
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.loadLocked()
+	entry, ok := c.entries[ip]
 	if !ok {
 		return EgressProfile{}, false
 	}
 	expiry, err := time.Parse(time.RFC3339Nano, entry.Profile.ExpiresAt)
 	if err != nil || !expiry.After(now) || entry.Profile.IP != ip || entry.Profile.IntelligenceStatus != "passed" ||
 		entry.Profile.Provider != "ippure" || entry.Profile.RuleVersion != ippureRuleVersion {
-		delete(m.ippureCache, ip)
-		_ = m.saveIPPureCacheLocked()
+		delete(c.entries, ip)
+		_ = c.saveLocked()
 		return EgressProfile{}, false
 	}
 	image := entry.Profile
 	image.Raw = nil
 	image.CacheUsed = true
-	m.ippureHits++
+	c.hits++
 	return image, true
 }
 
-func (m *Manager) storeIPPure(ip string, image EgressProfile) {
+func (c *ipTypeCache) store(ip string, image EgressProfile) {
 	if image.IntelligenceStatus != "passed" || image.IP != ip {
 		return
 	}
@@ -394,66 +477,86 @@ func (m *Manager) storeIPPure(ip string, image EgressProfile) {
 	}
 	image.Raw = nil
 	image.CacheUsed = false
-	m.ippureMu.Lock()
-	defer m.ippureMu.Unlock()
-	m.loadIPPureCacheLocked()
-	m.ippureCache[ip] = ippureCacheEntry{Profile: image, CachedAt: time.Now().UTC()}
-	_ = m.saveIPPureCacheLocked()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.loadLocked()
+	c.entries[ip] = ipTypeCacheEntry{Profile: image, CachedAt: time.Now().UTC()}
+	_ = c.saveLocked()
 }
 
-func (m *Manager) noteIPPureQuery() {
-	m.ippureMu.Lock()
-	m.ippureQueries++
-	m.ippureMu.Unlock()
+func (c *ipTypeCache) noteQuery() {
+	c.mu.Lock()
+	c.queries++
+	c.mu.Unlock()
 }
 
-func (m *Manager) ippureCacheStats() ippureCacheStats {
-	m.ippureMu.Lock()
-	defer m.ippureMu.Unlock()
-	m.loadIPPureCacheLocked()
+func (c *ipTypeCache) stats() ipTypeCacheStats {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.loadLocked()
 	now := time.Now().UTC()
 	changed := false
-	for ip, entry := range m.ippureCache {
+	for ip, entry := range c.entries {
 		expiry, err := time.Parse(time.RFC3339Nano, entry.Profile.ExpiresAt)
 		if err != nil || !expiry.After(now) || entry.Profile.IP != ip || entry.Profile.IntelligenceStatus != "passed" ||
 			entry.Profile.Provider != "ippure" || entry.Profile.RuleVersion != ippureRuleVersion {
-			delete(m.ippureCache, ip)
+			delete(c.entries, ip)
 			changed = true
 		}
 	}
 	if changed {
-		_ = m.saveIPPureCacheLocked()
+		_ = c.saveLocked()
 	}
-	return ippureCacheStats{Entries: len(m.ippureCache), Hits: m.ippureHits, Queries: m.ippureQueries}
+	return ipTypeCacheStats{Entries: len(c.entries), Hits: c.hits, Queries: c.queries}
 }
 
-// clearIPPureCache is the explicit operator action; it never affects running
-// exits, only the next profile lookup.
-func (m *Manager) clearIPPureCache() error {
-	m.ippureMu.Lock()
-	defer m.ippureMu.Unlock()
-	m.ippureCache = map[string]ippureCacheEntry{}
-	m.ippureCacheLoaded = true
-	m.ippureHits, m.ippureQueries = 0, 0
-	if err := m.ippureStore().SaveAll(map[string]store.Entry{}); err != nil {
+// clear is the explicit operator action; it never affects running exits, only
+// the next profile lookup.
+func (c *ipTypeCache) clear() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries = map[string]ipTypeCacheEntry{}
+	c.loaded = true
+	c.hits, c.queries = 0, 0
+	if err := c.storeRef.SaveAll(map[string]store.Entry{}); err != nil {
 		return err
 	}
 	// 升级残留与文件模式统一：缓存文件不存在才算干净。
-	if err := os.Remove(m.ippureCachePath()); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(c.path); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil
 }
 
+func (m *Manager) cachedIPType(ip string, now time.Time) (EgressProfile, bool) {
+	return m.ipTypeState().cached(ip, now)
+}
+
+func (m *Manager) storeIPType(ip string, image EgressProfile) {
+	m.ipTypeState().store(ip, image)
+}
+
+func (m *Manager) noteIPTypeQuery() {
+	m.ipTypeState().noteQuery()
+}
+
+func (m *Manager) ipTypeCacheStats() ipTypeCacheStats {
+	return m.ipTypeState().stats()
+}
+
+func (m *Manager) clearIPTypeCache() error {
+	return m.ipTypeState().clear()
+}
+
 func (m *Manager) lookupEgressProfile(t *Tunnel, ip string) EgressProfile {
 	if ippureEnabled() {
-		if image, ok := m.cachedIPPure(ip, time.Now().UTC()); ok {
+		if image, ok := m.cachedIPType(ip, time.Now().UTC()); ok {
 			return image
 		}
-		m.noteIPPureQuery()
-		image, _, cacheable := t.probeIPPure(t.workContext(), ip, m.ippureTTLValue())
+		m.noteIPTypeQuery()
+		image, _, cacheable := t.probeIPPure(t.workContext(), ip, m.ipTypeTTLValue())
 		if cacheable {
-			m.storeIPPure(ip, image)
+			m.storeIPType(ip, image)
 		}
 		// A failed IPPure query may fall back to an explicitly configured
 		// provider, but a successful "not residential" answer never does.
@@ -465,16 +568,16 @@ func (m *Manager) lookupEgressProfile(t *Tunnel, ip string) EgressProfile {
 	return lookupOpenVPNEgressContext(t.workContext(), m.evidenceDir, ip)
 }
 
-func (c *Console) apiIPPureCache(w http.ResponseWriter, r *http.Request) {
+func (c *Console) apiIPTypeCache(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, 200, c.m.ippureCacheStats())
+		writeJSON(w, 200, c.m.ipTypeCacheStats())
 	case http.MethodPost, http.MethodDelete:
-		if err := c.m.clearIPPureCache(); err != nil {
-			writeJSON(w, 500, map[string]string{"error": "IPPure 缓存清除失败"})
+		if err := c.m.clearIPTypeCache(); err != nil {
+			writeJSON(w, 500, map[string]string{"error": "IP 类型缓存清除失败"})
 			return
 		}
-		writeJSON(w, 200, map[string]any{"ok": true, "cache": c.m.ippureCacheStats()})
+		writeJSON(w, 200, map[string]any{"ok": true, "cache": c.m.ipTypeCacheStats()})
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}

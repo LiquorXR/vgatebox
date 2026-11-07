@@ -5,7 +5,7 @@
 //
 //	workDir/
 //	  state/    全部 JSON 状态与期刊：state、native、settings/password/basepath、
-//	            console、checks、automation、sstp、third-party、slot_health、ippure、netbase
+//	            console、checks、automation、sstp、third-party、slot_health、ip_type、netbase
 //	  cache/    画像缓存：intelligence/{cache,sstp-cache,socks5-cache}.json、country/cache.json
 //	  certs/    自签证书
 //	  run/      运行态：<ns>.ovpn、auth.txt、*.log、xray.pid、.xray-candidate-*、
@@ -110,8 +110,11 @@ func Diagnostic(dir string) string { return filepath.Join(dir, "diagnostic.json"
 
 // --- 画像与健康证据 ---
 
-func SlotHealth(root string) string        { return filepath.Join(StateDir(root), "slot_health.json") }
-func IPPureCache(root string) string       { return filepath.Join(StateDir(root), "ippure-cache.json") }
+func SlotHealth(root string) string  { return filepath.Join(StateDir(root), "slot_health.json") }
+func IPTypeCache(root string) string { return filepath.Join(StateDir(root), "ip-type-cache.json") }
+
+// LegacyIPTypeCache is the pre-rename cache file, read once for migration.
+func LegacyIPTypeCache(root string) string { return filepath.Join(StateDir(root), "ippure-cache.json") }
 func IntelCacheOpenVPN(root string) string { return filepath.Join(IntelligenceDir(root), "cache.json") }
 func IntelCacheSSTP(root string) string {
 	return filepath.Join(IntelligenceDir(root), "sstp-cache.json")

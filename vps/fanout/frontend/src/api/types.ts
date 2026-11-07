@@ -192,7 +192,7 @@ export interface ScheduleView {
   waiting_for_refresh?: boolean;
 }
 
-export interface IPPureCacheView {
+export interface IPTypeCacheView {
   entries: number;
   hits: number;
   queries: number;
@@ -205,8 +205,8 @@ export interface CheckSettingsView {
   observation_ttl_minutes?: number;
   observation_ttl_effective_minutes?: number;
   check_cycle_seconds?: number;
-  ippure_ttl_hours?: number;
-  ippure_cache?: IPPureCacheView;
+  ip_type_ttl_hours?: number;
+  ip_type_cache?: IPTypeCacheView;
 }
 
 export interface AutomationView {

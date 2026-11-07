@@ -6,9 +6,9 @@ import (
 
 const (
 	defaultObservationTTLMinutes = 30
-	defaultIPPureTTLHours        = 12
+	defaultIPTypeTTLHours        = 12
 	maxObservationTTLMinutes     = 24 * 60
-	maxIPPureTTLHours            = 24 * 7
+	maxIPTypeTTLHours            = 24 * 7
 	// 检测结果有效期固定 30 分钟：只决定展示与排序引用是否标过期，
 	// 自动出口建连时照常做完整 live 验证，不依赖该有效期选点。
 	fixedCheckResultTTLMinutes = 30
@@ -98,15 +98,15 @@ func (c *Console) observationTTLAt(now time.Time) time.Duration {
 func (c *Console) applyTTLSettings(now time.Time) {
 	observation := c.observationTTLAt(now)
 	c.ttlMu.RLock()
-	hours := c.ippureTTLHours
+	hours := c.ipTypeTTLHours
 	c.ttlMu.RUnlock()
 	if hours <= 0 {
-		hours = defaultIPPureTTLHours
+		hours = defaultIPTypeTTLHours
 	}
-	if hours > maxIPPureTTLHours {
-		hours = maxIPPureTTLHours
+	if hours > maxIPTypeTTLHours {
+		hours = maxIPTypeTTLHours
 	}
-	c.m.setIPPureTTL(time.Duration(hours) * time.Hour)
+	c.m.setIPTypeTTL(time.Duration(hours) * time.Hour)
 	c.m.mu.Lock()
 	c.m.observationTTL = observation
 	c.m.mu.Unlock()

@@ -262,8 +262,8 @@ export const consoleData = {
     observation_ttl_minutes: 30,
     observation_ttl_effective_minutes: 30,
     check_cycle_seconds: 1500,
-    ippure_ttl_hours: 12,
-    ippure_cache: { entries: 0, hits: 0, queries: 0 },
+    ip_type_ttl_hours: 12,
+    ip_type_cache: { entries: 0, hits: 0, queries: 0 },
   },
   results,
   regions: [

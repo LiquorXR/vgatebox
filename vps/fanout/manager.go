@@ -39,20 +39,19 @@ type Manager struct {
 	healthProbe         func(context.Context, *Tunnel) (string, float64, error)
 	healthReconnect     func(*Tunnel, string)
 
-	ippureMu          sync.Mutex
-	ippureCache       map[string]ippureCacheEntry
-	ippureCacheLoaded bool
-	ippureHits        int
-	ippureQueries     int
-	ippureTTL         time.Duration
+	// ipType 是出口建连与节点池候选检测共享的 IP 类型缓存对象；
+	// ipTypeTTL 只在缓存对象创建前保存配置值，创建后由共享对象统一持有。
+	ipTypeInitMu sync.Mutex
+	ipType       *ipTypeCache
+	ipTypeTTL    time.Duration
 
 	// slotHealthDoc 存出口观察快照：SQLite 可用时走共享库的 slot_health
 	// 文档，无库（单测裸 Manager）时回退旧文件。快照可再生，fail-open。
 	slotHealthDoc store.DocStore
 
-	// ippureMap 存 IPPure 画像缓存：SQLite 可用时走共享库的 ippure
+	// ipTypeMap 存 IP 类型缓存：SQLite 可用时走共享库的 ip_type
 	// 记录集，无库时回退旧文件形状。缓存可再生，fail-open。
-	ippureMap store.MapStore
+	ipTypeMap store.MapStore
 }
 
 func NewManager(maxSlots int, workDir string) *Manager {
@@ -66,7 +65,6 @@ func NewManager(maxSlots int, workDir string) *Manager {
 		connectBudget: newConnectBudget(defaultCheckParallelism),
 		observations:  map[string]CheckResult{},
 		diagnostics:   map[string]*diagnosticLease{},
-		ippureCache:   map[string]ippureCacheEntry{},
-		ippureTTL:     defaultIPPureTTL,
+		ipTypeTTL:     defaultIPTypeTTL,
 	}
 }

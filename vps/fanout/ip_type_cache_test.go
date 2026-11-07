@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fanout/internal/paths"
 	"fanout/internal/store"
+	"fanout/internal/storesqlite"
 	"os"
+	"sync"
 	"testing"
 	"time"
 )
@@ -75,7 +77,7 @@ func completeIPPureResponse(ip string, residential bool) ippureResponse {
 	}
 }
 
-func TestIPPureCacheStoresOnlyCompletePassedAnswers(t *testing.T) {
+func TestIPTypeCacheStoresOnlyCompletePassedAnswers(t *testing.T) {
 	m := NewManager(4, t.TempDir())
 	now := time.Now().UTC()
 	raw := completeIPPureResponse("70.79.253.35", false)
@@ -83,31 +85,31 @@ func TestIPPureCacheStoresOnlyCompletePassedAnswers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if image.IPType != "unknown" || !ippureCacheable(raw, image, raw.IP) {
+	if image.IPType != "unknown" || !ipTypeCacheable(raw, image, raw.IP) {
 		t.Fatalf("successful non-residential answer should cache as unknown: %+v", image)
 	}
-	m.storeIPPure(raw.IP, image)
-	got, ok := m.cachedIPPure(raw.IP, now.Add(time.Hour))
+	m.storeIPType(raw.IP, image)
+	got, ok := m.cachedIPType(raw.IP, now.Add(time.Hour))
 	if !ok || got.IP != raw.IP || got.IPType != "unknown" || !got.CacheUsed {
 		t.Fatalf("same exit IP did not reuse cache: %+v ok=%v", got, ok)
 	}
-	if _, ok := m.cachedIPPure("8.8.8.8", now.Add(time.Hour)); ok {
+	if _, ok := m.cachedIPType("8.8.8.8", now.Add(time.Hour)); ok {
 		t.Fatal("different exit IP reused another IP's cache")
 	}
-	if _, ok := m.cachedIPPure(raw.IP, now.Add(25*time.Hour)); ok {
-		t.Fatal("expired IPPure cache was reused")
+	if _, ok := m.cachedIPType(raw.IP, now.Add(25*time.Hour)); ok {
+		t.Fatal("expired IP type cache was reused")
 	}
-	stats := m.ippureCacheStats()
+	stats := m.ipTypeCacheStats()
 	if stats.Entries != 0 || stats.Hits != 1 {
 		t.Fatalf("cache stats: %+v", stats)
 	}
-	info, err := os.Stat(paths.IPPureCache(m.workDir))
+	info, err := os.Stat(paths.IPTypeCache(m.workDir))
 	if err == nil && info.Mode().Perm() != 0600 {
-		t.Fatal("IPPure cache file is not private")
+		t.Fatal("IP type cache file is not private")
 	}
 }
 
-func TestIPPureCacheRejectsFailuresMismatchAndIncompleteFields(t *testing.T) {
+func TestIPTypeCacheRejectsFailuresMismatchAndIncompleteFields(t *testing.T) {
 	m := NewManager(4, t.TempDir())
 	now := time.Now().UTC()
 	raw := completeIPPureResponse("70.79.253.35", false)
@@ -125,26 +127,26 @@ func TestIPPureCacheRejectsFailuresMismatchAndIncompleteFields(t *testing.T) {
 		changedRaw := raw
 		changedImage := image
 		mutate(&changedRaw, &changedImage)
-		if ippureCacheable(changedRaw, changedImage, raw.IP) {
+		if ipTypeCacheable(changedRaw, changedImage, raw.IP) {
 			t.Fatalf("%s answer was cached", name)
 		}
 		if name == "failed-status" || name == "bad-type" {
-			m.storeIPPure(raw.IP, changedImage)
-			if _, ok := m.cachedIPPure(raw.IP, now.Add(time.Hour)); ok {
+			m.storeIPType(raw.IP, changedImage)
+			if _, ok := m.cachedIPType(raw.IP, now.Add(time.Hour)); ok {
 				t.Fatalf("%s answer was stored", name)
 			}
 		}
 	}
 }
 
-func TestLegacyIPPureFileRoundTrip(t *testing.T) {
+func TestIPTypeCacheFileRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	if err := paths.Ensure(dir); err != nil {
 		t.Fatal(err)
 	}
 	m := NewManager(4, dir)
-	s := m.ippureStore()
-	if _, ok := s.(legacyIPPureFile); !ok {
+	s := m.ipTypeStore()
+	if _, ok := s.(legacyIPTypeFile); !ok {
 		t.Fatal("bare Manager should use the legacy file")
 	}
 	now := time.Now().UTC().Truncate(time.Second)
@@ -159,11 +161,11 @@ func TestLegacyIPPureFileRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 旧形状可读：文件仍是 {"version":1,"entries":...}。
-	blob, err := os.ReadFile(paths.IPPureCache(dir))
+	blob, err := os.ReadFile(paths.IPTypeCache(dir))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var f ippureCacheFile
+	var f ipTypeCacheFile
 	if err := json.Unmarshal(blob, &f); err != nil || f.Version != 1 || len(f.Entries) != 1 {
 		t.Fatalf("legacy shape lost: %s", blob)
 	}
@@ -177,7 +179,7 @@ func TestLegacyIPPureFileRoundTrip(t *testing.T) {
 	if err := s.SaveAll(map[string]store.Entry{"x": {Data: json.RawMessage(`{broken`)}}); err == nil {
 		t.Fatal("invalid entry accepted")
 	}
-	if err := os.WriteFile(paths.IPPureCache(dir), []byte(`{broken`), 0600); err != nil {
+	if err := os.WriteFile(paths.IPTypeCache(dir), []byte(`{broken`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.LoadAll(); err == nil {
@@ -185,11 +187,11 @@ func TestLegacyIPPureFileRoundTrip(t *testing.T) {
 	}
 }
 
-func TestIPPureCacheUsesSharedDBWhenConsolePresent(t *testing.T) {
+func TestIPTypeCacheUsesSharedDBWhenConsolePresent(t *testing.T) {
 	c := consoleFixture(t)
 	m := c.m
-	if m.ippureMap == nil {
-		t.Fatal("ippure store not wired")
+	if m.ipTypeMap == nil {
+		t.Fatal("ip type store not wired")
 	}
 	now := time.Now().UTC()
 	raw := completeIPPureResponse("70.79.253.35", true)
@@ -197,27 +199,27 @@ func TestIPPureCacheUsesSharedDBWhenConsolePresent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.storeIPPure(raw.IP, image)
-	got, ok := m.cachedIPPure(raw.IP, now.Add(time.Hour))
+	m.storeIPType(raw.IP, image)
+	got, ok := m.cachedIPType(raw.IP, now.Add(time.Hour))
 	if !ok || !got.CacheUsed || got.IP != raw.IP {
 		t.Fatalf("DB cache miss: %+v ok=%v", got, ok)
 	}
-	if _, err := os.Stat(paths.IPPureCache(m.workDir)); !os.IsNotExist(err) {
-		t.Fatal("legacy ippure file retained in DB mode")
+	if _, err := os.Stat(paths.IPTypeCache(m.workDir)); !os.IsNotExist(err) {
+		t.Fatal("legacy IP type file retained in DB mode")
 	}
-	entries, err := m.ippureStore().LoadAll()
+	entries, err := m.ipTypeStore().LoadAll()
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("store = %v, %v", entries, err)
 	}
-	if err := m.clearIPPureCache(); err != nil {
+	if err := m.clearIPTypeCache(); err != nil {
 		t.Fatal(err)
 	}
-	if entries, err := m.ippureStore().LoadAll(); err != nil || len(entries) != 0 {
+	if entries, err := m.ipTypeStore().LoadAll(); err != nil || len(entries) != 0 {
 		t.Fatalf("clear = %v %v", entries, err)
 	}
 }
 
-func TestIPPureCacheManualClearAndConfiguredTTL(t *testing.T) {
+func TestIPTypeCacheManualClearAndConfiguredTTL(t *testing.T) {
 	m := NewManager(4, t.TempDir())
 	now := time.Now().UTC()
 	raw := completeIPPureResponse("70.79.253.35", true)
@@ -227,24 +229,162 @@ func TestIPPureCacheManualClearAndConfiguredTTL(t *testing.T) {
 	}
 	expiry, _ := time.Parse(time.RFC3339Nano, image.ExpiresAt)
 	if expiry.Sub(now) != 2*time.Hour {
-		t.Fatalf("configured IPPure TTL not applied: %s", expiry.Sub(now))
+		t.Fatalf("configured IP type TTL not applied: %s", expiry.Sub(now))
 	}
-	m.setIPPureTTL(2 * time.Hour)
-	m.storeIPPure(raw.IP, image)
-	if _, ok := m.cachedIPPure(raw.IP, now.Add(time.Hour)); !ok {
+	m.setIPTypeTTL(2 * time.Hour)
+	m.storeIPType(raw.IP, image)
+	if _, ok := m.cachedIPType(raw.IP, now.Add(time.Hour)); !ok {
 		t.Fatal("fresh cache entry missing")
 	}
-	if err := m.clearIPPureCache(); err != nil {
+	if err := m.clearIPTypeCache(); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := m.cachedIPPure(raw.IP, now); ok {
+	if _, ok := m.cachedIPType(raw.IP, now); ok {
 		t.Fatal("manual clear left an entry")
 	}
-	if _, err := os.Stat(paths.IPPureCache(m.workDir)); !os.IsNotExist(err) {
+	if _, err := os.Stat(paths.IPTypeCache(m.workDir)); !os.IsNotExist(err) {
 		t.Fatal("manual clear left the cache file")
 	}
-	stats := m.ippureCacheStats()
+	stats := m.ipTypeCacheStats()
 	if stats.Entries != 0 || stats.Hits != 0 || stats.Queries != 0 {
 		t.Fatalf("manual clear did not reset stats: %+v", stats)
+	}
+}
+
+func TestIPTypeCacheSharedByCandidateHelper(t *testing.T) {
+	c := consoleFixture(t)
+	parent := c.m
+	helper := NewManager(1, t.TempDir())
+	helper.evidenceDir = parent.evidenceDir
+	helper.shareIPTypeCache(parent)
+
+	now := time.Now().UTC()
+	raw := completeIPPureResponse("70.79.253.35", false)
+	image, err := profileFromIPPureTTL(raw, raw.IP, now, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	helper.noteIPTypeQuery()
+	helper.storeIPType(raw.IP, image)
+
+	stats := parent.ipTypeCacheStats()
+	if stats.Entries != 1 || stats.Queries != 1 || stats.Hits != 0 {
+		t.Fatalf("helper activity not visible to parent: %+v", stats)
+	}
+	if _, ok := helper.cachedIPType(raw.IP, now.Add(time.Minute)); !ok {
+		t.Fatal("helper did not read the shared entry")
+	}
+	stats = parent.ipTypeCacheStats()
+	if stats.Hits != 1 || stats.Queries != 1 {
+		t.Fatalf("shared hit counter diverged: %+v", stats)
+	}
+}
+
+func TestIPTypeSharedCacheSerializesConcurrentCandidateWrites(t *testing.T) {
+	parent := NewManager(4, t.TempDir())
+	now := time.Now().UTC()
+	ips := []string{"70.79.253.35", "70.79.253.36"}
+	var wg sync.WaitGroup
+	for _, ip := range ips {
+		helper := NewManager(1, t.TempDir())
+		helper.shareIPTypeCache(parent)
+		raw := completeIPPureResponse(ip, false)
+		image, err := profileFromIPPureTTL(raw, ip, now, time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			helper.noteIPTypeQuery()
+			helper.storeIPType(ip, image)
+		}()
+	}
+	wg.Wait()
+	stats := parent.ipTypeCacheStats()
+	if stats.Entries != len(ips) || stats.Queries != len(ips) {
+		t.Fatalf("concurrent candidate writes were lost: %+v", stats)
+	}
+}
+
+func TestLegacyIPTypeCacheFileMigratesToIPTypePath(t *testing.T) {
+	dir := t.TempDir()
+	if err := paths.Ensure(dir); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	raw := completeIPPureResponse("70.79.253.35", true)
+	image, err := profileFromIPPureTTL(raw, raw.IP, now, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := ipTypeCacheFile{Version: 1, Entries: map[string]ipTypeCacheEntry{
+		raw.IP: {Profile: image, CachedAt: now},
+	}}
+	blob, err := json.Marshal(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.LegacyIPTypeCache(dir), blob, 0600); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager(4, dir)
+	if got, ok := m.cachedIPType(raw.IP, now.Add(time.Minute)); !ok || got.IP != raw.IP {
+		t.Fatalf("legacy cache entry not migrated: %+v ok=%v", got, ok)
+	}
+	if _, err := os.Stat(paths.IPTypeCache(dir)); err != nil {
+		t.Fatalf("new cache file missing: %v", err)
+	}
+	if _, err := os.Stat(paths.LegacyIPTypeCache(dir)); !os.IsNotExist(err) {
+		t.Fatal("legacy cache file retained after migration")
+	}
+}
+
+func TestLegacyIPTypeStoreMigratesToIPTypeMapStore(t *testing.T) {
+	dir := t.TempDir()
+	if err := paths.Ensure(dir); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	raw := completeIPPureResponse("70.79.253.35", true)
+	image, err := profileFromIPPureTTL(raw, raw.IP, now, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := storesqlite.Open(paths.DBFile(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(image)
+	if err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.MapStore("ippure").SaveAll(map[string]store.Entry{
+		raw.IP: {Data: data, CheckedAt: now, ExpiresAt: now.Add(time.Hour)},
+	}); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewManager(maximumSlots, dir)
+	c, err := newConsole(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { c.shutdown(); c.closeStores() }()
+	entries, err := c.checkDB.MapStore("ip_type").LoadAll()
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("migrated store = %v, %v", entries, err)
+	}
+	legacyEntries, err := c.checkDB.MapStore("ippure").LoadAll()
+	if err != nil || len(legacyEntries) != 0 {
+		t.Fatalf("legacy store not cleared = %v, %v", legacyEntries, err)
+	}
+	if got, ok := m.cachedIPType(raw.IP, now.Add(time.Minute)); !ok || got.IP != raw.IP {
+		t.Fatalf("migrated entry not readable: %+v ok=%v", got, ok)
 	}
 }

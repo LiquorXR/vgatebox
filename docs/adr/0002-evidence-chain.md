@@ -3,7 +3,7 @@
 - Status: accepted
 - Date: 2026-11-06
 - 范围：`vps/fanout/console_checks.go`（CheckResult/CheckRun）、`console_ttl.go`、`connect_observations.go`、
-  `egress.go`、`country_evidence.go`、`console_sstp.go`（freshSstpResult）、`ippure.go`
+  `egress.go`、`country_evidence.go`、`console_sstp.go`（freshSstpResult）、`ip_type_cache.go`
 
 ## Context
 

@@ -71,13 +71,13 @@
       "auth": "session"
     },
     {
-      "path": "/api/console/ippure-cache",
+      "path": "/api/console/ip-type-cache",
       "methods": [
         "GET",
         "POST",
         "DELETE"
       ],
-      "handler": "Console.apiIPPureCache",
+      "handler": "Console.apiIPTypeCache",
       "auth": "session"
     },
     {

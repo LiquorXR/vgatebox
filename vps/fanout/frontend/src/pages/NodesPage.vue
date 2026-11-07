@@ -206,13 +206,13 @@ const checkSettingsMutation = useMutation({
   onError: (error) => toastError(error, "保存检测设置失败"),
 });
 
-const clearIPPureMutation = useMutation({
-  mutationFn: () => post("api/console/ippure-cache", {}),
+const clearIPTypeMutation = useMutation({
+  mutationFn: () => post("api/console/ip-type-cache", {}),
   onSuccess: () => {
-    toast("IPPure 缓存已清除", { tone: "success" });
+    toast("IP 类型缓存已清除", { tone: "success" });
     void queryClient.invalidateQueries({ queryKey: keys.console });
   },
-  onError: (error) => toastError(error, "清除 IPPure 缓存失败"),
+  onError: (error) => toastError(error, "清除 IP 类型缓存失败"),
 });
 
 function checkSelected() {
@@ -308,7 +308,7 @@ async function saveAutomation() {
 const sourceText = computed(() => sourceLabel(summary.value?.pool_source));
 
 const checkSettings = computed(() => summary.value?.check_settings);
-const ippureCache = computed(() => checkSettings.value?.ippure_cache);
+const ipTypeCache = computed(() => checkSettings.value?.ip_type_cache);
 // The effective TTL already covers a full batch plus the next wait; show the
 // measured round so a slow pool is understandable instead of surprising.
 const checkCycleMinutes = computed(() => {
@@ -499,10 +499,10 @@ const detailNode = ref<Node | null>(null);
             <div><dt class="text-faint">结果有效</dt><dd class="mt-0.5 text-ink">{{ checkSettings?.check_result_ttl_effective_minutes ? `${checkSettings.check_result_ttl_effective_minutes} 分钟` : "—" }} · 超期显示已过期</dd></div>
             <div><dt class="text-faint">排序观察有效</dt><dd class="mt-0.5 text-ink">{{ checkSettings?.observation_ttl_effective_minutes ? `${checkSettings.observation_ttl_effective_minutes} 分钟` : "—" }}</dd></div>
             <div v-if="checkCycleMinutes"><dt class="text-faint">单轮检测约</dt><dd class="mt-0.5 text-ink">{{ checkCycleMinutes }} 分钟</dd></div>
-            <div v-if="ippureCache"><dt class="text-faint">IPPure 缓存</dt><dd class="mt-0.5 text-ink">命中 {{ ippureCache.hits }} 次 · 查询 {{ ippureCache.queries }} 次 · {{ ippureCache.entries }} 条<template v-if="checkSettings?.ippure_ttl_hours"> · {{ checkSettings.ippure_ttl_hours }} 小时</template></dd></div>
+            <div v-if="ipTypeCache"><dt class="text-faint" title="命中、查询和条数由出口建连（自动/手动、重连）与节点池候选检测共用">IP 类型缓存（出口 + 节点池）</dt><dd class="mt-0.5 text-ink">命中 {{ ipTypeCache.hits }} 次 · 查询 {{ ipTypeCache.queries }} 次 · {{ ipTypeCache.entries }} 条<template v-if="checkSettings?.ip_type_ttl_hours"> · {{ checkSettings.ip_type_ttl_hours }} 小时</template></dd></div>
             <div><dt class="text-faint">上次获取</dt><dd class="mt-0.5 text-ink">{{ formatDateTime(summary?.pool_generated_at) }}</dd></div>
           </dl>
-          <UiButton v-if="ippureCache?.entries" size="sm" variant="ghost" class="mt-3" :loading="clearIPPureMutation.isPending.value" @click="clearIPPureMutation.mutate()">清除 IPPure 缓存</UiButton>
+          <UiButton v-if="ipTypeCache?.entries" size="sm" variant="ghost" class="mt-3" :loading="clearIPTypeMutation.isPending.value" @click="clearIPTypeMutation.mutate()">清除 IP 类型缓存</UiButton>
           <p class="mt-3 rounded-lg border border-line px-3 py-2 text-[11px] leading-relaxed text-faint">
             结果有效期固定 30 分钟，超期显示“已过期”；每次刷新成功后自动全量检测一次覆盖。
           </p>
