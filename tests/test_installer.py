@@ -56,7 +56,7 @@ class Deployment(d.Installer):
 
     def enable_initial_direct(self):
         if self.fail_direct: raise RuntimeError('simulated_initial_direct_failure')
-        put(self.l.work/'native.json','{"host_direct":true}')
+        put(self.l.work_state/'native.json','{"host_direct":true}')
 
     def health(self, expected):
         if (self.l.lib / 'VERSION').read_text().strip() != expected:
@@ -191,7 +191,7 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue(self.r.active(d.UNITS[1]))
         self.assertTrue(self.r.enabled(d.UNITS[1]))
         self.assertFalse(self.l.path('var/lib/vgatebox/pool/node_pool.json').exists())
-        self.assertEqual(json.loads((self.l.work / 'native.json').read_text()), {'host_direct': True})
+        self.assertEqual(json.loads((self.l.work_state / 'native.json').read_text()), {'host_direct': True})
         self.assertEqual(self.job()['status'], 'completed')
         self.assertEqual(self.job()['warning'], 'pool_not_ready')
         self.assertFalse(self.l.journal.exists())
@@ -205,16 +205,16 @@ class InstallerTests(unittest.TestCase):
     def test_existing_disabled_direct_intent_is_preserved(self):
         self.existing()
         before='{"inbounds":[{"host_direct":true,"enable":false}]}'
-        put(self.l.work/'native.json', before)
+        put(self.l.work_state/'native.json', before)
         self.i.fail_direct=True  # Would fail if upgrade attempted to enable it.
         self.i.install()
-        self.assertEqual((self.l.work/'native.json').read_text(), before)
+        self.assertEqual((self.l.work_state/'native.json').read_text(), before)
 
     def test_legacy_work_directory_is_not_treated_as_new(self):
-        put(self.l.work/'settings.json', '{"port":8899}')
+        put(self.l.work_state/'settings.json', '{"port":8899}')
         self.i.fail_direct=True
         self.i.install()
-        self.assertFalse((self.l.work/'native.json').exists())
+        self.assertFalse((self.l.work_state/'native.json').exists())
 
     def test_source_outage_direct_only_upgrade_preserves_private_configuration(self):
         private = self.existing()
