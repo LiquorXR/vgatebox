@@ -78,6 +78,17 @@ type Tunnel struct {
 	// reconnectAt 记最近 10 分钟内每次重连进入的时间点，用于抖动降频。
 	// 只存内存，重启清零；手动 Resume/Swap/改策略视为 operator 意图，清零。
 	reconnectAt []time.Time
+	// prewarmNode 是一次后台热备的结果：degraded 期间用诊断身份预验过的候选。
+	// 重连时优先试它，省掉对一批死节点逐个 40s 握手。只存内存，5 分钟有效，
+	// 手动操作/建连成功即清。prewarming 表示正有一路预验在飞。
+	prewarmNode *Node
+	prewarmAt   time.Time
+	prewarming  bool
+	// perfFloor 是性能触发重连时记下的旧平滑延迟：新节点比它慢 1.5 倍以上
+	// 则有界再换一次，避免越换越慢。手动操作即清，单次生效。
+	perfFloor float64
+	// failCounts 记各候选连续失败次数，用于指数退避；成功/手动操作即清。
+	failCounts map[string]int
 }
 
 // servingStatus 隧道是否在出网服务：up 与 degraded 都接受新连接，
@@ -135,10 +146,11 @@ func (t *Tunnel) recordReconnect() int {
 	return len(kept)
 }
 
-// clearFlap 清掉抖动计数。手动 Resume/Swap/改策略后调用。
+// clearFlap 清掉抖动计数与失败退避。手动 Resume/Swap/改策略后调用。
 func (t *Tunnel) clearFlap() {
 	t.mu.Lock()
 	t.reconnectAt = nil
+	t.failCounts = nil
 	t.mu.Unlock()
 }
 
@@ -163,6 +175,19 @@ func (t *Tunnel) swapAvoid() map[string]bool {
 	}
 	if t.Node.HostName != "" {
 		out[t.Node.HostName] = true
+	}
+	return out
+}
+
+// swapRejected 只返回换节点历史（不含当前这个）：用户手动换掉的 +
+// 性能升级时记入的慢节点。自动重连打头要避开它们，但当前节点本身
+// 是否打头由调用方按恢复语义决定。
+func (t *Tunnel) swapRejected() map[string]bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make(map[string]bool, len(t.swapped))
+	for _, h := range t.swapped {
+		out[h] = true
 	}
 	return out
 }

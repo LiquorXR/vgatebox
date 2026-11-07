@@ -185,6 +185,8 @@ func (m *Manager) tryCandidatesContext(t *Tunnel, notify bool, ctx context.Conte
 	// VPN Gate 是志愿者节点，列表里有相当比例已下线或满员（AUTH_FAILED），
 	// 连不上就顺着候选列表换下一个，不必让用户手动试。
 	candidates := m.candidatesFor(t)
+	// 热备已消费进本轮候选（副本），过期与否到此为止，不带到下一轮。
+	t.clearPrewarm()
 	for i, node := range candidates {
 		if ctx.Err() != nil || !m.tunnelActive(t) {
 			return false
@@ -210,11 +212,8 @@ func (m *Manager) tryCandidatesContext(t *Tunnel, notify bool, ctx context.Conte
 			if ctx.Err() != nil {
 				return false
 			}
+			t.noteCandidateFailed(node.HostName)
 			t.mu.Lock()
-			if t.cooldown == nil {
-				t.cooldown = map[string]time.Time{}
-			}
-			t.cooldown[node.HostName] = time.Now().Add(30 * time.Second)
 			t.Err = firstLine(fmt.Sprint(err))
 			t.mu.Unlock()
 			continue
@@ -243,11 +242,8 @@ func (m *Manager) tryCandidatesContext(t *Tunnel, notify bool, ctx context.Conte
 		if ctx.Err() != nil {
 			return false
 		}
+		t.noteCandidateFailed(node.HostName)
 		t.mu.Lock()
-		if t.cooldown == nil {
-			t.cooldown = map[string]time.Time{}
-		}
-		t.cooldown[node.HostName] = time.Now().Add(30 * time.Second)
 		t.Err = firstLine(fmt.Sprint(err))
 		t.mu.Unlock()
 	}
@@ -450,6 +446,7 @@ func (m *Manager) Swap(slot int) error {
 	}
 	oldHost := t.Node.HostName
 	t.clearFlap()
+	t.clearSpeculation()
 	m.reconnectTo(t, oldHost, &node)
 	return nil
 }
@@ -500,6 +497,7 @@ func (m *Manager) SwapTo(slot int, host string) error {
 	t.rememberSwap(oldHost)
 	t.rememberSwap(node.HostName)
 	t.clearFlap()
+	t.clearSpeculation()
 	m.reconnectTo(t, oldHost, &node)
 	return nil
 }

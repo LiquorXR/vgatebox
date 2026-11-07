@@ -171,6 +171,8 @@ func (m *Manager) publishUp(t *Tunnel, ctx context.Context) bool {
 		return false
 	}
 	t.Status, t.Err = "up", ""
+	// 建连成功：热备已消费，失败计数清零。
+	t.prewarmNode, t.failCounts = nil, nil
 	return true
 }
 
@@ -241,6 +243,7 @@ func (m *Manager) setSlotPolicyLocked(t *Tunnel, normalized SlotPolicy) error {
 	oldHost := t.Node.HostName
 	t.opMu.Unlock()
 	t.clearFlap()
+	t.clearSpeculation()
 	m.reconnectTo(t, oldHost, nil)
 	return nil
 }
@@ -267,6 +270,7 @@ func (m *Manager) Resume(slot int) error {
 	t.Status = "starting"
 	t.mu.Unlock()
 	t.clearFlap()
+	t.clearSpeculation()
 	m.reconnectTo(t, t.Node.HostName, nil)
 	return nil
 }

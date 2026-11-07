@@ -93,6 +93,7 @@ func (m *Manager) candidatesFor(t *Tunnel) []Node {
 	first := t.Node
 	t.mu.Unlock()
 	avoid := t.swapAvoid()
+	rejected := t.swapRejected()
 	out := []Node{}
 	eligible := func(n Node) bool {
 		t.mu.Lock()
@@ -107,8 +108,18 @@ func (m *Manager) candidatesFor(t *Tunnel) []Node {
 		}
 		return policy.Country == "" || n.CountryCode == "" || strings.EqualFold(policy.Country, n.CountryCode)
 	}
-	if first.HostName != "" && !m.nodeInUse(first.HostName, t.Slot) && eligible(first) {
+	// 当前节点通常打头（自动重连的目标是恢复原样）；但它一旦进了拒绝史
+	// （手动换掉过，或性能升级时记入的慢节点），就不该再优先重试。
+	if first.HostName != "" && !rejected[first.HostName] && !m.nodeInUse(first.HostName, t.Slot) && eligible(first) {
 		out = append(out, first)
+	}
+	// 新鲜热备排在常规候选之前：它是几分钟前刚端到端验通过的，
+	// 省掉对一批未知节点的逐个握手。是否有效以池配置为准。
+	prepended := ""
+	if pw := t.prewarmFresh(); pw != nil && pw.HostName != first.HostName && !avoid[pw.HostName] &&
+		!m.nodeInUse(pw.HostName, t.Slot) && eligible(*pw) && m.prewarmStillValid(*pw) {
+		out = append(out, *pw)
+		prepended = pw.HostName
 	}
 	candidates := m.policyCandidates(policy, avoid, t.Slot)
 	t.mu.Lock()
@@ -127,7 +138,7 @@ func (m *Manager) candidatesFor(t *Tunnel) []Node {
 		if len(out) >= 6 {
 			break
 		}
-		if n.HostName != first.HostName && eligible(n) {
+		if n.HostName != first.HostName && n.HostName != prepended && eligible(n) {
 			out = append(out, n)
 		}
 	}

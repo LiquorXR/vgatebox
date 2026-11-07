@@ -160,11 +160,16 @@ func (m *Manager) healthRound(ctx context.Context, state *healthRoundState) {
 			if state.degraded[t.Slot] < healthDegradedRounds {
 				if state.degraded[t.Slot] == 1 {
 					log.Printf("隧道 %d (%s) 延迟超限，仍可出网并观察中", t.Slot, t.Node.HostName)
+					m.maybePrewarm(t)
 				}
 				continue
 			}
 			log.Printf("隧道 %d (%s) 持续变慢，正在换节点重连", t.Slot, t.Node.HostName)
 			state.degraded[t.Slot] = 0
+			// 记下换前平滑延迟供切后比对，并把慢节点记入避让史，
+			// 本轮重连与后续手动换节点都不再优先重试它。
+			t.setPerfFloor(t.smoothLatency())
+			t.rememberSwap(t.Node.HostName)
 			m.reconnectHealth(t)
 		case healthDeferred:
 			// A busy Slot is not evidence of failure, but it must not look
@@ -380,8 +385,8 @@ func (m *Manager) reconnectTo(t *Tunnel, oldHost string, node *Node) {
 			return
 		}
 		t.opMu.Lock()
-		defer t.opMu.Unlock()
 		if ctx.Err() != nil || !m.tunnelActive(t) {
+			t.opMu.Unlock()
 			return
 		}
 		bindingHost := t.prevHostOf()
@@ -389,12 +394,14 @@ func (m *Manager) reconnectTo(t *Tunnel, oldHost string, node *Node) {
 			if err := m.rebind(bindingHost, t); err != nil {
 				t.blockForPolicy("绑定配置应用失败，已阻断，请修复配置后重新启动 Slot")
 				_ = m.saveState()
+				t.opMu.Unlock()
 				log.Printf("重连后同步绑定失败: %v", err)
 				return
 			}
 		} else if err := m.resync(t); err != nil {
 			t.blockForPolicy("出站配置应用失败，已阻断，请修复配置后重新启动 Slot")
 			_ = m.saveState()
+			t.opMu.Unlock()
 			log.Printf("重连后重写出站失败: %v", err)
 			return
 		}
@@ -402,5 +409,10 @@ func (m *Manager) reconnectTo(t *Tunnel, oldHost string, node *Node) {
 		if err := m.saveState(); err != nil {
 			log.Printf("保存状态失败: %v", err)
 		}
+		t.opMu.Unlock()
+		// 性能触发的重连成功后比对：新节点比换前慢过阈值则有界再换一次。
+		// 基线单次生效，手动操作会提前清掉，不连环。必须在 opMu 之外调，
+		// reconnectTo 内部要拿同一把锁。
+		m.rotateIfPerfWorse(t)
 	}()
 }
