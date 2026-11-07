@@ -72,8 +72,13 @@ def child(host_net, host_mount):
         command('iptables','-A','FORWARD','-i','keep-test','-j','ACCEPT')
         command('iptables','-t','nat','-A','POSTROUTING','-s','172.17.0.0/16','-j','MASQUERADE')
         tool=u.Uninstaller(root,runner,purge=True,legacy=True)
-        before=(command('ip','-j','link'),command('iptables-save'))
-        tool.plan();assert before==(command('ip','-j','link'),command('iptables-save'))
+        def stable_state():
+            links=sorted(v['ifname'] for v in json.loads(command('ip','-j','link')))
+            filt=command('iptables','-S')
+            nat=command('iptables','-t','nat','-S')
+            return (links,filt,nat)
+        before=stable_state()
+        tool.plan();assert before==stable_state(),'plan() mutated link or iptables state'
         process=subprocess.Popen(['ip','netns','exec',own,'sleep','60'])
         try:
             # Wait for the child to enter its namespace, without assuming timing.
