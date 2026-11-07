@@ -40,9 +40,13 @@ func TestPublishUpConsumesPendingSwap(t *testing.T) {
 	tun.egress = &EgressProfile{IP: "203.0.113.60", Protocol: "openvpn"}
 	tun.resetWork()
 	m.tunnels[1] = tun
+	tun.probePhase("profile")
 	tun.queuePendingSwap(nil, true)
 	if !m.publishUp(tun, tun.workContext()) {
 		t.Fatal("publishUp rejected a valid tunnel")
+	}
+	if tun.snapshot().Phase != "" {
+		t.Fatal("build stage survived publishUp")
 	}
 	if tun.hasPendingSwap() {
 		t.Fatal("pending swap survived publishUp")

@@ -90,6 +90,7 @@ func (t *Tunnel) markRecovered(latency float64) {
 	t.mu.Lock()
 	if t.Status == "degraded" {
 		t.Status, t.Err = "up", ""
+		t.probeStage, t.probeStageAt = "", time.Time{}
 	}
 	t.mu.Unlock()
 }
@@ -206,6 +207,8 @@ func (m *Manager) publishUp(t *Tunnel, ctx context.Context) bool {
 	t.Status, t.Err = "up", ""
 	// 建连成功：热备已消费，失败计数清零；排队意向原子取出后异步执行
 	// （调用方持有 opMu，同步调 reconnectTo 会自死锁）。
+	// 阶段一并清空：“查询出口画像”只是最后一站的残留，留着误导。
+	t.probeStage, t.probeStageAt = "", time.Time{}
 	t.prewarmNode, t.failCounts = nil, nil
 	pendingNode, pendingAuto := t.pendingSwapTo, t.pendingSwapAuto
 	t.pendingSwapTo, t.pendingSwapAuto = nil, false
