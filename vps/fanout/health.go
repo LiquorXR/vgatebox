@@ -247,10 +247,12 @@ func (m *Manager) checkTunnelHealth(parent context.Context, t *Tunnel) (healthSt
 	}
 	if t.Policy != nil {
 		if err := t.policySnapshot().checkLatency(latency); err != nil {
-			// 单采超限先看平滑值：毛刺只吸收进 EWMA，不断流不标记；
-			// 平滑值同样超限才是真慢，标记观察。
+			// 单采超限先看吸收前的平滑值：毛刺只吸收进 EWMA，不断流不标记；
+			// 平滑值同样超限才是真慢，标记观察。注意先裁决后吸收，
+			// 否则一次大毛刺就会把平滑值冲过门限、复判恒败。
+			prior := t.smoothLatency()
 			t.absorbLatency(latency)
-			if terr := t.policySnapshot().checkLatency(t.smoothLatency()); terr != nil {
+			if terr := t.policySnapshot().checkLatency(prior); terr != nil {
 				t.markDegraded("出口延迟超过 Slot 上限，仍可出网并观察中")
 				return healthDegraded, 0
 			}
