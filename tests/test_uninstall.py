@@ -23,7 +23,7 @@ def put(p, text='synthetic-private'):
 class Model:
     def __init__(self, root):
         self.root, self.events = root, []
-        self.links, self.ns = {}, {}
+        self.links, self.ns, self.stale = {}, {}, set()
         self.rules = {'filter': [], 'nat': []}
         self.updates = ''; self.busy = ''; self.fail_stop = False
         self.fragment = {}
@@ -48,7 +48,9 @@ class Model:
             return ''
         if a[:4] == ['ip', '-j', '-4', 'addr']: return json.dumps(list(self.links.values()))
         if a[:4] == ['ip', '-j', 'netns', 'list']: return json.dumps([{'name':n} for n in self.ns])
-        if a[:2] == ['ip', '-n']: return json.dumps(self.ns[a[2]])
+        if a[:3] == ['ip', 'netns', 'exec']:
+            if a[3] in self.stale: raise u.Refuse('synthetic stale namespace')
+            return json.dumps(self.ns[a[3]])
         if a[:3] == ['ip', 'netns', 'pids']: return self.busy if a[3] in self.ns else ''
         if a[:3] == ['ip', 'netns', 'delete']: self.ns.pop(a[3]); return ''
         if a[:3] == ['ip', 'link', 'delete']: self.links.pop(a[3]); return ''
@@ -262,6 +264,25 @@ class UninstallTests(unittest.TestCase):
         self.r.links.clear(); self.r.ns.clear()
         self.i.execute(); self.protected()
         self.assertEqual(len(self.r.rules['nat']),1)
+
+    def test_stale_namespace_file_is_recognized_and_removed(self):
+        ns, _ = self.network(u.WORK, 1, 64, 187)
+        put(self.root/'run/netns'/ns, '')
+        self.r.stale.add(ns)
+        # A stale host-side entry must not abort the read-only plan.
+        self.i.plan()
+        self.i.execute()
+        self.assertFalse((self.root/'run/netns'/ns).exists())
+        self.assertFalse((self.root/u.WORK).exists())
+        self.protected()
+
+    def test_ip_failure_exposes_safe_namespace_detail(self):
+        r = u.System()
+        with mock.patch.object(u.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', 'Cannot open network namespace: Invalid argument')):
+            with self.assertRaisesRegex(u.Refuse, 'ip netns exec fo1'):
+                r.run(['ip', 'netns', 'exec', 'fo1', 'ip', 'addr', 'show'])
+            with self.assertRaisesRegex(u.Refuse, 'Cannot open network namespace'):
+                r.run(['ip', 'netns', 'exec', 'fo1', 'ip', 'addr', 'show'])
 
     def test_absent_install_with_unrelated_f_is_idempotent_and_keeps_that_tool(self):
         self.i.execute(); put(self.root/'usr/local/bin/f','other-owner')

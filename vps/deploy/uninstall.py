@@ -32,14 +32,27 @@ class Refuse(RuntimeError):
 
 class System:
     def run(self, args):
-        # Never echo commands/output: old units and process arguments may contain credentials.
+        # Never echo commands/output for credential-bearing systemctl units;
+        # ip/iptables arguments and stderr contain only network identities and
+        # are safe to show, and are needed to diagnose stale namespaces.
         try:
             r = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=45)
         except subprocess.TimeoutExpired:
-            raise Refuse('系统操作超时：' + args[0] + ' ' + args[1]) from None
+            raise Refuse('系统操作超时：' + self.command(args)) from None
         if r.returncode:
-            raise Refuse('系统操作失败：' + args[0] + ' ' + args[1])
+            detail = self.command(args)
+            if args[0] == 'ip':
+                lines = [line.strip() for line in (r.stderr or '').splitlines() if line.strip()]
+                if lines:
+                    detail += '：' + lines[-1][:240]
+            raise Refuse('系统操作失败：' + detail)
         return r.stdout
+
+    @staticmethod
+    def command(args):
+        if args[0] == 'ip':
+            return shlex.join(args)[:300]
+        return args[0] + ' ' + args[1]
 
     def loaded(self, unit):
         value = self.run(['systemctl', 'show', '--property=LoadState', '--value', unit]).strip()
@@ -128,7 +141,7 @@ class Instance:
         r = self.u.r
         host = json.loads(r.run(['ip', '-j', '-4', 'addr', 'show']))
         namespaces = json.loads(r.run(['ip', '-j', 'netns', 'list']))
-        own_ns, own_links = [], []
+        own_ns, own_links, stale_ns = [], [], []
         for link in host:
             name = link.get('ifname', '').split('@')[0]
             m = re.fullmatch('fov' + re.escape(self.tag) + r'(-?[1-9][0-9]*)', name)
@@ -152,7 +165,20 @@ class Instance:
             if not m: continue
             slot = int(m[1])
             peer = 'fop' + self.tag + str(slot)
-            links = json.loads(r.run(['ip', '-n', name, '-j', '-4', 'addr', 'show']))
+            path = self.u.path('run/netns/' + name)
+            try:
+                links = json.loads(r.run(['ip', 'netns', 'exec', name, 'ip', '-j', '-4', 'addr', 'show']))
+            except (Refuse, ValueError):
+                # A named netns is a mountpoint. A regular file left after a
+                # crash or private-mount-namespace teardown is stale, not a
+                # live namespace. Only clean it when the slot is recorded as
+                # ours; anything else is a foreign collision and stays.
+                if not path.exists() and slot in self.indices:
+                    continue
+                if not path.exists() or path.is_symlink() or not path.is_file() or os.path.ismount(path) or slot not in self.indices:
+                    raise Refuse('无法读取隧道命名空间，保留现场：' + name) from None
+                stale_ns.append(name)
+                continue
             seen, foreign = False, False
             for link in links:
                 if link.get('ifname', '').split('@')[0] != peer: continue
@@ -168,7 +194,7 @@ class Instance:
             if not seen and slot not in self.indices: raise Refuse('残留隧道缺少归属证据')
             if self.base is None: raise Refuse('缺少网段记录，保留残留隧道')
             own_ns.append(name)
-        return own_ns, own_links
+        return own_ns, own_links, stale_ns
 
     def rules(self):
         if self.base is None: return []
@@ -196,13 +222,14 @@ class Instance:
         return result
 
     def cleanup(self):
-        namespaces, links = self.observe()
+        namespaces, links, stale = self.observe()
         rules = self.rules()
         for name in namespaces:
             if self.u.r.run(['ip', 'netns', 'pids', name]).strip():
                 raise Refuse('隧道仍有进程，保留文件；请核对服务停止结果后重试')
         for table, args in rules: self.u.r.run(['iptables', '-w', '5', '-t', table] + args)
         for name in namespaces: self.u.r.run(['ip', 'netns', 'delete', name])
+        for name in stale: self.u.remove('run/netns/' + name)
         # Deleting a namespace may already remove its paired interface.
         current = {v['ifname'].split('@')[0] for v in json.loads(self.u.r.run(['ip', '-j', '-4', 'addr', 'show']))}
         for name in links:
