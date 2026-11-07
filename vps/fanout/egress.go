@@ -126,7 +126,7 @@ func (t *Tunnel) clearEgress() {
 	t.egress = nil
 	t.egressExpectedIP, t.egressActualIP, t.egressVerifiedAt = "", "", ""
 	t.egressNodeHost, t.egressProfileDigest = "", ""
-	t.LatencyMS = 0
+	t.LatencyMS, t.latencyInstantMS = 0, 0
 	t.mu.Unlock()
 }
 

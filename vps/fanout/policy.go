@@ -239,6 +239,7 @@ func (m *Manager) policyCandidates(p SlotPolicy, avoid map[string]bool, exceptSl
 		node      Node
 		rank      int
 		latency   float64
+		failRate  float64
 		preferred bool
 		speed     float64
 	}
@@ -251,6 +252,7 @@ func (m *Manager) policyCandidates(p SlotPolicy, avoid map[string]bool, exceptSl
 			node:      n,
 			rank:      rank,
 			latency:   latency,
+			failRate:  m.observationFailRateLocked(n.HostName, profileDigest(n.Config)),
 			preferred: image != nil && containsFold(p.PreferredISP, stringValue(image.ISP)),
 			speed:     n.SpeedMbps,
 		})
@@ -268,6 +270,10 @@ func (m *Manager) policyCandidates(p SlotPolicy, avoid map[string]bool, exceptSl
 				return true
 			}
 			return a.latency < b.latency
+		}
+		// 同档内失败率低者优先：长期抖动的节点排在稳定节点之后。
+		if a.failRate != b.failRate {
+			return a.failRate < b.failRate
 		}
 		if a.preferred != b.preferred {
 			return a.preferred

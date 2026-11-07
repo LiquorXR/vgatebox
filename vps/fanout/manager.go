@@ -27,6 +27,12 @@ type Manager struct {
 	connectBudget   *connectBudget
 	observations    map[string]CheckResult
 	observationTTL  time.Duration
+	// observationPerfTTL 是排序用延迟的新鲜度窗口（默认 10 分钟），
+	// 档位判定仍用 observationTTL（默认 30 分钟）。0 表示用默认值。
+	observationPerfTTL time.Duration
+	// observationStats 记每 hostname 在窗口内的通过/失败次数，用于失败率排序；
+	// 配置变化即重置，过期由 pruneConnectivity 清理。
+	observationStats map[string]*hostStats
 	diagnostics     map[string]*diagnosticLease
 	console         *Console
 

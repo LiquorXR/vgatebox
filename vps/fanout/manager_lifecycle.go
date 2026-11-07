@@ -307,7 +307,8 @@ func (m *Manager) tryNode(t *Tunnel) error {
 	t.mu.Unlock()
 	t.setValidating(true)
 	t.probePhase("verify_exit")
-	actual, latency, err := t.probeSocksExitIPWithLatency()
+	// 建连用多次短采中位数：单次毛刺不决定首个延迟样本，分段耗时帮助定位慢因。
+	actual, latency, detail, err := t.probeSocksMedian()
 	if err != nil {
 		t.setValidating(false)
 		return fmt.Errorf("固定 SOCKS5 出口验活失败: %w", err)
@@ -338,14 +339,16 @@ func (m *Manager) tryNode(t *Tunnel) error {
 		return err
 	}
 	if err := policy.checkLatency(latency); err != nil {
+		if detail != nil {
+			return fmt.Errorf("%w（中位 %.0fms，TLS %.0fms，首字节 %.0fms）", err, detail.MedianMS, detail.TLSMS, detail.TTFBMS)
+		}
 		return err
 	}
 	if !m.tunnelActive(t) || t.workContext().Err() != nil {
 		return fmt.Errorf("Slot 操作已取消")
 	}
-	t.mu.Lock()
-	t.LatencyMS = latency
-	t.mu.Unlock()
+	// 首个样本直接初始化平滑值（前面 clearEgress 已清零）。
+	t.absorbLatency(latency)
 	if err := t.acceptExitEvidence(ip, actual, image); err != nil {
 		return err
 	}

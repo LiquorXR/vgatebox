@@ -7,6 +7,10 @@ import (
 const (
 	defaultObservationTTLMinutes = 30
 	defaultIPTypeTTLHours        = 12
+	// defaultPerfTTLMinutes 是排序用延迟的新鲜度窗口：正确性档位（通过/失败）
+	// 仍用 30 分钟观察 TTL，但档内的延迟排序只认 10 分钟内的实测，
+	// 池刷新后旧延迟不再排半小时序。
+	defaultPerfTTLMinutes = 10
 	maxObservationTTLMinutes     = 24 * 60
 	maxIPTypeTTLHours            = 24 * 7
 	// 检测结果有效期固定 30 分钟：只决定展示与排序引用是否标过期，
@@ -109,6 +113,10 @@ func (c *Console) applyTTLSettings(now time.Time) {
 	c.m.setIPTypeTTL(time.Duration(hours) * time.Hour)
 	c.m.mu.Lock()
 	c.m.observationTTL = observation
+	c.m.observationPerfTTL = time.Duration(defaultPerfTTLMinutes) * time.Minute
+	if c.m.observationPerfTTL > observation {
+		c.m.observationPerfTTL = observation
+	}
 	c.m.mu.Unlock()
 }
 

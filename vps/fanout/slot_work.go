@@ -64,13 +64,33 @@ func (t *Tunnel) markDegraded(reason string) {
 	t.mu.Unlock()
 }
 
-// markRecovered 把 degraded 恢复为 up。健康检查整轮通过后调用。
+// absorbLatency 把一次探活延迟吸收进 EWMA 平滑值，不改状态。
+// 首个样本（平滑值<=0）直接采用，用于建连初始化。
+func (t *Tunnel) absorbLatency(latency float64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.latencyInstantMS = latency
+	if t.LatencyMS <= 0 {
+		t.LatencyMS = latency
+		return
+	}
+	t.LatencyMS = ewmaAlpha*latency + (1-ewmaAlpha)*t.LatencyMS
+}
+
+// smoothLatency 读 EWMA 平滑延迟（展示、排序与门限口径）。
+func (t *Tunnel) smoothLatency() float64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.LatencyMS
+}
+
+// markRecovered 把 degraded 恢复为 up，同时吸收本次延迟。
 func (t *Tunnel) markRecovered(latency float64) {
+	t.absorbLatency(latency)
 	t.mu.Lock()
 	if t.Status == "degraded" {
 		t.Status, t.Err = "up", ""
 	}
-	t.LatencyMS = latency
 	t.mu.Unlock()
 }
 

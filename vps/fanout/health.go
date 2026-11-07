@@ -247,9 +247,14 @@ func (m *Manager) checkTunnelHealth(parent context.Context, t *Tunnel) (healthSt
 	}
 	if t.Policy != nil {
 		if err := t.policySnapshot().checkLatency(latency); err != nil {
-			// 变慢不断流：标记观察，持续不达标由 healthRound 升级为重连。
-			t.markDegraded("出口延迟超过 Slot 上限，仍可出网并观察中")
-			return healthDegraded, 0
+			// 单采超限先看平滑值：毛刺只吸收进 EWMA，不断流不标记；
+			// 平滑值同样超限才是真慢，标记观察。
+			t.absorbLatency(latency)
+			if terr := t.policySnapshot().checkLatency(t.smoothLatency()); terr != nil {
+				t.markDegraded("出口延迟超过 Slot 上限，仍可出网并观察中")
+				return healthDegraded, 0
+			}
+			return healthOK, latency
 		}
 	}
 	t.markRecovered(latency)

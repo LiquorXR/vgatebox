@@ -36,6 +36,9 @@ type Tunnel struct {
 	Policy         *SlotPolicy `json:"policy,omitempty"`
 	previousPolicy *SlotPolicy
 	LatencyMS      float64 `json:"latency_ms,omitempty"`
+	// latencyInstantMS 是最近一次探活的原始延迟；LatencyMS 是 EWMA 平滑值，
+	// 展示、排序与门限统一用平滑值，单次毛刺不再直接触发阻断。
+	latencyInstantMS float64
 
 	ns             string
 	listener       net.Listener
@@ -111,6 +114,9 @@ const (
 	// 避免对着一批死节点空转。对照默认的 5s～60s（见 manager_lifecycle.go）。
 	flapSlowMin = 60 * time.Second
 	flapSlowMax = 5 * time.Minute
+	// ewmaAlpha 是延迟平滑系数：新样本占 4 成，历史占 6 成。
+	// 单次毛刺约 3 轮收敛，持续变慢约 4 轮把平滑值推过门限。
+	ewmaAlpha = 0.4
 )
 
 // recordReconnect 记一次重连进入，返回窗口内的累计次数。

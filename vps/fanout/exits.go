@@ -36,6 +36,7 @@ type Exit struct {
 	Egress            *EgressProfile `json:"egress"`
 	Policy            SlotPolicy     `json:"policy"`
 	LatencyMS         float64        `json:"latency_ms,omitempty"`
+	LatencyTrend      string         `json:"latency_trend,omitempty"`
 	CanRollbackPolicy bool           `json:"can_rollback_policy"`
 	// SOCKS5 凭据：界面要能看、能复制、能改
 	PublicSocks *SocksExposure `json:"public_socks,omitempty"`
@@ -129,7 +130,7 @@ func (m *Manager) ExitsOf() ExitsView {
 			Region: snapshot.Node.CountryCode, Country: nodeLabel(snapshot.Node),
 			ExitIP: snapshot.ExitIP, Status: snapshot.Status, Phase: snapshot.Phase, Err: snapshot.Err, Since: snapshot.Since,
 			Egress: snapshot.Egress,
-			Policy: t.policySnapshot(), LatencyMS: snapshot.LatencyMS,
+			Policy: t.policySnapshot(), LatencyMS: snapshot.LatencyMS, LatencyTrend: snapshot.LatencyTrend,
 			CanRollbackPolicy: snapshot.CanRollbackPolicy,
 			SocksUser:         cred.User, SocksPass: cred.Pass,
 		})

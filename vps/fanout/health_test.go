@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"math"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -286,8 +287,10 @@ func slowPolicyTunnel(slot int, host, exitIP string, maxLatencyMS int) *Tunnel {
 	tunnel.Policy = &policy
 	tunnel.egress = &EgressProfile{IP: exitIP, Protocol: "openvpn", IPType: "unknown", IntelligenceStatus: "not_configured"}
 	tunnel.egressNodeHost, tunnel.egressProfileDigest = tunnel.Node.HostName, profileDigest(tunnel.Node.Config)
-	// snapshot() 会把 LatencyMS<=0 的上限隧道预映射为 blocked，先给有效值。
-	tunnel.LatencyMS = 50
+	// snapshot() 会把 LatencyMS<=0 的上限隧道预映射为 blocked，先给有效值；
+	// 平滑初值同样超限，保证首轮即走 degraded 路径（毛刺吸收见单采测试）。
+	tunnel.LatencyMS = 5000
+	tunnel.latencyInstantMS = 5000
 	return tunnel
 }
 
@@ -327,7 +330,8 @@ func TestHealthDegradedObservedWithoutDisconnect(t *testing.T) {
 		return tunnel.ExitIP, 50, nil
 	}
 	state, _ = m.checkTunnelHealth(context.Background(), tunnel)
-	if state != healthOK || tunnel.Status != "up" || tunnel.LatencyMS != 50 {
+	// EWMA：0.4*50 + 0.6*5000 = 3020（近似比较）。
+	if state != healthOK || tunnel.Status != "up" || math.Abs(tunnel.LatencyMS-3020) > 1e-6 {
 		t.Fatalf("recovered exit did not return to up: state=%v status=%s latency=%v", state, tunnel.Status, tunnel.LatencyMS)
 	}
 }
@@ -354,6 +358,24 @@ func TestHealthDegradedEscalatesAfterSustainedSlowness(t *testing.T) {
 	m.healthRound(context.Background(), state)
 	if reconnects.Load() != 1 {
 		t.Fatalf("sustained slowness did not escalate: reconnects=%d", reconnects.Load())
+	}
+}
+
+func TestHealthSpikeAbsorbedWithoutDegrade(t *testing.T) {
+	m := NewManager(8, t.TempDir())
+	tunnel := slowPolicyTunnel(1, "spike", "203.0.113.51", 100)
+	tunnel.LatencyMS, tunnel.latencyInstantMS = 50, 50
+	m.tunnels[1] = tunnel
+	m.healthProbe = func(context.Context, *Tunnel) (string, float64, error) {
+		return tunnel.ExitIP, 5000, nil
+	}
+	state, _ := m.checkTunnelHealth(context.Background(), tunnel)
+	// 单采超限但平滑值健康：吸收进 EWMA，不断流不标记。
+	if state != healthOK || tunnel.Status != "up" {
+		t.Fatalf("single spike degraded the exit: state=%v status=%s", state, tunnel.Status)
+	}
+	if math.Abs(tunnel.LatencyMS-(0.4*5000+0.6*50)) > 1e-6 {
+		t.Fatalf("spike not absorbed: %v", tunnel.LatencyMS)
 	}
 }
 
