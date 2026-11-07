@@ -46,14 +46,13 @@ type CheckRun struct {
 	Total       int           `json:"total"`
 	Parallelism int           `json:"parallelism"`
 	IPTypeCheck bool          `json:"ip_type_check"`
-	// scheduled + poolGen mark an automatic post-refresh full batch, so its
-	// completion records which pool generation has been covered.
-	scheduled bool
-	poolGen   string
-	cancel    context.CancelFunc
-	ctx       context.Context
-	wake      chan struct{}
-	nodes     map[string]Node
+	// poolGen records which pool generation this batch covers, so a completed
+	// full check marks the generation done without another round.
+	poolGen string
+	cancel  context.CancelFunc
+	ctx     context.Context
+	wake    chan struct{}
+	nodes   map[string]Node
 }
 
 func (j *CheckRun) view() any {

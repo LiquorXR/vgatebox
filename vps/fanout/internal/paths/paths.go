@@ -92,10 +92,18 @@ func CheckSchedule(root string) string {
 	return filepath.Join(StateDir(root), "check-schedule-state.json")
 }
 func RefreshState(root string) string { return filepath.Join(StateDir(root), "refresh-state.json") }
-func SSTP(root string) string         { return filepath.Join(StateDir(root), "sstp.json") }
+
+// ManualRefreshMarker records a CLI manual refresh that the scheduler has not
+// seen yet. Consuming it marks the pool generation covered without starting
+// an automatic check, so manual refreshes never trigger one.
+func ManualRefreshMarker(root string) string {
+	return filepath.Join(StateDir(root), "manual-refresh.json")
+}
+func SSTP(root string) string { return filepath.Join(StateDir(root), "sstp.json") }
 func ThirdPartyChecks(root string) string {
 	return filepath.Join(StateDir(root), "third-party-checks.json")
 }
+
 // Diagnostic 是任务目录里的检测资源记录（随任务目录走，一般在 run/ 下，
 // 与 SlotOVPN 同类；从不是 state/ 下的固定文件）。
 func Diagnostic(dir string) string { return filepath.Join(dir, "diagnostic.json") }

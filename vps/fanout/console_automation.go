@@ -261,11 +261,19 @@ func (c *Console) automationCheckFinished(j *CheckRun) {
 	a.check.FinishedAt = time.Now().UTC()
 	a.check.Nodes = total
 	a.check.Passed = passed
-	// A completed scheduled full check covers this pool generation; a cancelled
-	// one does too, otherwise the next tick would restart a check the operator
-	// just dismissed. The next successful refresh arms a new round.
-	if j.scheduled && (status == "done" || status == "cancelled") && j.poolGen != "" {
-		a.check.PoolGen = j.poolGen
+	// A completed full check covers this pool generation, so the same pool is
+	// not checked again; a partial check leaves the generation uncovered.
+	// A cancelled check marks the current generation as dismissed, otherwise
+	// the next tick would restart what the operator just stopped. The next
+	// successful refresh arms a new round either way.
+	if j.poolGen != "" {
+		if status == "done" && j.Total >= c.m.NodeCount() {
+			a.check.PoolGen = j.poolGen
+		} else if status == "cancelled" {
+			if gen := currentPoolGeneratedAt(); gen != "" {
+				a.check.PoolGen = gen
+			}
+		}
 	}
 	blob, _ := json.Marshal(a.check)
 	if atomicConfigWrite(paths.CheckSchedule(c.m.workDir), blob) != nil {
@@ -327,6 +335,7 @@ func (c *Console) automationTick(now time.Time) {
 	}
 	// 刷新成功后触发一次全量检测；同一池只检一次，手动全量同样计入。
 	// 检测结果 30 分钟过期，下一轮刷新（默认 60 分钟）会重新覆盖。
+	c.consumeManualRefreshMarker()
 	markNoCandidates := func() {
 		a.mu.Lock()
 		defer a.mu.Unlock()
@@ -367,6 +376,58 @@ func (c *Console) automationTick(now time.Time) {
 	}
 	if _, err := c.startCheck(CheckRequest{Kind: "checks", All: true, scheduled: true}); err != nil {
 		log.Printf("刷新后自动检测启动失败: %v", err)
+	}
+}
+
+// markPoolChecked records the on-disk pool generation as covered without
+// starting a check. Manual refreshes interrupt any running check instead
+// of arming a new one.
+func (c *Console) markPoolChecked() {
+	gen := currentPoolGeneratedAt()
+	if gen == "" {
+		return
+	}
+	a := c.automation
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.check.PoolGen = gen
+	if blob, err2 := json.Marshal(a.check); err2 == nil {
+		if err2 := atomicConfigWrite(paths.CheckSchedule(c.m.workDir), blob); err2 != nil {
+			a.err = "周期状态无法保存，自动任务暂停"
+		}
+	}
+}
+
+// consumeManualRefreshMarker applies a CLI manual refresh marker: the pool
+// it produced counts as covered, so manual refreshes never arm an
+// automatic check.
+func (c *Console) consumeManualRefreshMarker() {
+	path := paths.ManualRefreshMarker(c.m.workDir)
+	blob, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	_ = os.Remove(path)
+	var m struct {
+		PoolGen string `json:"pool_generated_at"`
+	}
+	if json.Unmarshal(blob, &m) != nil || m.PoolGen == "" {
+		return
+	}
+	a := c.automation
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.check.PoolGen = m.PoolGen
+	if blob, err := json.Marshal(a.check); err == nil {
+		if err := atomicConfigWrite(paths.CheckSchedule(c.m.workDir), blob); err != nil {
+			a.err = "周期状态无法保存，自动任务暂停"
+		}
 	}
 }
 

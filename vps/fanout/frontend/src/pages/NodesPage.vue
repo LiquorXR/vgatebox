@@ -504,7 +504,7 @@ const detailNode = ref<Node | null>(null);
           </dl>
           <UiButton v-if="ippureCache?.entries" size="sm" variant="ghost" class="mt-3" :loading="clearIPPureMutation.isPending.value" @click="clearIPPureMutation.mutate()">清除 IPPure 缓存</UiButton>
           <p class="mt-3 rounded-lg border border-line px-3 py-2 text-[11px] leading-relaxed text-faint">
-            结果有效期按「检测间隔 + 两轮检测耗时 + 15 分钟」自动计算，保证下一轮检测前不会大面积过期；手动设置时不得短于「间隔 + 15 分钟」。
+            结果有效期固定 30 分钟，超期显示“已过期”；每次刷新成功后自动全量检测一次覆盖。
           </p>
           <p class="mt-3 border-t border-line pt-3 text-[11px] leading-relaxed text-faint">
             所有获取、镜像校验和节点检测都由本 VPS 执行；检测通过不等于会永久在线。

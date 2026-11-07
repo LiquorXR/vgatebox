@@ -313,9 +313,20 @@ func (c *Console) apiPoolRefresh(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(405)
 		return
 	}
-	// A manual refresh does not wake the automatic scheduler: it only changes the
-	// pool. The scheduler's own tick picks up whatever is due next, so a manual
-	// attempt that fails before recording state cannot retrigger itself.
+	// Manual refresh interrupts any running check: the new pool makes its
+	// results stale, and it will be re-checked on its own terms. It does not
+	// arm an automatic check; the completed refresh is marked covered below.
+	c.checksMu.Lock()
+	j := c.check
+	c.checksMu.Unlock()
+	if j != nil {
+		j.mu.Lock()
+		running := j.Status == "running"
+		j.mu.Unlock()
+		if running {
+			j.cancel()
+		}
+	}
 	if _, err := c.startPoolRefresh(false); err != nil {
 		writeJSON(w, 503, map[string]string{"error": "管理服务正在停止"})
 		return
@@ -376,6 +387,7 @@ func (c *Console) startPoolRefresh(scheduled bool) (<-chan struct{}, error) {
 		}
 		_ = json.Unmarshal(stdout.data, &result)
 		skipped := scheduled && (result.Status == "source_refresh_skipped" || cause == "pool_refresh_busy")
+		toolOK := err == nil && !skipped
 		if err == nil && !skipped {
 			_, err = c.m.RefreshNodes()
 			if err != nil {
@@ -383,6 +395,9 @@ func (c *Console) startPoolRefresh(scheduled bool) (<-chan struct{}, error) {
 			}
 		}
 		nodes, _ := c.m.Nodes()
+		if !scheduled && toolOK {
+			c.markPoolChecked()
+		}
 		c.refreshMu.Lock()
 		defer c.refreshMu.Unlock()
 		c.refreshAt = time.Now().UTC().Format(time.RFC3339)

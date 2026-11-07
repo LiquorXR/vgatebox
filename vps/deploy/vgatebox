@@ -17,7 +17,31 @@ PY
     ;;
   update-status) exec python3 /usr/local/lib/vgatebox/deploy/installer.py status ;;
   status) systemctl --no-pager status vgatebox-fanout.service vgatebox-pool.timer ;;
-  refresh) exec python3 /usr/local/lib/vgatebox/scripts/toolbox.py --config /etc/vgatebox/pool.json pool --output /var/lib/vgatebox/pool --schedule-dir /var/lib/vgatebox/fanout/state ;;
+  refresh)
+    # Manual refresh neither arms an automatic check nor leaves a running one:
+    # cancel any active check first (best effort), then record this pool
+    # generation as covered once the refresh succeeds.
+    python3 - <<'PY' 2>/dev/null || true
+import http.client,json,pathlib,urllib.parse
+try:
+ p=pathlib.Path('/var/lib/vgatebox/fanout/state');s=json.loads((p/'settings.json').read_text());base='/'+(p/'basepath').read_text().strip().strip('/');pw=(p/'password').read_text().strip()
+ listen=s.get('listen_addr') or '0.0.0.0';host='127.0.0.1' if listen in ('0.0.0.0','all','::') else listen
+ c=http.client.HTTPConnection(host,int(s['port']),timeout=3);c.request('POST',base+'/login',urllib.parse.urlencode({'password':pw}),{'Content-Type':'application/x-www-form-urlencoded'});r=c.getresponse();r.read();cookie=r.getheader('Set-Cookie','').split(';')[0]
+ c.request('POST',base+'/api/console/check/cancel',headers={'Cookie':cookie});c.getresponse().read();c.close()
+except Exception:pass
+PY
+    if python3 /usr/local/lib/vgatebox/scripts/toolbox.py --config /etc/vgatebox/pool.json pool --output /var/lib/vgatebox/pool --schedule-dir /var/lib/vgatebox/fanout/state; then
+      python3 - <<'PY' 2>/dev/null || true
+import json,pathlib
+try:
+ d=json.loads(pathlib.Path('/var/lib/vgatebox/pool/node_pool.json').read_text());gen=str(d.get('generated_at') or '').strip()
+ if gen:
+  m=pathlib.Path('/var/lib/vgatebox/fanout/state/manual-refresh.json');m.write_text(json.dumps({'pool_generated_at':gen}));m.chmod(0o600)
+except Exception:pass
+PY
+    else
+      exit $?
+    fi ;;
   restart) systemctl restart vgatebox-fanout.service ;;
   access)
     python3 - <<'PY'

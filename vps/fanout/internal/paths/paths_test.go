@@ -26,6 +26,7 @@ func TestAccessorsResolveUnderSubdirs(t *testing.T) {
 		"state/automation.json":                Automation(root),
 		"state/check-schedule-state.json":      CheckSchedule(root),
 		"state/refresh-state.json":             RefreshState(root),
+		"state/manual-refresh.json":            ManualRefreshMarker(root),
 		"state/sstp.json":                      SSTP(root),
 		"state/third-party-checks.json":        ThirdPartyChecks(root),
 		"state/slot_health.json":               SlotHealth(root),
