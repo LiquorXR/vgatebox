@@ -103,9 +103,10 @@ dev 依赖 8 条（测试工具链，不打包进 `webdist`，修要 breaking �
 | govulncheck | v1.9.0 | `go install golang.org/x/vuln/cmd/govulncheck@v1.9.0` |
 | Node | 22（frontend engines ≥22.12） | npm audit 在此版本下采集 |
 
-## 6. 待观察
+## 6. 待观察（2026-11-07 实测回填）
 
-- `nightly-race.yml` 首次全量 `-race` 耗时（阈值 `-test.timeout 30m` / job 45m 是否够）。
-- `lint.yml` 四个 job 首次在 CI runner 上的实际耗时与缓存命中。
+- `nightly-race.yml` 全量 `-race`：#2 手动跑 1分36秒通过（阈值 `-test.timeout 30m` / job 45m 富余充足）。
+- `lint.yml` CI runner 实测（总数 53秒）：`go-vet 20秒 / staticcheck 50秒 / govulncheck 46秒 / npm-audit 7秒`，缓存命中正常。
+- `e2e.yml` 手动跑 #24 59秒、#25 1分15秒通过；`vps.yml` 主作业 4分50秒、`test.yml` 29秒通过。
 - 本地 Windows 无法执行 Go 单测（二进制含 `unix.PidfdOpen` 等 Linux-only 代码，改前即如此）；
   本地门禁 = `GOOS=linux go vet` + 交叉编译 + 各门禁脚本的本地复跑，完整执行在 Linux CI。
