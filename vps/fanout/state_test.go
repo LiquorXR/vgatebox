@@ -104,8 +104,12 @@ func TestRestoreStateReadsPrevHost(t *testing.T) {
 	if got := tn.prevHostOf(); got != "vpn-old" {
 		t.Fatalf("没读回换节点标记，实际 %q", got)
 	}
-	// 收尾：别让后台的 bringUpPersist 继续折腾
+	// 收尾：别让后台的 bringUpPersist 继续折腾（加锁写 Status，
+	// 否则与 restoreTunnel 的 tunnelActive 形成 data race）。
+	tn.blockWork()
+	tn.mu.Lock()
 	tn.Status = "stopped"
+	tn.mu.Unlock()
 }
 
 // 干净关闭也要保留原绑定，恢复时可能因节点离线而换候选。
@@ -128,7 +132,10 @@ func TestRestoreStateArmsBindingEvenAfterCleanShutdown(t *testing.T) {
 	if got := tn.prevHostOf(); got != "vpn-a" {
 		t.Fatalf("恢复需记住原绑定节点，实际 %q", got)
 	}
+	tn.blockWork()
+	tn.mu.Lock()
 	tn.Status = "stopped"
+	tn.mu.Unlock()
 }
 
 func containsStr(s, sub string) bool {
@@ -157,7 +164,15 @@ func TestRestoreStatePrefersCurrentPoolProfile(t *testing.T) {
 	m.mu.RLock()
 	tn := m.tunnels[2]
 	m.mu.RUnlock()
-	defer func() { tn.Status = "stopped" }()
+	tn.blockWork()
+	tn.mu.Lock()
+	tn.Status = "stopped"
+	tn.mu.Unlock()
+	defer func() {
+		tn.mu.Lock()
+		tn.Status = "stopped"
+		tn.mu.Unlock()
+	}()
 	if tn.Node.Config != "current-pool-profile" {
 		t.Fatal("stale saved profile replaced current pool profile")
 	}
