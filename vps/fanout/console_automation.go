@@ -8,15 +8,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
 
 const (
 	defaultRefreshMinutes = 60
-	defaultCheckMinutes   = 30
 	minRefreshMinutes     = 30
-	minCheckMinutes       = 15
 	maxAutomationMinutes  = 525600
 	// A source refresh marker older than this is treated as interrupted, so a
 	// crashed external refresh cannot block automatic checks forever.
@@ -26,8 +25,6 @@ const (
 type automationSettings struct {
 	RefreshEnabled bool `json:"refresh_enabled"`
 	RefreshMinutes int  `json:"refresh_minutes"`
-	CheckEnabled   bool `json:"check_enabled"`
-	CheckMinutes   int  `json:"check_minutes"`
 }
 
 type automationRun struct {
@@ -37,6 +34,9 @@ type automationRun struct {
 	FinishedAt time.Time `json:"finished_at,omitempty"`
 	Nodes      int       `json:"nodes"`
 	Passed     int       `json:"passed"`
+	// PoolGen records which pool generation a completed full check covered,
+	// so a fresh successful refresh triggers exactly one follow-up check.
+	PoolGen string `json:"pool_generated_at,omitempty"`
 }
 
 type automationManager struct {
@@ -47,14 +47,11 @@ type automationManager struct {
 }
 
 func defaultAutomationSettings() automationSettings {
-	return automationSettings{RefreshEnabled: true, RefreshMinutes: defaultRefreshMinutes, CheckEnabled: true, CheckMinutes: defaultCheckMinutes}
+	return automationSettings{RefreshEnabled: true, RefreshMinutes: defaultRefreshMinutes}
 }
 func validateAutomationSettings(s automationSettings) error {
 	if s.RefreshMinutes < minRefreshMinutes || s.RefreshMinutes > maxAutomationMinutes {
 		return fmt.Errorf("自动刷新间隔须为 30–525600 分钟")
-	}
-	if s.CheckMinutes < minCheckMinutes || s.CheckMinutes > maxAutomationMinutes {
-		return fmt.Errorf("自动检测间隔须为 15–525600 分钟")
 	}
 	return nil
 }
@@ -77,7 +74,7 @@ func (c *Console) loadAutomation() error {
 				return fmt.Errorf("周期设置或状态损坏，保留文件")
 			}
 			if filepath.Base(item.path) == "automation.json" {
-				for _, key := range []string{"refresh_enabled", "refresh_minutes", "check_enabled", "check_minutes"} {
+				for _, key := range []string{"refresh_enabled", "refresh_minutes"} {
 					if raw, ok := fields[key]; ok && string(raw) == "null" {
 						return fmt.Errorf("周期设置不能为 null")
 					}
@@ -167,11 +164,11 @@ func (c *Console) automationView(now time.Time) any {
 	a.mu.Unlock()
 	source := c.sourceAutomationState()
 	refresh := runScheduleView(source, s.RefreshEnabled, s.RefreshMinutes, now, true)
-	check := runScheduleView(r, s.CheckEnabled, s.CheckMinutes, now, false)
+	check := runScheduleView(r, false, 0, now, false)
 	c.refreshMu.Lock()
 	localRunning := c.refreshState == "running"
 	c.refreshMu.Unlock()
-	check["waiting_for_refresh"] = s.CheckEnabled && !check["running"].(bool) && (localRunning || refresh["running"].(bool))
+	check["waiting_for_refresh"] = !check["running"].(bool) && (localRunning || refresh["running"].(bool))
 	return map[string]any{"settings": s, "refresh": refresh, "check": check, "error": e}
 }
 
@@ -184,22 +181,13 @@ func (c *Console) apiAutomation(w http.ResponseWriter, r *http.Request) {
 		var in struct {
 			RefreshEnabled *bool `json:"refresh_enabled"`
 			RefreshMinutes int   `json:"refresh_minutes"`
-			CheckEnabled   *bool `json:"check_enabled"`
-			CheckMinutes   int   `json:"check_minutes"`
 		}
-		if readConsoleJSON(w, r, &in) != nil || in.RefreshEnabled == nil || in.CheckEnabled == nil {
-			writeJSON(w, 400, map[string]string{"error": "请完整设置两个周期及开关"})
+		if readConsoleJSON(w, r, &in) != nil || in.RefreshEnabled == nil {
+			writeJSON(w, 400, map[string]string{"error": "请完整设置自动刷新开关及间隔"})
 			return
 		}
-		s := automationSettings{*in.RefreshEnabled, in.RefreshMinutes, *in.CheckEnabled, in.CheckMinutes}
+		s := automationSettings{RefreshEnabled: *in.RefreshEnabled, RefreshMinutes: in.RefreshMinutes}
 		if err := validateAutomationSettings(s); err != nil {
-			writeJSON(w, 400, map[string]string{"error": err.Error()})
-			return
-		}
-		c.ttlMu.RLock()
-		configuredTTL := c.checkResultTTLMinutes
-		c.ttlMu.RUnlock()
-		if err := validateResultTTLForSchedule(configuredTTL, s.CheckEnabled, s.CheckMinutes); err != nil {
 			writeJSON(w, 400, map[string]string{"error": err.Error()})
 			return
 		}
@@ -234,7 +222,7 @@ func (c *Console) automationCheckStarted(scheduled bool) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	now := time.Now().UTC()
-	if scheduled && (!a.settings.CheckEnabled || a.err != "" || a.check.Status == "running" || !runDue(a.check, a.settings.CheckMinutes, now)) {
+	if scheduled && (a.err != "" || a.check.Status == "running") {
 		return fmt.Errorf("automatic_check_not_due")
 	}
 	next := automationRun{Status: "running", AnchorAt: a.check.AnchorAt, StartedAt: now}
@@ -273,6 +261,12 @@ func (c *Console) automationCheckFinished(j *CheckRun) {
 	a.check.FinishedAt = time.Now().UTC()
 	a.check.Nodes = total
 	a.check.Passed = passed
+	// A completed scheduled full check covers this pool generation; a cancelled
+	// one does too, otherwise the next tick would restart a check the operator
+	// just dismissed. The next successful refresh arms a new round.
+	if j.scheduled && (status == "done" || status == "cancelled") && j.poolGen != "" {
+		a.check.PoolGen = j.poolGen
+	}
 	blob, _ := json.Marshal(a.check)
 	if atomicConfigWrite(paths.CheckSchedule(c.m.workDir), blob) != nil {
 		a.err = "周期状态无法保存，自动任务暂停"
@@ -331,28 +325,66 @@ func (c *Console) automationTick(now time.Time) {
 		}
 		return
 	}
-	if !s.CheckEnabled || !runDue(check, s.CheckMinutes, now) {
-		return
-	}
-	// The external pool watcher may have written a newer snapshot after the
-	// last in-memory load. Reload once before choosing candidates; a failure
-	// keeps the previous pool and is reported instead of aborting detection.
-	if _, err := c.m.RefreshNodes(); err != nil {
-		log.Printf("自动检测前重新读取候选池失败，保留当前候选: %v", err)
-	}
-	nodes, _ := c.m.Nodes()
-	if len(nodes) == 0 {
+	// 刷新成功后触发一次全量检测；同一池只检一次，手动全量同样计入。
+	// 检测结果 30 分钟过期，下一轮刷新（默认 60 分钟）会重新覆盖。
+	markNoCandidates := func() {
 		a.mu.Lock()
+		defer a.mu.Unlock()
+		if a.check.Status == "no_candidates" {
+			return
+		}
 		a.check.Status = "no_candidates"
 		a.check.FinishedAt = now
 		blob, _ := json.Marshal(a.check)
 		if atomicConfigWrite(paths.CheckSchedule(c.m.workDir), blob) != nil {
 			a.err = "周期状态无法保存，自动任务暂停"
 		}
-		a.mu.Unlock()
+	}
+	if c.m.NodeCount() == 0 {
+		markNoCandidates()
 		return
 	}
-	_, _ = c.startCheck(CheckRequest{Kind: "checks", All: true, scheduled: true})
+	poolGen := currentPoolGeneratedAt()
+	if poolGen == "" {
+		return
+	}
+	a.mu.Lock()
+	checkedGen := a.check.PoolGen
+	a.mu.Unlock()
+	if checkedGen == poolGen {
+		return
+	}
+	// The external pool watcher may have written a newer snapshot after the
+	// last in-memory load. Reload once before choosing candidates; a failure
+	// keeps the previous pool and is reported instead of aborting detection.
+	if _, err := c.m.RefreshNodes(); err != nil {
+		log.Printf("刷新后检测前重新读取候选池失败，保留当前候选: %v", err)
+	}
+	nodes, _ := c.m.Nodes()
+	if len(nodes) == 0 {
+		markNoCandidates()
+		return
+	}
+	if _, err := c.startCheck(CheckRequest{Kind: "checks", All: true, scheduled: true}); err != nil {
+		log.Printf("刷新后自动检测启动失败: %v", err)
+	}
+}
+
+// currentPoolGeneratedAt reads the on-disk pool generation marker. A fresh
+// successful refresh (in-app, systemd timer or manual CLI) writes a new
+// generated_at, which is what arms the single post-refresh full check.
+func currentPoolGeneratedAt() string {
+	blob, err := os.ReadFile(paths.PoolFile())
+	if err != nil {
+		return ""
+	}
+	var pool struct {
+		GeneratedAt string `json:"generated_at"`
+	}
+	if json.Unmarshal(blob, &pool) != nil {
+		return ""
+	}
+	return strings.TrimSpace(pool.GeneratedAt)
 }
 
 func (c *Console) watchAutomation() {

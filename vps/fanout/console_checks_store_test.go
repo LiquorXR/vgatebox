@@ -95,7 +95,6 @@ func TestChecksRetentionPrunesExpiredAndRemovedNodes(t *testing.T) {
 	now := time.Now().UTC()
 	c.m.nodes = []Node{{HostName: "keep", Config: "fixture"}, {HostName: "old", Config: "fixture"}, {HostName: "stale", Config: "fixture"}, {HostName: "expired", Config: "fixture"}}
 	c.ttlMu.Lock()
-	c.checkResultTTLMinutes = 120
 	c.observationTTLMinutes = 30
 	c.ttlMu.Unlock()
 	c.checksMu.Lock()

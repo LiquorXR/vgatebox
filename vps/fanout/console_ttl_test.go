@@ -5,67 +5,37 @@ import (
 	"time"
 )
 
-func TestAutomaticCheckResultTTLMatchesSchedule(t *testing.T) {
-	for _, tc := range []struct {
-		enabled bool
-		minutes int
-		cycle   time.Duration
-		want    time.Duration
-	}{
-		{false, 15, 0, 90 * time.Minute},
-		{false, 120, 30 * time.Minute, 90 * time.Minute},
-		{true, 15, 0, 90 * time.Minute},
-		{true, 15, 10 * time.Minute, 90 * time.Minute},
-		{true, 30, 20 * time.Minute, 90 * time.Minute},
-		{true, 30, 25 * time.Minute, 95 * time.Minute},
-		{true, 60, 20 * time.Minute, 115 * time.Minute},
-		{true, 120, 30 * time.Minute, 195 * time.Minute},
-		{true, 60, 120 * time.Minute, 315 * time.Minute},
-		{true, 24 * 60, 0, 24 * time.Hour},
-		{true, 525600, 0, 24 * time.Hour},
-	} {
-		if got := effectiveResultTTL(0, tc.enabled, tc.minutes, tc.cycle); got != tc.want {
-			t.Fatalf("enabled=%v minutes=%d cycle=%s: got %s want %s", tc.enabled, tc.minutes, tc.cycle, got, tc.want)
+func TestFixedCheckResultTTLIsThirtyMinutes(t *testing.T) {
+	c := consoleFixture(t)
+	defer c.cancel()
+	if got := c.checkResultTTLAt(time.Now()); got != 30*time.Minute {
+		t.Fatalf("result TTL = %s, want 30m", got)
+	}
+	if got := resultExpiry(CheckResult{CheckedAt: time.Now().UTC()}, 30*time.Minute); got.IsZero() {
+		t.Fatal("expiry was not derived from check time")
+	}
+}
+func TestConfiguredCheckResultTTLAlwaysThirtyMinutes(t *testing.T) {
+	for _, configured := range []int{0, 15, 30, 60, 5000} {
+		if got := effectiveResultTTL(configured); got != 30*time.Minute {
+			t.Fatalf("configured=%d: got %s want 30m", configured, got)
 		}
 	}
 }
-
-func TestConfiguredCheckResultTTLOverridesButKeepsRefreshMargin(t *testing.T) {
-	for _, tc := range []struct {
-		configured int
-		interval   int
-		want       time.Duration
-	}{
-		{30, 15, 30 * time.Minute},
-		{60, 30, 60 * time.Minute},
-		{30, 60, 75 * time.Minute}, // raised to interval + 15m so results survive the wait
-		{5, 15, 30 * time.Minute},  // clamped to the manual minimum
-		{5000, 15, 24 * time.Hour},
-	} {
-		if got := effectiveResultTTL(tc.configured, true, tc.interval, 0); got != tc.want {
-			t.Fatalf("configured=%d interval=%d: got %s want %s", tc.configured, tc.interval, got, tc.want)
-		}
-	}
-	if got := effectiveResultTTL(30, false, 60, 0); got != 30*time.Minute {
-		t.Fatalf("disabled schedule changed the manual TTL: %s", got)
-	}
-}
-
-func TestObservationTTLKeepsOrderingThroughTheNextBatch(t *testing.T) {
-	if got := effectiveObservationTTL(defaultObservationTTLMinutes, 90*time.Minute, 0, 0); got != 30*time.Minute {
+func TestObservationTTLKeepsOrderingWithinResultTTL(t *testing.T) {
+	if got := effectiveObservationTTL(defaultObservationTTLMinutes, 30*time.Minute); got != 30*time.Minute {
 		t.Fatalf("default observation TTL: %s", got)
 	}
-	if got := effectiveObservationTTL(30, 95*time.Minute, 30*time.Minute, 25*time.Minute); got != 70*time.Minute {
-		t.Fatalf("observation TTL did not cover the next batch: %s", got)
+	if got := effectiveObservationTTL(15, 30*time.Minute); got != 15*time.Minute {
+		t.Fatalf("short observation TTL was raised: %s", got)
 	}
-	if got := effectiveObservationTTL(30, 60*time.Minute, 30*time.Minute, 25*time.Minute); got != 60*time.Minute {
+	if got := effectiveObservationTTL(60, 30*time.Minute); got != 30*time.Minute {
 		t.Fatalf("observation TTL exceeded result TTL: %s", got)
 	}
-	if got := effectiveObservationTTL(120, 300*time.Minute, 30*time.Minute, 0); got != 120*time.Minute {
-		t.Fatalf("configured observation TTL was not honoured: %s", got)
+	if got := effectiveObservationTTL(2000, 30*time.Minute); got != 30*time.Minute {
+		t.Fatalf("oversized observation TTL was kept: %s", got)
 	}
 }
-
 func TestCheckCycleEstimateUsesPoolAndParallelism(t *testing.T) {
 	if got := checkCycleEstimate(0, 2); got != 0 {
 		t.Fatalf("empty pool estimate: %s", got)
@@ -96,21 +66,11 @@ func TestCheckCycleDurationPrefersObservedRun(t *testing.T) {
 	}
 }
 
-func TestResultTTLValidationKeepsRefreshMargin(t *testing.T) {
-	if err := validateResultTTLForSchedule(0, true, 60); err != nil {
-		t.Fatalf("automatic TTL rejected: %v", err)
-	}
-	if err := validateResultTTLForSchedule(70, true, 60); err == nil {
-		t.Fatal("TTL shorter than interval + grace was accepted")
-	}
-	if err := validateResultTTLForSchedule(75, true, 60); err != nil {
-		t.Fatalf("TTL at the floor was rejected: %v", err)
-	}
-	if err := validateResultTTLForSchedule(30, false, 60); err != nil {
-		t.Fatalf("disabled schedule rejected a manual TTL: %v", err)
+func TestResultTTLFloorIsThirtyMinutes(t *testing.T) {
+	if fixedCheckResultTTLMinutes != 30 {
+		t.Fatalf("fixed result TTL = %d, want 30", fixedCheckResultTTLMinutes)
 	}
 }
-
 func TestRetentionWindowUsesFourResultTTLsWithinOneDay(t *testing.T) {
 	if got := retentionWindow(30 * time.Minute); got != 6*time.Hour {
 		t.Fatalf("short TTL retention: %s", got)
@@ -123,15 +83,9 @@ func TestRetentionWindowUsesFourResultTTLsWithinOneDay(t *testing.T) {
 	}
 }
 
-func TestOldChecksWithoutExpiryUseCurrentTTL(t *testing.T) {
+func TestOldChecksWithoutExpiryUseFixedTTL(t *testing.T) {
 	c := consoleFixture(t)
-	c.ttlMu.Lock()
-	c.checkResultTTLMinutes = 0
-	c.ttlMu.Unlock()
-	c.automation.mu.Lock()
-	c.automation.settings.CheckEnabled = true
-	c.automation.settings.CheckMinutes = 60
-	c.automation.mu.Unlock()
+	defer c.cancel()
 	checked := time.Now().UTC().Add(-time.Hour)
 	c.checksMu.Lock()
 	c.results["old"] = CheckResult{Host: "old", Status: "passed", CheckedAt: checked}
@@ -140,7 +94,7 @@ func TestOldChecksWithoutExpiryUseCurrentTTL(t *testing.T) {
 	c.checksMu.Lock()
 	result := c.results["old"]
 	c.checksMu.Unlock()
-	want := checked.Add(90 * time.Minute)
+	want := checked.Add(30 * time.Minute)
 	if !result.ExpiresAt.Equal(want) {
 		t.Fatalf("old result expiry: got %s want %s", result.ExpiresAt, want)
 	}

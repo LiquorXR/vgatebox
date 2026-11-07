@@ -135,7 +135,7 @@ func (c *Console) startCheck(in CheckRequest) (*CheckRun, error) {
 		cancel()
 		return nil, err
 	}
-	job := &CheckRun{ID: hex.EncodeToString(buf), Status: "running", Kind: "checks", Items: items, Total: len(items), Parallelism: in.Parallelism, IPTypeCheck: checkIPType, cancel: cancel, ctx: ctx, finished: make(chan struct{}), wake: make(chan struct{}, 1), nodes: byHost}
+	job := &CheckRun{ID: hex.EncodeToString(buf), Status: "running", Kind: "checks", Items: items, Total: len(items), Parallelism: in.Parallelism, IPTypeCheck: checkIPType, scheduled: in.scheduled, poolGen: currentPoolGeneratedAt(), cancel: cancel, ctx: ctx, finished: make(chan struct{}), wake: make(chan struct{}, 1), nodes: byHost}
 	c.check = job
 	c.bumpConsoleVersion()
 	go c.runChecks(ctx, job)

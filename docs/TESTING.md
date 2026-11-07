@@ -53,7 +53,7 @@ Go fuzz（`vps/fanout/fuzz_test.go`，纯函数无网络磁盘）：`parseNodeCS
 
 多发行版测试在一次性特权容器中运行真正的 systemd、发行版包管理器和安装器，执行安装、实际订阅 HTTPS 访问、更新保留与卸载。测试入口仅允许在 GitHub 一次性 runner 上运行；它不覆盖独立 VPS 的内核、SELinux 或服务商防火墙。范围见 [系统兼容性](LINUX_SUPPORT.md)。
 
-周期任务用受控时间和临时状态验证刷新默认 60 分钟/最低 30 分钟、检测默认 30 分钟/最低 15 分钟、开关、失败退避、重启保留、等待来源刷新完成与手动任务互斥；结果有效期按检测间隔和实测轮次计算，覆盖下一轮检测；Python 和 Go 共享刷新状态，避免系统定时器重复请求来源。测试不向 VPN Gate 做高频检测。
+周期任务用受控时间和临时状态验证刷新默认 60 分钟/最低 30 分钟、刷新成功后自动全量检测一次、结果有效期固定 30 分钟、失败退避与重启保留；Python 与 Go 共享刷新状态避免系统定时器重复请求来源。测试不向 VPN Gate 做高频检测。
 
 Clash 输出用固定官方 Mihomo 测试内核验证配置，覆盖 VLESS 的 13 个可表达的「传输 × 安全层」组合（TCP、gRPC、XHTTP 支持 none/tls/reality；WebSocket、HTTPUpgrade 支持 none/tls）、非 TCP 传输上的 Vision `flow`、VLESS Encryption 和 mKCP 拒绝路径；旧 VMess/Trojan/Hysteria2 入口的迁移过滤也有单元测试，UDP 通过 SOCKS5 回环中继测试验证。Debian 12 隔离安装测试还使用真实订阅连接本机 VLESS（TCP + REALITY + VLESS Encryption + Vision），校验 HTTPS 出口与内容，并确认选中代理失效时不回落 DIRECT。测试内核仅下载到 CI，不进入产品安装包。GUI 版本未提供，不将内核测试视为所有 Clash Verge 版本已验收。
 

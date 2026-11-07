@@ -28,31 +28,29 @@ type ExitPlan struct {
 }
 
 type Console struct {
-	third            *ThirdPartyManager
-	sstp             *SstpManager
-	ctx              context.Context
-	cancel           context.CancelFunc
-	refreshDone      chan struct{}
-	m                *Manager
-	targetMu         sync.Mutex
-	plan             *ExitPlan
-	planError        string
-	refreshMu        sync.Mutex
-	refreshState     string
-	refreshAt        string
-	refreshError     string
-	refreshCause     string
-	refreshStarted   time.Time
-	sourceMu         sync.Mutex
-	poolChanged      chan struct{}
-	automation       *automationManager
-	checksMu         sync.Mutex
-	check            *CheckRun
-	results          map[string]CheckResult
-	checkParallelism int
-	checkIPType      bool
-	// 0 means automatic: derived from the saved automatic check interval.
-	checkResultTTLMinutes int
+	third                 *ThirdPartyManager
+	sstp                  *SstpManager
+	ctx                   context.Context
+	cancel                context.CancelFunc
+	refreshDone           chan struct{}
+	m                     *Manager
+	targetMu              sync.Mutex
+	plan                  *ExitPlan
+	planError             string
+	refreshMu             sync.Mutex
+	refreshState          string
+	refreshAt             string
+	refreshError          string
+	refreshCause          string
+	refreshStarted        time.Time
+	sourceMu              sync.Mutex
+	poolChanged           chan struct{}
+	automation            *automationManager
+	checksMu              sync.Mutex
+	check                 *CheckRun
+	results               map[string]CheckResult
+	checkParallelism      int
+	checkIPType           bool
 	observationTTLMinutes int
 	ippureTTLHours        int
 	ttlMu                 sync.RWMutex

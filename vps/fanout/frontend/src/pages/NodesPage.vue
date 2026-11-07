@@ -15,7 +15,7 @@ import StatusBadge from "@/components/StatusBadge.vue";
 import ToggleSwitch from "@/components/ToggleSwitch.vue";
 import UiButton from "@/components/UiButton.vue";
 import { countryName, formatDateTime, formatLatency, formatMbps, truncate } from "@/lib/format";
-import { scheduleLabel, sourceLabel } from "@/lib/automation";
+import { postRefreshCheckLabel, scheduleLabel, sourceLabel } from "@/lib/automation";
 import { checkStatusLabel, checkStatusTone, errorLabel, ipTypeLabel, ipTypeLabels, ipTypeTone, sourceResidentialLabel } from "@/lib/status";
 import { toast, toastError } from "@/lib/toast";
 
@@ -268,7 +268,7 @@ async function saveSource() {
 const automationOpen = ref(false);
 const automationLoading = ref(false);
 const automationSaving = ref(false);
-const automationForm = reactive({ refresh_enabled: true, refresh_minutes: 60, check_enabled: true, check_minutes: 30 });
+const automationForm = reactive({ refresh_enabled: true, refresh_minutes: 60 });
 
 async function openAutomation() {
   automationLoading.value = true;
@@ -285,13 +285,8 @@ async function openAutomation() {
 
 async function saveAutomation() {
   const refresh = Number(automationForm.refresh_minutes);
-  const check = Number(automationForm.check_minutes);
   if (!Number.isSafeInteger(refresh) || refresh < 30 || refresh > 525600) {
     toast("自动刷新间隔须为 30–525600 分钟", { tone: "error" });
-    return;
-  }
-  if (!Number.isSafeInteger(check) || check < 15 || check > 525600) {
-    toast("自动检测间隔须为 15–525600 分钟", { tone: "error" });
     return;
   }
   automationSaving.value = true;
@@ -299,8 +294,6 @@ async function saveAutomation() {
     await post("api/console/automation", {
       refresh_enabled: automationForm.refresh_enabled,
       refresh_minutes: refresh,
-      check_enabled: automationForm.check_enabled,
-      check_minutes: check,
     });
     automationOpen.value = false;
     toast("周期任务已保存", { tone: "success" });
@@ -502,10 +495,10 @@ const detailNode = ref<Node | null>(null);
           <dl class="space-y-3 text-xs">
             <div><dt class="text-faint">来源</dt><dd class="mt-0.5 leading-relaxed text-ink">{{ sourceText }}</dd></div>
             <div><dt class="text-faint">来源刷新</dt><dd class="mt-0.5 text-ink">{{ scheduleLabel(summary?.automation, "refresh") }}</dd></div>
-            <div><dt class="text-faint">候选检测</dt><dd class="mt-0.5 text-ink">{{ scheduleLabel(summary?.automation, "check") }}</dd></div>
-            <div><dt class="text-faint">结果有效</dt><dd class="mt-0.5 text-ink">{{ checkSettings?.check_result_ttl_effective_minutes ? `${checkSettings.check_result_ttl_effective_minutes} 分钟` : "—" }}<template v-if="checkSettings?.check_result_ttl_minutes"> · 手动</template><template v-else> · 自动</template></dd></div>
+            <div><dt class="text-faint">候选检测</dt><dd class="mt-0.5 text-ink">{{ postRefreshCheckLabel(summary?.automation) }}</dd></div>
+            <div><dt class="text-faint">结果有效</dt><dd class="mt-0.5 text-ink">{{ checkSettings?.check_result_ttl_effective_minutes ? `${checkSettings.check_result_ttl_effective_minutes} 分钟` : "—" }} · 超期显示已过期</dd></div>
             <div><dt class="text-faint">排序观察有效</dt><dd class="mt-0.5 text-ink">{{ checkSettings?.observation_ttl_effective_minutes ? `${checkSettings.observation_ttl_effective_minutes} 分钟` : "—" }}</dd></div>
-            <div v-if="checkCycleMinutes"><dt class="text-faint">单轮检测约</dt><dd class="mt-0.5 text-ink">{{ checkCycleMinutes }} 分钟<template v-if="summary?.automation?.settings?.check_minutes"> · 间隔 {{ summary.automation.settings.check_minutes }} 分钟</template></dd></div>
+            <div v-if="checkCycleMinutes"><dt class="text-faint">单轮检测约</dt><dd class="mt-0.5 text-ink">{{ checkCycleMinutes }} 分钟</dd></div>
             <div v-if="ippureCache"><dt class="text-faint">IPPure 缓存</dt><dd class="mt-0.5 text-ink">命中 {{ ippureCache.hits }} 次 · 查询 {{ ippureCache.queries }} 次 · {{ ippureCache.entries }} 条<template v-if="checkSettings?.ippure_ttl_hours"> · {{ checkSettings.ippure_ttl_hours }} 小时</template></dd></div>
             <div><dt class="text-faint">上次获取</dt><dd class="mt-0.5 text-ink">{{ formatDateTime(summary?.pool_generated_at) }}</dd></div>
           </dl>
@@ -553,26 +546,16 @@ const detailNode = ref<Node | null>(null);
       </form>
     </DialogShell>
 
-    <DialogShell :open="automationOpen" title="周期任务" description="自动刷新最低 30 分钟，自动检测最低 15 分钟；默认检测 30 分钟。获取和检测由本 VPS 完成。" size="md" @update:open="automationOpen = $event">
+    <DialogShell :open="automationOpen" title="周期任务" description="自动刷新最低 30 分钟；每次刷新成功后自动全量检测一次，检测结果 30 分钟有效。获取和检测由本 VPS 完成。" size="md" @update:open="automationOpen = $event">
       <form class="space-y-4" @submit.prevent="saveAutomation">
         <div class="rounded-lg border border-line p-3">
           <div class="flex items-center justify-between gap-3">
-            <div><div class="text-sm font-medium">自动刷新候选清单</div><div class="text-[11px] text-muted">最低 30 分钟；失败保留旧清单。</div></div>
+            <div><div class="text-sm font-medium">自动刷新候选清单</div><div class="text-[11px] text-muted">最低 30 分钟；失败保留旧清单，成功后自动全量检测。</div></div>
             <ToggleSwitch v-model="automationForm.refresh_enabled" label="自动刷新候选清单" />
           </div>
           <label class="mt-3 block">
             <span class="mb-1 block text-[11px] text-faint">刷新间隔（分钟）</span>
             <input v-model.number="automationForm.refresh_minutes" name="refresh-minutes" type="number" min="30" max="525600" required class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
-          </label>
-        </div>
-        <div class="rounded-lg border border-line p-3">
-          <div class="flex items-center justify-between gap-3">
-            <div><div class="text-sm font-medium">自动批量检测候选</div><div class="text-[11px] text-muted">默认 30 分钟，最低 15 分钟；按完成时间计算下一轮，不叠加任务。</div></div>
-            <ToggleSwitch v-model="automationForm.check_enabled" label="自动批量检测候选" />
-          </div>
-          <label class="mt-3 block">
-            <span class="mb-1 block text-[11px] text-faint">检测间隔（分钟）</span>
-            <input v-model.number="automationForm.check_minutes" name="check-minutes" type="number" min="15" max="525600" required class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
           </label>
         </div>
         <div class="flex justify-end gap-2 pt-1">

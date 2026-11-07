@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { scheduleLabel, sourceLabel } from "../automation";
+import { postRefreshCheckLabel, scheduleLabel, sourceLabel } from "../automation";
 import type { AutomationView } from "@/api/types";
 
 const view: AutomationView = {
-  settings: { refresh_enabled: true, refresh_minutes: 60, check_enabled: false, check_minutes: 30 },
+  settings: { refresh_enabled: true, refresh_minutes: 60 },
   refresh: {
     enabled: true,
     minutes: 60,
@@ -54,6 +54,14 @@ describe("scheduleLabel", () => {
     const text = scheduleLabel(waiting, "check");
     expect(text).toContain("等待来源刷新完成");
     expect(text).not.toContain("下次");
+  });
+
+  it("shows the post-refresh full check status", () => {
+    expect(postRefreshCheckLabel(view)).toContain("刷新成功后自动全量");
+    const done = { ...view, check: { ...view.check, finished_at: "2026-10-31T11:00:00Z", nodes: 4, passed: 2 } };
+    expect(postRefreshCheckLabel(done)).toContain("上次");
+    expect(postRefreshCheckLabel(done)).toContain("2/4");
+    expect(postRefreshCheckLabel(null)).toBe("读取中");
   });
 });
 

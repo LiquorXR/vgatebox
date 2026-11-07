@@ -17,12 +17,12 @@ func TestAutomationSettingsMinimumPersistAndRestart(t *testing.T) {
 	c := consoleFixture(t)
 	w := httptest.NewRecorder()
 	c.apiAutomation(w, httptest.NewRequest("GET", "/", nil))
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"refresh_minutes":60`) || !strings.Contains(w.Body.String(), `"check_minutes":30`) {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"refresh_minutes":60`) || strings.Contains(w.Body.String(), "check_minutes") {
 		t.Fatal("wrong defaults")
 	}
 	path := paths.Automation(c.m.workDir)
 	before, _ := os.ReadFile(path)
-	for _, body := range []string{`{}`, `{"refresh_enabled":true,"refresh_minutes":29,"check_enabled":true,"check_minutes":15}`, `{"refresh_enabled":true,"refresh_minutes":60,"check_enabled":false,"check_minutes":14}`, `{"refresh_enabled":true,"refresh_minutes":60,"check_enabled":false,"check_minutes":0}`, `{"refresh_enabled":null,"refresh_minutes":60,"check_enabled":true,"check_minutes":15}`} {
+	for _, body := range []string{`{}`, `{"refresh_enabled":true,"refresh_minutes":29}`, `{"refresh_enabled":null,"refresh_minutes":60}`, `{"refresh_enabled":true,"refresh_minutes":60,"check_enabled":true}`} {
 		w = httptest.NewRecorder()
 		c.apiAutomation(w, httptest.NewRequest("POST", "/", strings.NewReader(body)))
 		after, _ := os.ReadFile(path)
@@ -31,7 +31,7 @@ func TestAutomationSettingsMinimumPersistAndRestart(t *testing.T) {
 		}
 	}
 	w = httptest.NewRecorder()
-	c.apiAutomation(w, httptest.NewRequest("POST", "/", strings.NewReader(`{"refresh_enabled":false,"refresh_minutes":30,"check_enabled":false,"check_minutes":15}`)))
+	c.apiAutomation(w, httptest.NewRequest("POST", "/", strings.NewReader(`{"refresh_enabled":false,"refresh_minutes":30}`)))
 	if w.Code != 200 {
 		t.Fatal(w.Code)
 	}
@@ -40,7 +40,7 @@ func TestAutomationSettingsMinimumPersistAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reloaded.cancel()
-	if reloaded.automation.settings != (automationSettings{false, 30, false, 15}) {
+	if reloaded.automation.settings != (automationSettings{false, 30}) {
 		t.Fatal("restart reset user's schedule")
 	}
 	info, _ := os.Stat(path)
@@ -49,26 +49,54 @@ func TestAutomationSettingsMinimumPersistAndRestart(t *testing.T) {
 	}
 }
 
-func TestAutomationIntervalRejectsManualTTLBelowRefreshMargin(t *testing.T) {
-	c := consoleFixture(t)
-	c.ttlMu.Lock()
-	c.checkResultTTLMinutes = 40
-	c.ttlMu.Unlock()
-	w := httptest.NewRecorder()
-	c.apiAutomation(w, httptest.NewRequest("POST", "/", strings.NewReader(`{"refresh_enabled":true,"refresh_minutes":60,"check_enabled":true,"check_minutes":30}`)))
-	if w.Code != 400 {
-		t.Fatalf("interval shorter than the manual TTL margin was accepted: %d %s", w.Code, w.Body.String())
+func TestAutomationRefreshSuccessTriggersOneFullCheck(t *testing.T) {
+	c := defaultTargetFixture(t)
+	c.m.nodes = []Node{{HostName: "candidate", Config: "fixture"}}
+	dir := t.TempDir()
+	t.Setenv("FANOUT_VALIDATED_POOL_FILE", filepath.Join(dir, "pool.json"))
+	c.probe = func(ctx context.Context, n Node, slot int, progress func(string)) CheckResult {
+		return CheckResult{Host: n.HostName, Status: "passed"}
 	}
-	c.ttlMu.Lock()
-	c.checkResultTTLMinutes = 45
-	c.ttlMu.Unlock()
-	w = httptest.NewRecorder()
-	c.apiAutomation(w, httptest.NewRequest("POST", "/", strings.NewReader(`{"refresh_enabled":true,"refresh_minutes":60,"check_enabled":true,"check_minutes":30}`)))
-	if w.Code != 200 {
-		t.Fatalf("interval at the manual TTL margin was rejected: %d %s", w.Code, w.Body.String())
+	if err := os.WriteFile(filepath.Join(dir, "pool.json"), []byte(`{"generated_at":"2026-11-07T00:00:00Z","nodes":[]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// In-memory nodes stand in for the just-refreshed pool; the marker only
+	// records the on-disk generation.
+	c.automationTick(time.Now())
+	deadline := time.Now().Add(3 * time.Second)
+	var j *CheckRun
+	for time.Now().Before(deadline) {
+		c.checksMu.Lock()
+		j = c.check
+		c.checksMu.Unlock()
+		if j != nil {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if j == nil {
+		t.Fatal("successful refresh did not trigger a full check")
+	}
+	select {
+	case <-j.finished:
+	case <-time.After(3 * time.Second):
+		t.Fatal("triggered check stuck")
+	}
+	c.automation.mu.Lock()
+	gen := c.automation.check.PoolGen
+	c.automation.mu.Unlock()
+	if gen == "" {
+		t.Fatal("completed check did not record the pool generation")
+	}
+	before := j
+	c.automationTick(time.Now())
+	c.checksMu.Lock()
+	after := c.check
+	c.checksMu.Unlock()
+	if after != before {
+		t.Fatal("same pool generation was checked twice")
 	}
 }
-
 func TestAutomationDoesNotOverlapManualCheckAndWaitsAfterCompletion(t *testing.T) {
 	c := defaultTargetFixture(t)
 	c.m.nodes = []Node{{HostName: "candidate", Config: "fixture"}}
@@ -116,13 +144,10 @@ func TestAutomationDoesNotOverlapManualCheckAndWaitsAfterCompletion(t *testing.T
 func TestAutomationRefreshPrecedesCheckAndFailedSourceKeepsOldCandidates(t *testing.T) {
 	c := defaultTargetFixture(t)
 	c.m.nodes = []Node{{HostName: "retained", Config: "fixture"}}
-	c.automation.mu.Lock()
-	c.automation.check.AnchorAt = time.Now().Add(-2 * time.Hour)
-	c.automation.mu.Unlock()
 	dir := t.TempDir()
 	t.Setenv("FANOUT_VALIDATED_POOL_FILE", filepath.Join(dir, "pool.json"))
 	script := filepath.Join(dir, "source.py")
-	code := "import sys,json,datetime,pathlib\np=pathlib.Path(sys.argv[sys.argv.index('--schedule-dir')+1])\nt=datetime.datetime.now(datetime.timezone.utc).isoformat()\n(p/'refresh-state.json').write_text(json.dumps({'status':'failed','started_at':t,'finished_at':t,'nodes':0}))\nprint(json.dumps({'status':'source_refresh_skipped'}))\n"
+	code := "import sys,json,datetime,pathlib\np=pathlib.Path(sys.argv[sys.argv.index('--schedule-dir')+1])\nt=datetime.datetime.now(datetime.timezone.utc).isoformat()\n(p/'refresh-state.json').write_text(json.dumps({'status':'failed','started_at':t,'finished_at':t,'nodes':0}))\nprint(json.dumps({'status':'source_refresh_failed'}))\n"
 	if err := os.WriteFile(script, []byte(code), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -142,9 +167,27 @@ func TestAutomationRefreshPrecedesCheckAndFailedSourceKeepsOldCandidates(t *test
 	case <-time.After(3 * time.Second):
 		t.Fatal("refresh stuck")
 	}
+	// Failed refresh writes no new pool generation, so no check may start.
 	// Completion of the scheduled refresh triggers the next scheduler decision
-	// through refreshDone instead of waiting for the 15-second poll.
-	deadline := time.Now().Add(3 * time.Second)
+	// through refreshDone instead of waiting for the next 15-second poll.
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		c.automationTick(time.Now())
+		c.checksMu.Lock()
+		started := c.check != nil
+		c.checksMu.Unlock()
+		if started {
+			t.Fatal("failed refresh triggered a check")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// A successful refresh writes a new pool generation; the next tick must
+	// run one full check over the retained candidates.
+	if err := os.WriteFile(filepath.Join(dir, "pool.json"), []byte(`{"generated_at":"2026-11-07T00:00:00Z","nodes":[]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c.automationTick(time.Now())
+	deadline = time.Now().Add(3 * time.Second)
 	var j *CheckRun
 	for time.Now().Before(deadline) {
 		c.checksMu.Lock()
@@ -156,18 +199,17 @@ func TestAutomationRefreshPrecedesCheckAndFailedSourceKeepsOldCandidates(t *test
 		time.Sleep(time.Millisecond)
 	}
 	if j == nil {
-		t.Fatal("retained candidates not checked after source failure")
+		t.Fatal("fresh pool was not checked")
 	}
 	select {
 	case <-j.finished:
 	case <-time.After(3 * time.Second):
-		t.Fatal("retained check stuck")
+		t.Fatal("triggered check stuck")
 	}
 	if len(c.m.Tunnels()) != 0 {
 		t.Fatal("test unexpectedly created live tunnels")
 	}
 }
-
 func TestAutomationInterruptedCheckKeepsIntervalAndNoCandidateBackoff(t *testing.T) {
 	c := defaultTargetFixture(t)
 	started := time.Now().Add(-10 * time.Minute).UTC()
@@ -191,13 +233,11 @@ func TestAutomationInterruptedCheckKeepsIntervalAndNoCandidateBackoff(t *testing
 	}
 }
 
-func TestAutomationWaitsForLocalAndExternalRefresh(t *testing.T) {
+func TestAutomationWaitsForLocalRefreshThenChecksNewPool(t *testing.T) {
 	c := defaultTargetFixture(t)
 	c.m.nodes = []Node{{HostName: "candidate", Config: "fixture"}}
-	c.automation.mu.Lock()
-	c.automation.settings.RefreshEnabled = false
-	c.automation.check.AnchorAt = time.Now().Add(-time.Hour)
-	c.automation.mu.Unlock()
+	dir := t.TempDir()
+	t.Setenv("FANOUT_VALIDATED_POOL_FILE", filepath.Join(dir, "pool.json"))
 	c.probe = func(ctx context.Context, n Node, slot int, progress func(string)) CheckResult {
 		return CheckResult{Host: n.HostName, Status: "passed"}
 	}
@@ -211,28 +251,22 @@ func TestAutomationWaitsForLocalAndExternalRefresh(t *testing.T) {
 	if started {
 		t.Fatal("automatic check started during local refresh")
 	}
-
 	c.refreshMu.Lock()
-	c.refreshState = "passed"
+	c.refreshState = ""
 	c.refreshMu.Unlock()
-	startedAt := time.Now().UTC()
-	blob, _ := json.Marshal(automationRun{Status: "running", StartedAt: startedAt})
-	if err := os.WriteFile(paths.RefreshState(c.m.workDir), blob, 0600); err != nil {
-		t.Fatal(err)
-	}
-	c.automationTick(startedAt.Add(time.Minute))
+	// A stale or missing external marker alone starts nothing; only a new
+	// on-disk pool generation arms the single post-refresh full check.
+	c.automationTick(time.Now())
 	c.checksMu.Lock()
 	started = c.check != nil
 	c.checksMu.Unlock()
 	if started {
-		t.Fatal("automatic check started while source refresh was running")
+		t.Fatal("check started without a fresh pool")
 	}
-
-	blob, _ = json.Marshal(automationRun{Status: "running", StartedAt: startedAt.Add(-sourceRefreshWindow - time.Minute)})
-	if err := os.WriteFile(paths.RefreshState(c.m.workDir), blob, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "pool.json"), []byte(`{"generated_at":"2026-11-07T00:00:00Z","nodes":[]}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	c.automationTick(startedAt)
+	c.automationTick(time.Now())
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		c.checksMu.Lock()
@@ -248,9 +282,8 @@ func TestAutomationWaitsForLocalAndExternalRefresh(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatal("interrupted source refresh blocked detection forever")
+	t.Fatal("fresh pool generation did not trigger a check")
 }
-
 func TestAutomationDoesNotRefreshWhileCheckRunning(t *testing.T) {
 	c := defaultTargetFixture(t)
 	c.m.nodes = []Node{{HostName: "candidate", Config: "fixture"}}

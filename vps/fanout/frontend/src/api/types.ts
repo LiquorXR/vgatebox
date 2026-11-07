@@ -201,7 +201,6 @@ export interface IPPureCacheView {
 export interface CheckSettingsView {
   parallelism: number;
   ip_type_check: boolean;
-  check_result_ttl_minutes?: number;
   check_result_ttl_effective_minutes?: number;
   observation_ttl_minutes?: number;
   observation_ttl_effective_minutes?: number;
@@ -214,8 +213,6 @@ export interface AutomationView {
   settings: {
     refresh_enabled: boolean;
     refresh_minutes: number;
-    check_enabled: boolean;
-    check_minutes: number;
   };
   refresh: ScheduleView;
   check: ScheduleView;

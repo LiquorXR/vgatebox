@@ -28,6 +28,19 @@ export function scheduleLabel(
   return text;
 }
 
+// 候选检测不再有独立周期：每次来源刷新成功后自动全量检测一次。
+export function postRefreshCheckLabel(view: AutomationView | null | undefined): string {
+  const item = view?.check;
+  if (!item) return "读取中";
+  let text = "刷新成功后自动全量";
+  if (item.running) text += " · 进行中";
+  else if (item.finished_at) text += ` · 上次 ${formatDateTime(item.finished_at)}`;
+  if (typeof item.nodes === "number" && typeof item.passed === "number") {
+    text += ` · 通过 ${item.passed}/${item.nodes}`;
+  }
+  return text;
+}
+
 export function sourceLabel(source: PoolSourceView | undefined | null): string {
   if (!source) return "来源信息读取中";
   let text = source.label || "既有清单";
