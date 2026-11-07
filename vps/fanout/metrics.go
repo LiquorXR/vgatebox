@@ -61,12 +61,14 @@ func (c *Console) apiMetrics(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	up, blocked, total := 0, 0, 0
+	up, blocked, degraded, total := 0, 0, 0, 0
 	for _, t := range c.m.Tunnels() {
 		total++
 		switch t.snapshot().Status {
 		case "up":
 			up++
+		case "degraded":
+			degraded++
 		case "blocked":
 			blocked++
 		}
@@ -84,6 +86,7 @@ func (c *Console) apiMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	var sb strings.Builder
 	writeMetricLine(&sb, "vgatebox_slots_up", "Slots currently up", "gauge", "", int64(up))
+	writeMetricLine(&sb, "vgatebox_slots_degraded", "Slots degraded but still serving", "gauge", "", int64(degraded))
 	writeMetricLine(&sb, "vgatebox_slots_blocked", "Slots blocked for policy or evidence", "gauge", "", int64(blocked))
 	writeMetricLine(&sb, "vgatebox_slots_total", "Slots known to the manager", "gauge", "", int64(total))
 	writeMetricLine(&sb, "vgatebox_pool_age_seconds", "Validated pool age, -1 when unknown", "gauge", "", poolAge)

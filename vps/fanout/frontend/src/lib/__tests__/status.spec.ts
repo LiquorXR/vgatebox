@@ -22,6 +22,7 @@ describe("exit status helpers", () => {
     expect(exitStatusTone("up")).toBe("ok");
     expect(exitStatusTone("starting")).toBe("info");
     expect(exitStatusTone("waiting_for_nodes")).toBe("warn");
+    expect(exitStatusTone("degraded")).toBe("warn");
     expect(exitStatusTone("blocked")).toBe("bad");
   });
 

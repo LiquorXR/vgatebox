@@ -461,6 +461,7 @@ const statusOptions = [
   { value: "up", label: "已就绪" },
   { value: "starting", label: "连接中" },
   { value: "waiting", label: "等待候选" },
+  { value: "degraded", label: "速度不佳" },
   { value: "stopped", label: "已停止" },
   { value: "blocked", label: "已阻断" },
   { value: "error", label: "连接异常" },

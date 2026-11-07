@@ -279,3 +279,120 @@ func TestHealthCancellationStopsWaiting(t *testing.T) {
 		t.Fatal("WatchHealth ignored cancellation")
 	}
 }
+
+func slowPolicyTunnel(slot int, host, exitIP string, maxLatencyMS int) *Tunnel {
+	tunnel := healthTunnel(slot, host, exitIP)
+	policy := SlotPolicy{AllowedIPTypes: []string{"unknown"}, MaximumLatencyMS: maxLatencyMS}
+	tunnel.Policy = &policy
+	tunnel.egress = &EgressProfile{IP: exitIP, Protocol: "openvpn", IPType: "unknown", IntelligenceStatus: "not_configured"}
+	tunnel.egressNodeHost, tunnel.egressProfileDigest = tunnel.Node.HostName, profileDigest(tunnel.Node.Config)
+	// snapshot() 会把 LatencyMS<=0 的上限隧道预映射为 blocked，先给有效值。
+	tunnel.LatencyMS = 50
+	return tunnel
+}
+
+func TestFlapRecordsAndClears(t *testing.T) {
+	tun := &Tunnel{Slot: 1}
+	for i := 0; i < flapThreshold-1; i++ {
+		tun.recordReconnect()
+	}
+	if tun.flapSlow() {
+		t.Fatal("throttled before reaching the flap threshold")
+	}
+	tun.recordReconnect()
+	if !tun.flapSlow() {
+		t.Fatal("expected flap throttle after reaching the threshold")
+	}
+	tun.clearFlap()
+	if tun.flapSlow() {
+		t.Fatal("manual clear did not reset the flap throttle")
+	}
+}
+
+func TestHealthDegradedObservedWithoutDisconnect(t *testing.T) {
+	m := NewManager(8, t.TempDir())
+	tunnel := slowPolicyTunnel(1, "slowexit", "203.0.113.40", 100)
+	m.tunnels[1] = tunnel
+	m.healthProbe = func(context.Context, *Tunnel) (string, float64, error) {
+		return tunnel.ExitIP, 5000, nil
+	}
+	state, _ := m.checkTunnelHealth(context.Background(), tunnel)
+	if state != healthDegraded || tunnel.Status != "degraded" {
+		t.Fatalf("slow exit was not degraded: state=%v status=%s", state, tunnel.Status)
+	}
+	if !tunnel.acceptsSocks() {
+		t.Fatal("degraded exit refused new connections")
+	}
+	m.healthProbe = func(context.Context, *Tunnel) (string, float64, error) {
+		return tunnel.ExitIP, 50, nil
+	}
+	state, _ = m.checkTunnelHealth(context.Background(), tunnel)
+	if state != healthOK || tunnel.Status != "up" || tunnel.LatencyMS != 50 {
+		t.Fatalf("recovered exit did not return to up: state=%v status=%s latency=%v", state, tunnel.Status, tunnel.LatencyMS)
+	}
+}
+
+func TestHealthDegradedEscalatesAfterSustainedSlowness(t *testing.T) {
+	m := NewManager(8, t.TempDir())
+	tunnel := slowPolicyTunnel(1, "slowslot", "203.0.113.41", 100)
+	m.tunnels[1] = tunnel
+	m.healthProbe = func(context.Context, *Tunnel) (string, float64, error) {
+		return tunnel.ExitIP, 5000, nil
+	}
+	var reconnects atomic.Int32
+	m.healthReconnect = func(*Tunnel, string) { reconnects.Add(1) }
+	state := newHealthRoundState()
+	for i := 0; i < healthDegradedRounds-1; i++ {
+		m.healthRound(context.Background(), state)
+		if reconnects.Load() != 0 {
+			t.Fatalf("slow exit reconnected after %d rounds", i+1)
+		}
+	}
+	if tunnel.Status != "degraded" {
+		t.Fatalf("slow exit status = %s, want degraded", tunnel.Status)
+	}
+	m.healthRound(context.Background(), state)
+	if reconnects.Load() != 1 {
+		t.Fatalf("sustained slowness did not escalate: reconnects=%d", reconnects.Load())
+	}
+}
+
+func TestHealthBlockedReconnectsWithoutWaitingForSlow(t *testing.T) {
+	m := NewManager(8, t.TempDir())
+	m.healthParallelLimit = 8
+	slow, bad := healthTunnel(1, "slow", "203.0.113.42"), healthTunnel(2, "bad", "203.0.113.43")
+	m.tunnels[1], m.tunnels[2] = slow, bad
+	release := make(chan struct{})
+	m.healthProbe = func(ctx context.Context, tunnel *Tunnel) (string, float64, error) {
+		if tunnel.Slot == 1 {
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return "", 0, ctx.Err()
+			}
+			return tunnel.ExitIP, 10, nil
+		}
+		return "198.51.100.99", 10, nil
+	}
+	reconnected := make(chan struct{}, 1)
+	m.healthReconnect = func(*Tunnel, string) { reconnected <- struct{}{} }
+	done := make(chan struct{})
+	go func() {
+		m.healthRound(context.Background(), newHealthRoundState())
+		close(done)
+	}()
+	select {
+	case <-reconnected:
+	case <-time.After(2 * time.Second):
+		t.Fatal("blocked reconnect waited for the slow probe")
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("health round stuck")
+	}
+	if bad.Status != "blocked" {
+		t.Fatalf("mismatched exit was not blocked: %s", bad.Status)
+	}
+}

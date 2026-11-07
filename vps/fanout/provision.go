@@ -188,7 +188,7 @@ func (m *Manager) waitUp(t *Tunnel) {
 	const maxWait = 5 * time.Minute
 	deadline := time.Now().Add(maxWait)
 	for time.Now().Before(deadline) {
-		if t.Status == "up" || t.Status == "failed" || t.Status == "waiting_for_nodes" || t.Status == "blocked" || t.Status == "stopped" {
+		if t.Status == "up" || t.Status == "degraded" || t.Status == "failed" || t.Status == "waiting_for_nodes" || t.Status == "blocked" || t.Status == "stopped" {
 			return
 		}
 		time.Sleep(time.Second)

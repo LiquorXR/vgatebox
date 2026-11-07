@@ -84,11 +84,14 @@ func (t *Tunnel) acceptsSocksLocked() bool {
 	if t.validating {
 		return t.validationCred != nil
 	}
-	if t.Status != "up" {
+	if !servingStatus(t.Status) {
 		return false
 	}
 	if t.Policy != nil {
-		if t.egress == nil || t.Policy.checkImage(*t.egress) != nil || t.Policy.checkLatency(t.LatencyMS) != nil {
+		// degraded 仍全量服务：画像门保留，延迟门放行（延迟超限已由健康检查
+		// 标记观察并终将升级为重连，这里拒掉新连接等于提前断流）。
+		if t.egress == nil || t.Policy.checkImage(*t.egress) != nil ||
+			(t.Status != "degraded" && t.Policy.checkLatency(t.LatencyMS) != nil) {
 			return false
 		}
 	}

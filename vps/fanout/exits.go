@@ -109,7 +109,7 @@ func (m *Manager) ExitsOf() ExitsView {
 	live := map[string]bool{}
 	for _, t := range tunnels {
 		snapshot := t.snapshot()
-		if snapshot.Status == "up" {
+		if servingStatus(snapshot.Status) {
 			live[sanitizeTag(snapshot.Node.HostName)] = true
 			live[slotOutboundTag(snapshot.Slot)] = true
 		}

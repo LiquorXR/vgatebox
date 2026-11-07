@@ -216,7 +216,7 @@ func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {
 	nodes, fetched := c.m.Nodes()
 	ready, stopped := 0, 0
 	for _, e := range view.Exits {
-		if e.Status == "up" {
+		if servingStatus(e.Status) {
 			ready++
 		}
 		if e.Status == "stopped" {

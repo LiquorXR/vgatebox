@@ -15,7 +15,7 @@ func slotOutbounds(tunnels []*Tunnel) []any {
 			continue
 		}
 		out := map[string]any{"tag": slotOutboundTag(t.Slot), "protocol": "blackhole"}
-		if t.snapshot().Status == "up" {
+		if servingStatus(t.snapshot().Status) {
 			out["protocol"] = "socks"
 			out["settings"] = map[string]any{"servers": []any{socksServerJSON(t)}}
 		}

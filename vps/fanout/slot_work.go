@@ -53,6 +53,27 @@ func (t *Tunnel) blockForPolicy(reason string) {
 	t.mu.Unlock()
 }
 
+// markDegraded 把隧道标记为"变慢但不断流"：只改状态与原因，
+// 不取消握手上下文、不关已建立连接、不动监听，新连接继续按当前凭据服务。
+// 只有 up/degraded 之间流转；stopped/starting/waiting 的隧道不适用。
+func (t *Tunnel) markDegraded(reason string) {
+	t.mu.Lock()
+	if t.Status == "up" || t.Status == "degraded" {
+		t.Status, t.Err = "degraded", reason
+	}
+	t.mu.Unlock()
+}
+
+// markRecovered 把 degraded 恢复为 up。健康检查整轮通过后调用。
+func (t *Tunnel) markRecovered(latency float64) {
+	t.mu.Lock()
+	if t.Status == "degraded" {
+		t.Status, t.Err = "up", ""
+	}
+	t.LatencyMS = latency
+	t.mu.Unlock()
+}
+
 func (m *Manager) claimNode(t *Tunnel, node Node, ctx context.Context) bool {
 	for {
 		m.mu.Lock()
@@ -199,6 +220,7 @@ func (m *Manager) setSlotPolicyLocked(t *Tunnel, normalized SlotPolicy) error {
 	}
 	oldHost := t.Node.HostName
 	t.opMu.Unlock()
+	t.clearFlap()
 	m.reconnectTo(t, oldHost, nil)
 	return nil
 }
@@ -224,6 +246,7 @@ func (m *Manager) Resume(slot int) error {
 	t.mu.Lock()
 	t.Status = "starting"
 	t.mu.Unlock()
+	t.clearFlap()
 	m.reconnectTo(t, t.Node.HostName, nil)
 	return nil
 }

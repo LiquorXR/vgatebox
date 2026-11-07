@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -16,6 +17,9 @@ const (
 	// A busy Slot (manual swap, console exit check) must not hold a probe permit
 	// for the whole operation: that would stretch the round for every other exit.
 	healthOpWait = 250 * time.Millisecond
+	// healthDegradedRounds 是变慢升级为重连的宽限：连续 6 轮（约 60s）延迟
+	// 超限才换节点，单次毛刺只标记观察、不断流。
+	healthDegradedRounds = 6
 )
 
 type healthState int
@@ -28,15 +32,20 @@ const (
 	// another network operation owned it. It must change neither the streak nor
 	// the tunnel state.
 	healthDeferred
+	// healthDegraded means the tunnel still serves traffic but its latency
+	// exceeds the Slot policy. It counts toward a separate upgrade streak
+	// instead of an immediate reconnect.
+	healthDegraded
 )
 
 type healthRoundState struct {
 	fails    map[int]int
 	deferred map[int]bool
+	degraded map[int]int
 }
 
 func newHealthRoundState() *healthRoundState {
-	return &healthRoundState{fails: map[int]int{}, deferred: map[int]bool{}}
+	return &healthRoundState{fails: map[int]int{}, deferred: map[int]bool{}, degraded: map[int]int{}}
 }
 
 type healthRoundResult struct {
@@ -70,7 +79,7 @@ func (m *Manager) healthRound(ctx context.Context, state *healthRoundState) {
 		t.mu.Lock()
 		status := t.Status
 		t.mu.Unlock()
-		if status == "up" {
+		if servingStatus(status) {
 			active = append(active, t)
 		}
 	}
@@ -79,7 +88,15 @@ func (m *Manager) healthRound(ctx context.Context, state *healthRoundState) {
 	}
 	// Slots that left the round must not keep an old failure streak: a reused
 	// slot would otherwise reconnect after a single ordinary failure.
+	// degraded 计数同理：复用的 Slot 不应继承上一次的变慢宽限。
+	left := map[int]bool{}
 	for slot := range state.fails {
+		left[slot] = true
+	}
+	for slot := range state.degraded {
+		left[slot] = true
+	}
+	for slot := range left {
 		found := false
 		for _, t := range active {
 			if t.Slot == slot {
@@ -90,6 +107,7 @@ func (m *Manager) healthRound(ctx context.Context, state *healthRoundState) {
 		if !found {
 			delete(state.fails, slot)
 			delete(state.deferred, slot)
+			delete(state.degraded, slot)
 		}
 	}
 	parallel := m.healthParallelValue()
@@ -111,24 +129,42 @@ func (m *Manager) healthRound(ctx context.Context, state *healthRoundState) {
 			results <- healthRoundResult{tunnel: t, state: state}
 		}(t)
 	}
-	wg.Wait()
-	close(results)
-
-	// A cancelled round is shutdown, not evidence: incomplete probes must not
-	// count toward the reconnect threshold or restart tunnels while stopping.
-	if ctx.Err() != nil {
-		return
-	}
+	// 先关通道再消费：先到的结果先决策，慢隧道不再拖住已确认掉线的重连。
+	// results 带 len(active) 缓冲，提前返回也不会卡住 worker。
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
 	for result := range results {
+		// A cancelled round is shutdown, not evidence: decisions that arrive
+		// after cancellation are skipped instead of counting toward reconnects.
+		if ctx.Err() != nil {
+			continue
+		}
 		t := result.tunnel
 		switch result.state {
 		case healthOK:
 			state.fails[t.Slot] = 0
 			state.deferred[t.Slot] = false
+			state.degraded[t.Slot] = 0
 		case healthBlocked:
 			state.fails[t.Slot] = 0
 			state.deferred[t.Slot] = false
+			state.degraded[t.Slot] = 0
 			log.Printf("隧道 %d (%s) 出口证据已失效，立即换节点重连", t.Slot, t.Node.HostName)
+			m.reconnectHealth(t)
+		case healthDegraded:
+			state.fails[t.Slot] = 0
+			state.deferred[t.Slot] = false
+			state.degraded[t.Slot]++
+			if state.degraded[t.Slot] < healthDegradedRounds {
+				if state.degraded[t.Slot] == 1 {
+					log.Printf("隧道 %d (%s) 延迟超限，仍可出网并观察中", t.Slot, t.Node.HostName)
+				}
+				continue
+			}
+			log.Printf("隧道 %d (%s) 持续变慢，正在换节点重连", t.Slot, t.Node.HostName)
+			state.degraded[t.Slot] = 0
 			m.reconnectHealth(t)
 		case healthDeferred:
 			// A busy Slot is not evidence of failure, but it must not look
@@ -164,7 +200,7 @@ func (m *Manager) checkTunnelHealth(parent context.Context, t *Tunnel) (healthSt
 		t.blockForPolicy("画像证据已过期或不满足当前策略")
 		return healthBlocked, 0
 	}
-	if view.Status != "up" {
+	if !servingStatus(view.Status) {
 		return healthOK, 0
 	}
 	// Never wait unbounded for the Slot's operation lock: a manual swap or a
@@ -177,7 +213,7 @@ func (m *Manager) checkTunnelHealth(parent context.Context, t *Tunnel) (healthSt
 	// The snapshot above was taken before the lock; re-read the state so a Slot
 	// that started reconnecting meanwhile is not judged against old evidence.
 	switch t.snapshot().Status {
-	case "up":
+	case "up", "degraded":
 	case "blocked":
 		return healthBlocked, 0
 	default:
@@ -211,13 +247,12 @@ func (m *Manager) checkTunnelHealth(parent context.Context, t *Tunnel) (healthSt
 	}
 	if t.Policy != nil {
 		if err := t.policySnapshot().checkLatency(latency); err != nil {
-			t.blockForPolicy("当前画像或本机 SOCKS 延迟不满足 Slot 策略")
-			return healthBlocked, 0
+			// 变慢不断流：标记观察，持续不达标由 healthRound 升级为重连。
+			t.markDegraded("出口延迟超过 Slot 上限，仍可出网并观察中")
+			return healthDegraded, 0
 		}
 	}
-	t.mu.Lock()
-	t.LatencyMS = latency
-	t.mu.Unlock()
+	t.markRecovered(latency)
 	return healthOK, latency
 }
 
@@ -295,7 +330,7 @@ func (m *Manager) reconnect(t *Tunnel, oldHost string) {
 	t.changeMu.Lock()
 	defer t.changeMu.Unlock()
 	t.mu.Lock()
-	up := t.Status == "up" || t.Status == "blocked"
+	up := t.Status == "up" || t.Status == "degraded" || t.Status == "blocked"
 	t.mu.Unlock()
 	if !up {
 		return
@@ -319,6 +354,12 @@ func (m *Manager) reconnectTo(t *Tunnel, oldHost string, node *Node) {
 		t.prevHost = oldHost
 	}
 	t.mu.Unlock()
+	if recent := t.recordReconnect(); recent >= flapThreshold {
+		t.mu.Lock()
+		t.Err = fmt.Sprintf("频繁掉线（10分钟内第 %d 次），已降频重试", recent)
+		t.mu.Unlock()
+		log.Printf("隧道 %d 频繁重连，已降频重试", t.Slot)
+	}
 	if err := m.saveState(); err != nil {
 		log.Printf("保存状态失败: %v", err)
 	}

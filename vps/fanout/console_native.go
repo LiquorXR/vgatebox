@@ -133,7 +133,7 @@ func isLegacySlotName(remark string) bool {
 
 func subscriptionExitName(e Exit) string {
 	country := "地区未知"
-	if e.Status == "up" && e.Egress != nil && verifiedProfileCountry(*e.Egress) != "" {
+	if servingStatus(e.Status) && e.Egress != nil && verifiedProfileCountry(*e.Egress) != "" {
 		country = countryLabel(stringValue(e.Egress.Country), stringValue(e.Egress.Country))
 	}
 	return fmt.Sprintf("%s · %02d", country, e.Slot)

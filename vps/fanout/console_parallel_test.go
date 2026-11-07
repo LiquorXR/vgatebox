@@ -211,6 +211,33 @@ func TestDiagnosticBusyResultKeepsLastCompletedObservation(t *testing.T) {
 	}
 }
 
+func TestTryCandidatesSkipsUnreachableTCPWithoutFullHandshake(t *testing.T) {
+	m := NewManager(8, t.TempDir())
+	node := Node{HostName: "dead-tcp", Config: "remote 127.0.0.1 1\nproto tcp"}
+	m.nodes = []Node{node}
+	tun := &Tunnel{Slot: 1, Port: 18001, Status: "starting", Node: node}
+	tun.resetWork()
+	m.tunnels[1] = tun
+	start := time.Now()
+	if m.tryCandidates(tun, false) {
+		t.Fatal("unreachable candidate unexpectedly connected")
+	}
+	if elapsed := time.Since(start); elapsed > 30*time.Second {
+		t.Fatalf("preflight did not fail fast: %s", elapsed)
+	}
+	tun.mu.Lock()
+	defer tun.mu.Unlock()
+	if tun.cooldown[node.HostName].IsZero() {
+		t.Fatal("skipped candidate was not cooled down")
+	}
+	if tun.Err == "" {
+		t.Fatal("skip reason was not recorded")
+	}
+	if tun.Status == "up" {
+		t.Fatal("skipped candidate was marked up")
+	}
+}
+
 func TestPreflightConservativeTCPParsing(t *testing.T) {
 	for _, cfg := range []string{"proto udp\nremote 192.0.2.1 1194", "remote example.invalid 443\nproto tcp", "remote 192.0.2.1 443\nproto tcp\n<connection>\nremote 192.0.2.2 443\n</connection>", "proto tcp\nremote 192.0.2.1 0", "proto tcp\nremote 192.0.2.1 443 udp"} {
 		if len(preflightEndpoints(cfg)) != 0 {

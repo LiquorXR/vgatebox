@@ -24,7 +24,7 @@ func liveHosts(m *Manager) map[string]bool {
 	live := map[string]bool{}
 	for _, t := range m.Tunnels() {
 		v := t.snapshot()
-		if v.Status == "up" {
+		if servingStatus(v.Status) {
 			live[sanitizeTag(v.Node.HostName)] = true
 			live[slotOutboundTag(v.Slot)] = true
 		}
@@ -86,7 +86,7 @@ func apiXUIClone(m *Manager) http.HandlerFunc {
 			}
 		} else {
 			for _, t := range tunnels {
-				if t.Status == "up" {
+				if servingStatus(t.snapshot().Status) {
 					hosts = append(hosts, t.Node.HostName)
 				}
 			}

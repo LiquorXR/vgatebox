@@ -8,6 +8,7 @@ const exitLabels: Record<string, string> = {
   starting: "连接中",
   waiting: "等待候选",
   waiting_for_nodes: "等待候选",
+  degraded: "速度不佳",
   blocked: "已阻断",
   stopped: "已停止",
   error: "连接异常",
@@ -20,7 +21,7 @@ export function exitStatusLabel(status: string): string {
 export function exitStatusTone(status: string): Tone {
   if (status === "up") return "ok";
   if (status === "starting") return "info";
-  if (status === "waiting" || status === "waiting_for_nodes") return "warn";
+  if (status === "waiting" || status === "waiting_for_nodes" || status === "degraded") return "warn";
   if (status === "blocked" || status === "error") return "bad";
   return "neutral";
 }

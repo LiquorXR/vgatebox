@@ -150,7 +150,7 @@ func (t *Tunnel) egressSnapshot(private bool) *EgressProfile {
 }
 
 func (t *Tunnel) egressSnapshotLocked(private bool) *EgressProfile {
-	if t.egress == nil || t.Status != "up" {
+	if t.egress == nil || !servingStatus(t.Status) {
 		return nil
 	}
 	image := *t.egress
@@ -214,7 +214,7 @@ func (m *Manager) saveSlotHealth() error {
 			Hostname: t.Node.HostName, PoolNodeID: t.Node.PoolNodeID,
 			ProfileSHA256: profileDigest(t.Node.Config), SocksPort: t.Port, Status: t.Status, Egress: image, LatencyMS: t.LatencyMS, Policy: t.Policy}
 		// An IP left from a failed probe is not a successful SOCKS observation.
-		if t.Status == "up" && image != nil {
+		if servingStatus(t.Status) && image != nil {
 			entry.ExpectedExitIP = t.egressExpectedIP
 			entry.ActualExitIP = t.egressActualIP
 			entry.VerifiedAt = t.egressVerifiedAt

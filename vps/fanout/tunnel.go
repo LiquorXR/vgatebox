@@ -20,6 +20,10 @@ type SocksCred struct {
 }
 
 // Tunnel 是一条运行中的隧道：一个 netns + 一个 openvpn 进程 + 一个本地 SOCKS5 端口。
+//
+// Status 语义：starting（建链中）| up（健康出网）| degraded（仍可出网，
+// 延迟超 Slot 上限被观察中，不断流）| blocked（证据失效已阻断，不断流但拒新连接，
+// 等重连）| waiting_for_nodes（无候选等重试）| failed | stopped。
 type Tunnel struct {
 	Slot           int         `json:"slot"`
 	Port           int         `json:"port"`
@@ -68,7 +72,14 @@ type Tunnel struct {
 	// 两边对不上，那个入站就掉成了没人认领的孤儿。
 	// 这个字段跟着状态一起落盘，重启后照着它把入站接回来。
 	prevHost string
+	// reconnectAt 记最近 10 分钟内每次重连进入的时间点，用于抖动降频。
+	// 只存内存，重启清零；手动 Resume/Swap/改策略视为 operator 意图，清零。
+	reconnectAt []time.Time
 }
+
+// servingStatus 隧道是否在出网服务：up 与 degraded 都接受新连接，
+// 区别只在 degraded 正被健康检查观察、持续不达标会升级为重连。
+func servingStatus(s string) bool { return s == "up" || s == "degraded" }
 
 // prevHostOf 读"换节点未收尾"标记。
 func (t *Tunnel) prevHostOf() string {
@@ -90,6 +101,51 @@ func (t *Tunnel) setPrevHost(host string) {
 // 留太少又挡不住来回跳。一个地区的可用节点通常个位数到十几个，
 // 16 条足够覆盖"一轮都换过"的情况。
 const swapHistoryMax = 16
+
+const (
+	// flapWindow 是抖动统计窗口：窗口内重连达到 flapThreshold 即判 flapping。
+	flapWindow = 10 * time.Minute
+	// flapThreshold 是判 flapping 的重连次数。
+	flapThreshold = 5
+	// flapSlowMin/flapSlowMax 是降频后的退避区间：从 60s 起步，上限 5 分钟，
+	// 避免对着一批死节点空转。对照默认的 5s～60s（见 manager_lifecycle.go）。
+	flapSlowMin = 60 * time.Second
+	flapSlowMax = 5 * time.Minute
+)
+
+// recordReconnect 记一次重连进入，返回窗口内的累计次数。
+func (t *Tunnel) recordReconnect() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	now := time.Now()
+	kept := t.reconnectAt[:0]
+	for _, at := range t.reconnectAt {
+		if now.Sub(at) <= flapWindow {
+			kept = append(kept, at)
+		}
+	}
+	kept = append(kept, now)
+	t.reconnectAt = kept
+	return len(kept)
+}
+
+// clearFlap 清掉抖动计数。手动 Resume/Swap/改策略后调用。
+func (t *Tunnel) clearFlap() {
+	t.mu.Lock()
+	t.reconnectAt = nil
+	t.mu.Unlock()
+}
+
+// flapSlow 判断是否处于降频状态：窗口内重连达标且最近一次在 5 分钟内。
+// 隧道持续稳定后自然解除（下次 recordReconnect 会把旧记录裁掉）。
+func (t *Tunnel) flapSlow() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.reconnectAt) < flapThreshold {
+		return false
+	}
+	return time.Since(t.reconnectAt[len(t.reconnectAt)-1]) <= flapSlowMax
+}
 
 // swapAvoid 返回换节点时要跳过的 hostname：历史用过的，加上当前这个。
 func (t *Tunnel) swapAvoid() map[string]bool {

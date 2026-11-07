@@ -25,6 +25,7 @@ func TestMetricsShape(t *testing.T) {
 	body := scrapeMetrics(t, c)
 	for _, name := range []string{
 		"vgatebox_slots_up",
+		"vgatebox_slots_degraded",
 		"vgatebox_slots_blocked",
 		"vgatebox_slots_total",
 		"vgatebox_pool_age_seconds",

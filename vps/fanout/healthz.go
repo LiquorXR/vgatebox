@@ -72,7 +72,7 @@ func handleHealthz(m *Manager) http.HandlerFunc {
 			total++
 			// Status 的写方都在 t.mu/changeMu 下，用 snapshot 读（同 export.go/exits.go），
 			// 裸读 live Tunnel 会与健康检查 goroutine 竞争，-race 下必报。
-			if t.snapshot().Status == "up" {
+			if servingStatus(t.snapshot().Status) {
 				up++
 			}
 		}

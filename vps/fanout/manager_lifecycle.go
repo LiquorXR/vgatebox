@@ -116,6 +116,11 @@ func (m *Manager) bringUpPersist(t *Tunnel, notify bool, persist bool) {
 
 func (m *Manager) bringUpPersistContext(t *Tunnel, notify, persist bool, ctx context.Context) {
 	backoff := reconnectBackoffMin
+	maxBackoff := reconnectBackoffMax
+	if t.flapSlow() {
+		// 抖动降频：本轮从 60s 起步，上限 5 分钟，避免对着一批死节点空转。
+		backoff, maxBackoff = flapSlowMin, flapSlowMax
+	}
 	for {
 		if ctx.Err() != nil || !m.tunnelActive(t) {
 			return
@@ -157,10 +162,10 @@ func (m *Manager) bringUpPersistContext(t *Tunnel, notify, persist bool, ctx con
 		if _, err := m.RefreshNodes(); err != nil {
 			log.Printf("重试前刷新节点列表失败: %v", err)
 		}
-		if backoff < reconnectBackoffMax {
+		if backoff < maxBackoff {
 			backoff *= 2
-			if backoff > reconnectBackoffMax {
-				backoff = reconnectBackoffMax
+			if backoff > maxBackoff {
+				backoff = maxBackoff
 			}
 		}
 	}
@@ -192,6 +197,26 @@ func (m *Manager) tryCandidatesContext(t *Tunnel, notify bool, ctx context.Conte
 			t.teardownNetns()
 		}
 		if !m.claimNode(t, node, ctx) {
+			continue
+		}
+		// 字面 IP 的 TCP 画像先做一次 TCP 预检（6s 内）：不通直接换下一个，
+		// 不必等 40s tun0 超时。解析不出端点时返回 nil，走完整握手（fail-open）。
+		if err := preflightCandidate(ctx, node); err != nil {
+			if ctx.Err() != nil || !m.tunnelActive(t) {
+				return false
+			}
+			log.Printf("隧道 %d 候选 %s 预检不通，跳过: %v", t.Slot, node.HostName, err)
+			t.teardownNetns()
+			if ctx.Err() != nil {
+				return false
+			}
+			t.mu.Lock()
+			if t.cooldown == nil {
+				t.cooldown = map[string]time.Time{}
+			}
+			t.cooldown[node.HostName] = time.Now().Add(30 * time.Second)
+			t.Err = firstLine(fmt.Sprint(err))
+			t.mu.Unlock()
 			continue
 		}
 		if i > 0 {
@@ -421,6 +446,7 @@ func (m *Manager) Swap(slot int) error {
 		return err
 	}
 	oldHost := t.Node.HostName
+	t.clearFlap()
 	m.reconnectTo(t, oldHost, &node)
 	return nil
 }
@@ -470,6 +496,7 @@ func (m *Manager) SwapTo(slot int, host string) error {
 	}
 	t.rememberSwap(oldHost)
 	t.rememberSwap(node.HostName)
+	t.clearFlap()
 	m.reconnectTo(t, oldHost, &node)
 	return nil
 }

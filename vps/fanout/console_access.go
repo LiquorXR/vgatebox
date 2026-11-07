@@ -135,7 +135,7 @@ func (c *Console) apiPublicSocks(w http.ResponseWriter, r *http.Request) {
 		view := c.m.ExitsOf()
 		links := []map[string]any{}
 		for _, e := range view.Exits {
-			if e.Status == "up" && e.PublicSocks != nil && e.PublicSocks.Enable {
+			if servingStatus(e.Status) && e.PublicSocks != nil && e.PublicSocks.Enable {
 				links = append(links, map[string]any{"slot": e.Slot, "name": subscriptionExitName(e),
 					"url": socksURL(publicHost(r), e.PublicSocks.Port, SocksCred{User: e.SocksUser, Pass: e.SocksPass})})
 			}
