@@ -43,7 +43,7 @@ class PoolScheduleTests(unittest.TestCase):
         for bad in (29,0,True,30.5,'60'):
             cfg['refresh_minutes']=bad;(self.dir/'automation.json').write_text(json.dumps(cfg))
             with self.assertRaises(ToolError):self.run_pool()
-        cfg['refresh_minutes']=60
+        cfg['refresh_minutes']=60;cfg['refresh_enabled']=True
         # Legacy check_* keys from older settings files are ignored, not rejected.
         cfg['check_enabled']=True;cfg['check_minutes']=30
         (self.dir/'automation.json').write_text(json.dumps(cfg))
