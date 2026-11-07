@@ -88,6 +88,9 @@ func checkFailure(err error, ctx context.Context) string {
 		return "exit_ip_mismatch"
 	case strings.Contains(text, "namespace") || strings.Contains(text, "netns"):
 		return "probe_environment_failed"
+	case strings.Contains(text, "写配置失败") || strings.Contains(text, "写凭据失败") ||
+		strings.Contains(text, "建运行目录失败") || strings.Contains(text, "no such file"):
+		return "probe_environment_failed"
 	default:
 		return "https_unreachable"
 	}

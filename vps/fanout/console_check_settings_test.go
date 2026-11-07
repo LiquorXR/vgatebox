@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -15,6 +16,27 @@ func TestCheckIPTypeContextDefaultsOnAndCanBeDisabled(t *testing.T) {
 	ctx := context.WithValue(context.Background(), checkIPTypeContextKey{}, false)
 	if checkIPTypeFromContext(ctx) {
 		t.Fatal("candidate check type switch was ignored")
+	}
+}
+
+// 诊断 openvpn 起不来时不要把环境问题记成远端不可达，
+// 否则整池失败时无法区分是本机目录/挂载问题还是节点问题。
+func TestCheckFailureMapsEnvironmentWriteErrors(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		err  string
+		want string
+	}{
+		{"写配置失败: open /tmp/x/run/f.ovpn: no such file or directory", "probe_environment_failed"},
+		{"写凭据失败: open /tmp/x/run/auth.txt: no such file or directory", "probe_environment_failed"},
+		{"建运行目录失败: mkdir /tmp/x/run: permission denied", "probe_environment_failed"},
+		{"openvpn 提前退出，详见 /tmp/x.log", "openvpn_failed"},
+		{"等待 tun0 就绪超时，详见 /tmp/x.log", "openvpn_timeout"},
+		{"偶发网络错误", "https_unreachable"},
+	} {
+		if got := checkFailure(errors.New(tc.err), ctx); got != tc.want {
+			t.Fatalf("checkFailure(%q) = %q, want %q", tc.err, got, tc.want)
+		}
 	}
 }
 

@@ -130,6 +130,11 @@ func (t *Tunnel) teardownNetns() {
 // startOpenVPN 在 netns 内拉起 openvpn，并等待 tun0 拿到地址。
 func (t *Tunnel) startOpenVPN(dir string) error {
 	ns := t.nsName()
+	// 诊断用临时 Manager 的 workDir 是裸 TempDir（见 probeCandidate），
+	// run 子目录不存在；生产 workDir 安装时已建好，此处幂等无影响。
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("建运行目录失败: %w", err)
+	}
 	cfgPath := paths.SlotOVPN(dir, ns)
 	if err := os.WriteFile(cfgPath, []byte(t.Node.Config), 0600); err != nil {
 		return fmt.Errorf("写配置失败: %w", err)
