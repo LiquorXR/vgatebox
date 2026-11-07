@@ -83,6 +83,13 @@ export function formatLatency(value: number | undefined | null): string {
   return `${Math.round(value)} ms`;
 }
 
+export function formatHitRate(hits: number | undefined | null, queries: number | undefined | null): string {
+  const h = hits || 0;
+  const q = queries || 0;
+  if ((!h && !q) || !Number.isFinite(h) || !Number.isFinite(q) || h < 0 || q < 0) return "—";
+  return `${Math.round((h / (h + q)) * 100)}%`;
+}
+
 export function formatNumber(value: number | undefined | null): string {
   if (value === undefined || value === null || !Number.isFinite(value)) return "0";
   return value.toLocaleString("zh-CN");

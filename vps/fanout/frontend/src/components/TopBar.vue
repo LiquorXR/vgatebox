@@ -17,6 +17,16 @@ const health = computed(() => {
   if (!data.value.candidates) return { label: "等待候选", tone: "warn" as const };
   return { label: "运行正常", tone: "ok" as const };
 });
+const dotClass = computed(
+  () =>
+    ({
+      ok: "bg-ok",
+      warn: "bg-warn",
+      bad: "bg-bad",
+      info: "bg-info",
+      neutral: "bg-faint",
+    })[health.value.tone],
+);
 const updated = computed(() => (dataUpdatedAt.value ? formatDateTime(new Date(dataUpdatedAt.value).toISOString()) : "—"));
 </script>
 
@@ -48,6 +58,7 @@ const updated = computed(() => (dataUpdatedAt.value ? formatDateTime(new Date(da
 
     <div class="flex items-center gap-2">
       <StatusBadge :label="health.label" :tone="health.tone" size="sm" class="hidden sm:inline-flex" />
+      <span class="size-2.5 rounded-full sm:hidden" :class="dotClass" role="img" :aria-label="`后端状态：${health.label}`" :title="health.label" />
       <span class="hidden text-[11px] text-faint xl:inline">更新于 {{ updated }}</span>
       <ThemeMenu />
       <span

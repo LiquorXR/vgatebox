@@ -3,6 +3,7 @@ import {
   countryCode,
   countryName,
   formatDuration,
+  formatHitRate,
   formatLatency,
   formatNumber,
   formatRelative,
@@ -25,6 +26,13 @@ describe("format", () => {
     expect(formatLatency(42.4)).toBe("42 ms");
     expect(formatLatency(0)).toBe("—");
     expect(truncate("abcdefghij", 5)).toBe("abcd…");
+  });
+
+  it("formats cache hit rates", () => {
+    expect(formatHitRate(131, 8)).toBe("94%");
+    expect(formatHitRate(0, 5)).toBe("0%");
+    expect(formatHitRate(0, 0)).toBe("—");
+    expect(formatHitRate(undefined, undefined)).toBe("—");
   });
 
   it("formats a single version prefix", () => {

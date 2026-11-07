@@ -146,7 +146,7 @@ const steps = [
               />
               <button
                 type="button"
-                class="absolute right-2 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-md text-muted hover:bg-surface-3 hover:text-ink"
+                class="absolute right-1.5 top-1/2 grid size-10 -translate-y-1/2 place-items-center rounded-md text-muted hover:bg-surface-3 hover:text-ink"
                 :aria-label="visible ? '隐藏口令' : '显示口令'"
                 @click="visible = !visible"
               >

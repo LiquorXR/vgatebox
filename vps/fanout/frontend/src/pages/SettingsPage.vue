@@ -217,7 +217,7 @@ const themeOptions: { value: ThemeChoice; label: string }[] = [
             <div class="grid gap-3 sm:grid-cols-2">
               <label class="block">
                 <span class="mb-1 block text-xs font-medium">管理端口</span>
-                <input v-model.number="form.port" name="management-port" type="number" min="1" max="65535" required class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
+                <input v-model.number="form.port" name="management-port" type="number" inputmode="numeric" min="1" max="65535" required class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
               </label>
               <label class="block">
                 <span class="mb-1 block text-xs font-medium">监听地址</span>

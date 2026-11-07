@@ -14,7 +14,7 @@ import SkeletonBlock from "@/components/SkeletonBlock.vue";
 import StatusBadge from "@/components/StatusBadge.vue";
 import ToggleSwitch from "@/components/ToggleSwitch.vue";
 import UiButton from "@/components/UiButton.vue";
-import { countryName, formatDateTime, formatLatency, formatMbps, truncate } from "@/lib/format";
+import { countryName, formatDateTime, formatHitRate, formatLatency, formatMbps, truncate } from "@/lib/format";
 import { postRefreshCheckLabel, scheduleLabel, sourceLabel } from "@/lib/automation";
 import { checkStatusLabel, checkStatusTone, errorLabel, ipTypeLabel, ipTypeLabels, ipTypeTone, sourceResidentialLabel } from "@/lib/status";
 import { toast, toastError } from "@/lib/toast";
@@ -352,7 +352,7 @@ const detailNode = ref<Node | null>(null);
         <div class="flex flex-wrap items-end gap-2">
           <label class="relative min-w-[220px] flex-1">
             <Search :size="14" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
-            <input v-model="search" name="node-search" type="search" placeholder="搜索 IP、主机名、ASN 或国家" class="h-9 w-full rounded-lg border border-line-strong bg-surface pl-8 pr-3 text-xs outline-none focus:border-accent" />
+            <input v-model="search" name="node-search" type="search" autocomplete="off" placeholder="搜索 IP、主机名、ASN 或国家" class="h-9 w-full rounded-lg border border-line-strong bg-surface pl-8 pr-3 text-xs outline-none focus:border-accent" />
           </label>
           <select v-model="countryFilter" name="node-country" class="h-9 min-w-36 rounded-lg border border-line-strong bg-surface px-2.5 text-xs outline-none focus:border-accent" aria-label="筛选来源国家">
             <option value="">所有来源国家</option>
@@ -499,7 +499,7 @@ const detailNode = ref<Node | null>(null);
             <div><dt class="text-faint">结果有效</dt><dd class="mt-0.5 text-ink">{{ checkSettings?.check_result_ttl_effective_minutes ? `${checkSettings.check_result_ttl_effective_minutes} 分钟` : "—" }} · 超期显示已过期</dd></div>
             <div><dt class="text-faint">排序观察有效</dt><dd class="mt-0.5 text-ink">{{ checkSettings?.observation_ttl_effective_minutes ? `${checkSettings.observation_ttl_effective_minutes} 分钟` : "—" }}</dd></div>
             <div v-if="checkCycleMinutes"><dt class="text-faint">单轮检测约</dt><dd class="mt-0.5 text-ink">{{ checkCycleMinutes }} 分钟</dd></div>
-            <div v-if="ipTypeCache"><dt class="text-faint" title="命中、查询和条数由出口建连（自动/手动、重连）与节点池候选检测共用">IP 类型缓存（出口 + 节点池）</dt><dd class="mt-0.5 text-ink">命中 {{ ipTypeCache.hits }} 次 · 查询 {{ ipTypeCache.queries }} 次 · {{ ipTypeCache.entries }} 条<template v-if="checkSettings?.ip_type_ttl_hours"> · {{ checkSettings.ip_type_ttl_hours }} 小时</template></dd></div>
+            <div v-if="ipTypeCache"><dt class="text-faint" title="缓存命中与发起查询自启动累计，重启或清除后清零；有效条目落盘持久化；由出口建连（自动/手动、重连）与节点池候选检测共用">IP 类型缓存（出口 + 节点池）</dt><dd class="mt-0.5 text-ink">缓存命中 {{ ipTypeCache.hits }} 次 · 发起查询 {{ ipTypeCache.queries }} 次 · 命中率 {{ formatHitRate(ipTypeCache.hits, ipTypeCache.queries) }} · 有效条目 {{ ipTypeCache.entries }} 条<template v-if="checkSettings?.ip_type_ttl_hours"> · TTL {{ checkSettings.ip_type_ttl_hours }} 小时</template>（自启动累计）</dd></div>
             <div><dt class="text-faint">上次获取</dt><dd class="mt-0.5 text-ink">{{ formatDateTime(summary?.pool_generated_at) }}</dd></div>
           </dl>
           <UiButton v-if="ipTypeCache?.entries" size="sm" variant="ghost" class="mt-3" :loading="clearIPTypeMutation.isPending.value" @click="clearIPTypeMutation.mutate()">清除 IP 类型缓存</UiButton>

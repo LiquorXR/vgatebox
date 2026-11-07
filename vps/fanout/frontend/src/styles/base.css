@@ -39,6 +39,17 @@ textarea::placeholder {
   opacity: 1;
 }
 
+/* iOS 上聚焦字号 <16px 的输入框会自动放大且不回弹。
+ * base.css 未分层，优先级高于工具类（Tailwind v4 工具类在 layer 内），
+ * 这里只提粗指针设备的下限，桌面视觉不受影响。 */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 .tnum {
   font-variant-numeric: tabular-nums;
 }
@@ -61,6 +72,22 @@ textarea::placeholder {
 
 .animate-in {
   animation: vg-fade-in 180ms ease-out both;
+}
+
+/* 抽屉进场：backwards 填充，结束后释放给拖拽位移（both 会永久压住行内 transform）。 */
+@keyframes vg-drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-drawer-in {
+  animation: vg-drawer-in 220ms ease-out backwards;
 }
 
 @media (prefers-reduced-motion: reduce) {

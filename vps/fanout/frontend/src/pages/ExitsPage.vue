@@ -523,7 +523,7 @@ const statusOptions = [
       <SectionTabs v-model="kindFilter" :items="tabs" />
       <label class="relative ml-auto block w-full sm:w-56">
         <Search :size="14" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
-        <input v-model="search" name="exit-search" type="search" placeholder="搜索名称、IP 或国家" class="h-9 w-full rounded-lg border border-line-strong bg-surface pl-8 pr-3 text-xs outline-none focus:border-accent" />
+        <input v-model="search" name="exit-search" type="search" autocomplete="off" placeholder="搜索名称、IP 或国家" class="h-9 w-full rounded-lg border border-line-strong bg-surface pl-8 pr-3 text-xs outline-none focus:border-accent" />
       </label>
       <select v-model="statusFilter" name="exit-status" class="h-9 rounded-lg border border-line-strong bg-surface px-2.5 text-xs outline-none focus:border-accent" aria-label="筛选状态">
         <option v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
@@ -590,7 +590,7 @@ const statusOptions = [
             <span class="truncate text-xs text-muted">{{ exit.exit_ip || "—" }}</span>
             <span class="flex items-center justify-end gap-1 text-xs text-muted"><span class="tnum">{{ formatLatency(exit.latency_ms) }}</span><LatencyTrend :trend="exit.latency_trend" /></span>
             <span class="flex items-center justify-end gap-1">
-              <UiButton size="sm" variant="ghost" aria-label="查看详情" @click.stop="openExit(exit)"><ChevronRight :size="15" /></UiButton>
+              <UiButton size="sm" variant="ghost" aria-label="查看详情" class="h-10 w-10 sm:h-8 sm:w-8" @click.stop="openExit(exit)"><ChevronRight :size="15" /></UiButton>
             </span>
           </button>
         </div>
@@ -608,7 +608,7 @@ const statusOptions = [
       <form class="space-y-4" @submit.prevent="submitTarget">
         <label class="block">
           <span class="mb-1 block text-xs font-medium text-ink">目标数量</span>
-          <input v-model.number="targetCount" name="target-count" type="number" min="0" :max="summary?.capacity || 0" required class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
+          <input v-model.number="targetCount" name="target-count" type="number" inputmode="numeric" min="0" :max="summary?.capacity || 0" required class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
           <span class="mt-1 block text-[11px] text-faint">当前已分配 {{ allocated }} 个；设为 0 会移除全部活动出口。</span>
         </label>
         <div class="grid gap-3 sm:grid-cols-2">
@@ -781,7 +781,7 @@ const statusOptions = [
               </label>
               <label class="block">
                 <span class="mb-1 block text-[11px] text-faint">延迟上限（毫秒，0 不限）</span>
-                <input v-model.number="policyForm.maximum_latency_ms" name="policy-latency" type="number" min="0" max="120000" class="h-8 w-full rounded-md border border-line-strong bg-surface px-2 text-xs outline-none focus:border-accent" />
+                <input v-model.number="policyForm.maximum_latency_ms" name="policy-latency" type="number" inputmode="numeric" min="0" max="120000" class="h-8 w-full rounded-md border border-line-strong bg-surface px-2 text-xs outline-none focus:border-accent" />
               </label>
             </div>
             <div>

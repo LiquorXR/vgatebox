@@ -455,19 +455,19 @@ const deleteMutation = useMutation({
           <form class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" @submit.prevent="sstpSettingsMutation.mutate()">
             <label class="block">
               <span class="mb-1 block text-[11px] text-faint">检测与建连并发</span>
-              <input v-model.number="sstpSettings.parallelism" name="sstp-parallelism" type="number" min="1" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
+              <input v-model.number="sstpSettings.parallelism" name="sstp-parallelism" type="number" inputmode="numeric" min="1" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
             </label>
             <label class="block">
               <span class="mb-1 block text-[11px] text-faint">自动检测间隔（分钟，0 关闭）</span>
-              <input v-model.number="sstpSettings.interval_minutes" name="sstp-interval" type="number" min="0" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
+              <input v-model.number="sstpSettings.interval_minutes" name="sstp-interval" type="number" inputmode="numeric" min="0" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
             </label>
             <label class="block">
               <span class="mb-1 block text-[11px] text-faint">结果有效期（分钟）</span>
-              <input v-model.number="sstpSettings.valid_minutes" name="sstp-valid" type="number" min="1" max="10080" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
+              <input v-model.number="sstpSettings.valid_minutes" name="sstp-valid" type="number" inputmode="numeric" min="1" max="10080" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
             </label>
             <label class="block">
               <span class="mb-1 block text-[11px] text-faint">单节点超时（秒）</span>
-              <input v-model.number="sstpSettings.timeout_seconds" name="sstp-timeout" type="number" min="10" max="3600" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
+              <input v-model.number="sstpSettings.timeout_seconds" name="sstp-timeout" type="number" inputmode="numeric" min="10" max="3600" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
             </label>
             <div class="sm:col-span-2 lg:col-span-4">
               <UiButton type="submit" size="sm" :loading="sstpSettingsMutation.isPending.value">保存设置</UiButton>
@@ -490,7 +490,7 @@ const deleteMutation = useMutation({
         <div class="flex flex-wrap items-center gap-2">
           <label class="relative min-w-[200px] flex-1">
             <Search :size="14" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
-            <input v-model="sstpSearch" name="sstp-search" type="search" placeholder="搜索节点或 IP" class="h-9 w-full rounded-lg border border-line-strong bg-surface pl-8 pr-3 text-xs outline-none focus:border-accent" />
+            <input v-model="sstpSearch" name="sstp-search" type="search" autocomplete="off" placeholder="搜索节点或 IP" class="h-9 w-full rounded-lg border border-line-strong bg-surface pl-8 pr-3 text-xs outline-none focus:border-accent" />
           </label>
           <UiButton size="sm" :disabled="!sstpSelected.size" :loading="sstpCheckMutation.isPending.value" @click="sstpCheckMutation.mutate({ hosts: [...sstpSelected] })">
             <ShieldCheck :size="14" />检测勾选
