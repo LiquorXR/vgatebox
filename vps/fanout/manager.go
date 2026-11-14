@@ -1,0 +1,76 @@
+package main
+
+// manager.go：Manager 结构与构造；只读选择器见 manager_selectors.go，生命周期见 manager_lifecycle.go。
+import (
+	"context"
+	"fanout/internal/store"
+	"sync"
+	"time"
+)
+
+// Manager 维护所有隧道，负责分配槽位与端口。
+type Manager struct {
+	mu              sync.RWMutex
+	tunnels         map[int]*Tunnel
+	nodes           []Node
+	fetched         time.Time
+	workDir         string
+	evidenceDir     string
+	maxSlots        int
+	jobs            JobStore
+	saveMu          sync.Mutex
+	shuttingDown    bool // protected by saveMu; transient teardown is not user intent
+	deletedSlots    map[int]bool
+	localEvidence   map[string]Node
+	stateWriteHook  func(string) error
+	credentialApply func(*Tunnel) error
+	connectBudget   *connectBudget
+	observations    map[string]CheckResult
+	observationTTL  time.Duration
+	// observationPerfTTL 是排序用延迟的新鲜度窗口（默认 10 分钟），
+	// 档位判定仍用 observationTTL（默认 30 分钟）。0 表示用默认值。
+	observationPerfTTL time.Duration
+	// observationStats 记每 hostname 在窗口内的通过/失败次数，用于失败率排序；
+	// 配置变化即重置，过期由 pruneConnectivity 清理。
+	observationStats map[string]*hostStats
+	diagnostics     map[string]*diagnosticLease
+	console         *Console
+
+	// Health probing is bounded and test seams use the same paths as production.
+	healthEvery         time.Duration
+	healthParallelLimit int
+	healthProbeWindow   time.Duration
+	healthEchoWindow    time.Duration
+	healthOpWindow      time.Duration
+	healthProbe         func(context.Context, *Tunnel) (string, float64, error)
+	healthReconnect     func(*Tunnel, string)
+
+	// ipType 是出口建连与节点池候选检测共享的 IP 类型缓存对象；
+	// ipTypeTTL 只在缓存对象创建前保存配置值，创建后由共享对象统一持有。
+	ipTypeInitMu sync.Mutex
+	ipType       *ipTypeCache
+	ipTypeTTL    time.Duration
+
+	// slotHealthDoc 存出口观察快照：SQLite 可用时走共享库的 slot_health
+	// 文档，无库（单测裸 Manager）时回退旧文件。快照可再生，fail-open。
+	slotHealthDoc store.DocStore
+
+	// ipTypeMap 存 IP 类型缓存：SQLite 可用时走共享库的 ip_type
+	// 记录集，无库时回退旧文件形状。缓存可再生，fail-open。
+	ipTypeMap store.MapStore
+}
+
+func NewManager(maxSlots int, workDir string) *Manager {
+	return &Manager{
+		tunnels:       map[int]*Tunnel{},
+		workDir:       workDir,
+		evidenceDir:   workDir,
+		maxSlots:      maxSlots,
+		deletedSlots:  map[int]bool{},
+		localEvidence: map[string]Node{},
+		connectBudget: newConnectBudget(defaultCheckParallelism),
+		observations:  map[string]CheckResult{},
+		diagnostics:   map[string]*diagnosticLease{},
+		ipTypeTTL:     defaultIPTypeTTL,
+	}
+}

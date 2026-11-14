@@ -1,0 +1,83 @@
+name: Browser E2E
+on:
+  push:
+    paths: ['vps/fanout/frontend/**', 'vps/fanout/*.go', 'vps/fanout/go.sum', '.github/workflows/e2e.yml']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: e2e
+  cancel-in-progress: true
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.0'
+          cache-dependency-path: vps/fanout/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: vps/fanout/frontend/package-lock.json
+      - name: Build the console
+        working-directory: vps/fanout/frontend
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+      - name: Build the manager
+        working-directory: vps/fanout
+        run: go build -o /tmp/vgatebox-fanout-e2e .
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/xray-archive
+          key: xray-${{ hashFiles('config/xray-release.json') }}
+      - name: Provide the pinned Xray binary
+        run: |
+          python scripts/install_xray.py --output /tmp/e2e-xray --archive ${{ runner.temp }}/xray-archive/Xray-linux-64.zip
+          sudo mkdir -p /tmp/vgb-e2e/bin
+          sudo cp /tmp/e2e-xray/xray /tmp/vgb-e2e/bin/xray
+      # 真后端、零隧道：目标数量全程只到 1 且无候选（CI 不写候选池），
+      # 不建 OpenVPN、不连 VPN Gate；直出开关走内置 Xray，需上一步的二进制。
+      - name: Start the manager under test
+        run: |
+          sudo /tmp/vgatebox-fanout-e2e -dir /tmp/vgb-e2e -web 18080 -max 4 > /tmp/e2e-manager.log 2>&1 &
+          # 管理界面挂在随机访问路径下（含 healthz）：先等 basepath 落盘，
+          # 再探 /<base>/healthz。裸 /healthz 会 404（StripBasePath），不是探活失败。
+          for _ in $(seq 1 60); do
+            base=$(sudo cat /tmp/vgb-e2e/state/basepath 2>/dev/null | tr -d ' \n\r')
+            if [ -n "$base" ] && curl -sf "http://127.0.0.1:18080/$base/healthz"; then break; fi
+            sleep 2
+          done
+          base=$(sudo cat /tmp/vgb-e2e/state/basepath | tr -d ' \n\r')
+          curl -sf "http://127.0.0.1:18080/$base/healthz"
+          {
+            echo "E2E_BASE_PATH=/$(sudo cat /tmp/vgb-e2e/state/basepath | tr -d ' \n\r')"
+            echo "E2E_PASSWORD=$(sudo cat /tmp/vgb-e2e/state/password | tr -d ' \n\r')"
+          } >> "$GITHUB_ENV"
+      - name: Install Playwright browsers
+        run: |
+          sudo npx playwright install-deps chromium
+          npx playwright install chromium
+        working-directory: vps/fanout/frontend
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/pw-browsers
+      - name: Run Playwright tests
+        working-directory: vps/fanout/frontend
+        run: npx playwright test
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /tmp/pw-browsers
+      - name: Stop the manager under test
+        if: always()
+        run: |
+          sudo pkill -f vgatebox-fanout-e2e || true
+          tail -n 100 /tmp/e2e-manager.log || true

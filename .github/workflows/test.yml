@@ -1,0 +1,51 @@
+name: Test
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: vps/fanout/frontend/package-lock.json
+      - name: Install
+        working-directory: vps/fanout/frontend
+        run: npm ci --ignore-scripts
+      - name: Typecheck
+        working-directory: vps/fanout/frontend
+        run: npm run typecheck
+      - name: Unit tests
+        working-directory: vps/fanout/frontend
+        run: npm run test:unit
+      - name: Build
+        working-directory: vps/fanout/frontend
+        run: npm run build
+
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python: ['3.9', '3.12']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/xray-archive
+          key: xray-${{ hashFiles('config/xray-release.json') }}
+      - run: python scripts/install_xray.py --archive ${{ runner.temp }}/xray-archive/Xray-linux-64.zip
+      - run: python -m unittest discover -s tests -v

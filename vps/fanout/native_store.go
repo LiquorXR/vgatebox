@@ -1,0 +1,278 @@
+package main
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fanout/internal/paths"
+	"fmt"
+	"os"
+	"sort"
+	"strings"
+)
+
+// nativeClient 是一个可连接的客户端凭据。
+// 复制入站时同一个 client 会挂到所有出口上，用户换出口只需要改端口。
+type nativeClient struct {
+	Email    string `json:"email"`
+	ID       string `json:"id"`       // VLESS 用 UUID
+	Password string `json:"password"` // 外部 SOCKS5 用密码
+	Enable   bool   `json:"enable"`
+	// Flow 只对 VLESS 有意义，取值 "" 或 xtls-rprx-vision。
+	// 无加密时 Vision 要求 TCP + TLS/REALITY；启用 VLESS Encryption 后任意传输可用（见 visionCapableWith）。
+	Flow string `json:"flow,omitempty"`
+}
+
+// nativeInbound 是内置 Xray 的一个入站。
+type nativeInbound struct {
+	ID       int    `json:"id"`
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol"` // vless | socks
+	Network  string `json:"network"`  // tcp | ws | grpc | httpupgrade | xhttp | mkcp
+	Path     string `json:"path"`     // ws/httpupgrade/xhttp 路径，grpc 用作 serviceName
+	Host     string `json:"host"`     // ws/httpupgrade/xhttp 的 Host 头
+	// Security 是传输层安全：none | tls | reality
+	Security string         `json:"security"`
+	TLS      *tlsConfig     `json:"tls,omitempty"`
+	Reality  *realityConfig `json:"reality,omitempty"`
+	// KCP 是 VLESS + mKCP 的传输参数；留空使用 Xray 默认值。
+	KCP *kcpConfig `json:"kcp,omitempty"`
+	// VLESSEncryption 是 VLESS 协议内加密层；关闭时 decryption 固定为 none。
+	VLESSEncryption *vlessEncryptionConfig `json:"vless_encryption,omitempty"`
+	Remark          string                 `json:"remark"`
+	Enable          bool                   `json:"enable"`
+	Clients         []nativeClient         `json:"clients"`
+	// BoundTo 保留旧版主机名绑定；BoundSlot 存在时以稳定编号为准。空绑定默认阻断
+	BoundTo     string           `json:"bound_to"`
+	BoundSlot   int              `json:"bound_slot,omitempty"`
+	NameMode    string           `json:"name_mode,omitempty"`
+	ManagedSlot bool             `json:"managed_slot,omitempty"`
+	Manual      bool             `json:"manual,omitempty"`
+	HostDirect  bool             `json:"host_direct,omitempty"` // only explicit direct entries may use the host
+	SocksSlot   int              `json:"socks_slot,omitempty"`  // managed external SOCKS entry, separate from loopback
+	ThirdParty  *ThirdPartyProxy `json:"third_party,omitempty"`
+}
+
+// kcpConfig 是 mKCP 的可选调优参数，零值表示使用 Xray 默认值。
+type kcpConfig struct {
+	MTU      int `json:"mtu,omitempty"`
+	TTI      int `json:"tti,omitempty"`
+	Uplink   int `json:"uplink,omitempty"`
+	Downlink int `json:"downlink,omitempty"`
+}
+
+// vlessEncryptionConfig 保存一对 VLESS Encryption 参数。
+// ServerDecryption 只保存在服务端；ClientEncryption 会进入订阅链接。
+type vlessEncryptionConfig struct {
+	Enabled          bool   `json:"enabled"`
+	KeyType          string `json:"key_type,omitempty"` // x25519 | mlkem768
+	ServerDecryption string `json:"server_decryption,omitempty"`
+	ClientEncryption string `json:"client_encryption,omitempty"`
+}
+
+// tlsConfig 是标准 TLS 的配置。证书要么由用户提供路径，要么 fanout 生成自签的。
+type tlsConfig struct {
+	ServerName string `json:"server_name"`
+	CertFile   string `json:"cert_file"`
+	KeyFile    string `json:"key_file"`
+	// SelfSigned 记录证书是 fanout 生成的，分享链接要带 allowInsecure
+	SelfSigned bool `json:"self_signed"`
+	// CertSha256 是证书的 SHA-256 指纹（十六进制）。
+	// 自签证书客户端验不过，Xray 26.x 起 allowInsecure 已被移除，
+	// 改为在链接里带指纹让客户端固定信任这一张证书。
+	CertSha256 string `json:"cert_sha256,omitempty"`
+}
+
+// realityConfig 是 REALITY 的配置。
+//
+// PublicKey 服务端用不到，但客户端必须填，所以一并存下来供生成分享链接。
+type realityConfig struct {
+	Dest        string   `json:"dest"` // 借用的真实站点，如 www.microsoft.com:443
+	ServerNames []string `json:"server_names"`
+	PrivateKey  string   `json:"private_key"`
+	PublicKey   string   `json:"public_key"`
+	ShortIDs    []string `json:"short_ids"`
+	Fingerprint string   `json:"fingerprint"` // 客户端指纹，如 chrome
+}
+
+// tag 复原这个入站在 Xray 里的 inboundTag；历史状态使用同一格式。
+func (n *nativeInbound) tag() string {
+	return fmt.Sprintf("in-%d-%s", n.Port, n.netOrTCP())
+}
+
+func (n *nativeInbound) netOrTCP() string {
+	if n.Network == "" {
+		return "tcp"
+	}
+	return n.Network
+}
+
+func (n *nativeInbound) securityOrNone() string {
+	if n.Security == "" {
+		return "none"
+	}
+	return n.Security
+}
+
+// nativeStore 是自建模式的持久状态。
+type nativeStore struct {
+	SchemaVersion int              `json:"schema_version,omitempty"`
+	NextID        int              `json:"next_id"`
+	Inbounds      []*nativeInbound `json:"inbounds"`
+
+	// droppedLegacy 记录本次加载是否过滤了已不再支持的协议。
+	droppedLegacy bool
+}
+
+func nativeStatePath(dir string) string { return paths.Native(dir) }
+
+func loadNativeStore(dir string) (*nativeStore, error) {
+	blob, err := os.ReadFile(nativeStatePath(dir))
+	if os.IsNotExist(err) {
+		return &nativeStore{NextID: 1}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	st, err := decodeNativeStore(blob)
+	if err != nil {
+		return nil, err
+	}
+	if st.droppedLegacy {
+		if err := st.save(dir); err != nil {
+			return nil, err
+		}
+	}
+	return st, nil
+}
+
+func decodeNativeStore(blob []byte) (*nativeStore, error) {
+	var st *nativeStore
+	if err := json.Unmarshal(blob, &st); err != nil || st == nil {
+		return nil, fmt.Errorf("解析内置配置失败")
+	}
+	if err := validatePersistedSchemaVersion(st.SchemaVersion, "native.json"); err != nil {
+		return nil, err
+	}
+	if st.NextID < 1 {
+		st.NextID = 1
+	}
+	// VMess/Trojan/Hysteria2 已从面板移除；旧状态保留文件但不再参与运行。
+	// VLESS over Hysteria2（network=hysteria）同样不再支持。
+	kept := st.Inbounds[:0]
+	for _, ib := range st.Inbounds {
+		if ib != nil && (ib.Protocol == "vmess" || ib.Protocol == "trojan" ||
+			ib.Protocol == "hysteria" || ib.netOrTCP() == "hysteria") {
+			st.droppedLegacy = true
+			continue
+		}
+		kept = append(kept, ib)
+	}
+	st.Inbounds = kept
+	if err := validateNativeStore(st); err != nil {
+		return nil, err
+	}
+	return st, nil
+}
+
+func validateNativeStore(st *nativeStore) error {
+	ids, ports := map[int]bool{}, map[int]bool{}
+	for _, ib := range st.Inbounds {
+		if ib == nil || ib.ID < 1 || ib.ID >= st.NextID || ib.Port < 1 || ib.Port > 65535 || ids[ib.ID] || ports[ib.Port] {
+			return fmt.Errorf("内置配置的入站标识或端口无效")
+		}
+		if ib.BoundSlot < 0 || ib.BoundSlot > maximumSlots || (ib.NameMode != "" && ib.NameMode != "auto" && ib.NameMode != "custom") {
+			return fmt.Errorf("内置入站的出口编号或命名模式无效")
+		}
+		if ib.ManagedSlot && (ib.Manual || ib.HostDirect || ib.SocksSlot > 0 || ib.ThirdParty != nil || ib.BoundSlot == 0) {
+			return fmt.Errorf("自动接入入口标识无效")
+		}
+		if ib.HostDirect && (ib.BoundSlot != 0 || ib.BoundTo != "" || ib.SocksSlot != 0) {
+			return fmt.Errorf("本机网络不能同时绑定 VPN Gate")
+		}
+		if ib.ThirdParty != nil {
+			if ib.HostDirect || ib.BoundSlot != 0 || ib.BoundTo != "" || ib.SocksSlot != 0 || ib.Protocol != "vless" || ib.securityOrNone() != "reality" {
+				return fmt.Errorf("第三方代理不能同时绑定其他出口，且须使用加密接入")
+			}
+			if err := validateThirdParty(*ib.ThirdParty); err != nil {
+				return err
+			}
+		}
+		if ib.SocksSlot != 0 && (ib.SocksSlot < 1 || ib.SocksSlot > maximumSlots || ib.BoundSlot != ib.SocksSlot || ib.Protocol != "socks" || ib.securityOrNone() != "none" || ib.netOrTCP() != "tcp" || len(ib.Clients) != 1 || validateCred(SocksCred{User: ib.Clients[0].Email, Pass: ib.Clients[0].Password}) != nil) {
+			return fmt.Errorf("外部 SOCKS 配置无效")
+		}
+		if ib.Protocol != "vless" && ib.Protocol != "socks" {
+			return fmt.Errorf("内置入站协议无效")
+		}
+		if ib.VLESSEncryption != nil && ib.VLESSEncryption.Enabled {
+			if ib.Protocol != "vless" || strings.TrimSpace(ib.VLESSEncryption.ServerDecryption) == "" || strings.TrimSpace(ib.VLESSEncryption.ClientEncryption) == "" {
+				return fmt.Errorf("VLESS Encryption 配置无效")
+			}
+		}
+		ids[ib.ID] = true
+		ports[ib.Port] = true
+	}
+	return nil
+}
+
+func (s *nativeStore) save(dir string) error {
+	s.SchemaVersion = persistedSchemaVersion
+	blob, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := nativeStatePath(dir) + ".tmp"
+	if err := os.WriteFile(tmp, blob, 0600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, nativeStatePath(dir))
+}
+
+func (s *nativeStore) byID(id int) *nativeInbound {
+	for _, ib := range s.Inbounds {
+		if ib.ID == id {
+			return ib
+		}
+	}
+	return nil
+}
+
+func (s *nativeStore) usedPorts() map[int]bool {
+	// 先并入机器上其他 Xray 实例占用的端口，再叠加自己的入站，
+	// 这样随机分配和手填校验都会避开它们，避免端口撞车。
+	used := externalUsedPorts()
+	for _, ib := range s.Inbounds {
+		used[ib.Port] = true
+	}
+	return used
+}
+
+// sorted 返回按端口排序的入站，让界面顺序稳定。
+func (s *nativeStore) sorted() []*nativeInbound {
+	out := make([]*nativeInbound, len(s.Inbounds))
+	copy(out, s.Inbounds)
+	sort.Slice(out, func(i, j int) bool { return out[i].Port < out[j].Port })
+	return out
+}
+
+// newUUID 生成 Xray 认的 UUID v4。
+func newUUID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		// 随机源不可用时退回一个仍然唯一的形式，避免建站直接失败
+		return fmt.Sprintf("00000000-0000-4000-8000-%012x", os.Getpid())
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	h := hex.EncodeToString(b)
+	return strings.Join([]string{h[0:8], h[8:12], h[12:16], h[16:20], h[20:32]}, "-")
+}
+
+// randomHex 生成 n 字节的随机十六进制串，用作 trojan 密码与 ws 路径。
+func randomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return hex.EncodeToString([]byte(fmt.Sprint(os.Getpid())))
+	}
+	return hex.EncodeToString(b)
+}

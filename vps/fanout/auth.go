@@ -1,0 +1,306 @@
+package main
+
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
+	"fanout/internal/paths"
+	"fmt"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Auth 给管理界面加一层登录。
+// 口令存在工作目录下，首次启动自动生成，避免公网上裸奔。
+type Auth struct {
+	dir      string
+	password string
+	mu       sync.RWMutex
+	sessions map[string]time.Time
+	// 按来源 IP 记录登录失败，挡低速凭据喷洒
+	fails map[string]*loginFails
+}
+
+// loginFails 跟踪单个来源 IP 的连续失败。
+type loginFails struct {
+	count   int
+	last    time.Time
+	blocked time.Time
+}
+
+const sessionTTL = 12 * time.Hour
+
+// 登录失败节流：同一 IP 连续错 loginMaxFails 次后，锁 loginBlockFor。
+// 阈值给得宽松，正常用户偶尔输错不受影响；成功登录会清零。
+const (
+	loginMaxFails  = 8
+	loginBlockFor  = 2 * time.Minute
+	loginFailReset = 10 * time.Minute
+)
+
+// minPasswordLength 是管理口令的最低长度。新口令必须达到，
+// 已有短口令仍可登录（check 不限长度），只在下次修改时执行新规。
+const minPasswordLength = 12
+
+// NewAuth 载入或生成访问口令。返回口令是否为本次新建。
+func NewAuth(dir string) (*Auth, bool, error) {
+	if err := paths.Ensure(dir); err != nil {
+		return nil, false, err
+	}
+	path := paths.Password(dir)
+	created := false
+
+	blob, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		pw, gerr := randomToken(9)
+		if gerr != nil {
+			return nil, false, gerr
+		}
+		if werr := os.WriteFile(path, []byte(pw+"\n"), 0600); werr != nil {
+			return nil, false, fmt.Errorf("写口令文件失败: %w", werr)
+		}
+		blob = []byte(pw)
+		created = true
+	} else if err != nil {
+		return nil, false, err
+	}
+	if strings.TrimSpace(string(blob)) == "" {
+		return nil, false, fmt.Errorf("已有管理口令文件为空，拒绝无口令启动")
+	}
+
+	return &Auth{
+		dir:      dir,
+		password: strings.TrimSpace(string(blob)),
+		sessions: map[string]time.Time{},
+		fails:    map[string]*loginFails{},
+	}, created, nil
+}
+
+func randomToken(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// check 比对口令，用恒定时间比较避免时序泄漏。
+func (a *Auth) check(pw string) bool {
+	a.mu.RLock()
+	cur := a.password
+	a.mu.RUnlock()
+	want := sha256.Sum256([]byte(cur))
+	got := sha256.Sum256([]byte(pw))
+	return subtle.ConstantTimeCompare(want[:], got[:]) == 1
+}
+
+// invalidateOtherSessions 删除除 keep 外的全部会话。
+// 改密码后让其他浏览器重新登录，当前浏览器保持登录态。
+func (a *Auth) invalidateOtherSessions(keep string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for tok := range a.sessions {
+		if tok != keep {
+			delete(a.sessions, tok)
+		}
+	}
+}
+
+// issue 发一个会话 token。
+func (a *Auth) issue() (string, error) {
+	tok, err := randomToken(16)
+	if err != nil {
+		return "", err
+	}
+	a.mu.Lock()
+	a.sessions[tok] = time.Now().Add(sessionTTL)
+	// 顺手清掉过期会话
+	for k, exp := range a.sessions {
+		if time.Now().After(exp) {
+			delete(a.sessions, k)
+		}
+	}
+	a.mu.Unlock()
+	return tok, nil
+}
+
+func (a *Auth) valid(tok string) bool {
+	a.mu.RLock()
+	exp, ok := a.sessions[tok]
+	a.mu.RUnlock()
+	return ok && time.Now().Before(exp)
+}
+
+const sessionCookie = "fanout_session"
+
+// Wrap 保护一个 handler，未登录时 API 返回 401、页面跳登录。
+func (a *Auth) Wrap(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// SameSite=Lax 挡不住跨站顶层窗口里的非 GET 导航；浏览器明确标记为
+		// cross-site 的写请求直接拒绝。缺少该头的命令行调用仍然放行。
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions &&
+			strings.EqualFold(r.Header.Get("Sec-Fetch-Site"), "cross-site") {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "拒绝跨站请求"})
+			return
+		}
+		if r.URL.Path == "/login" {
+			if c, err := r.Cookie(sessionCookie); err == nil && a.valid(c.Value) {
+				http.Redirect(w, r, "./", http.StatusSeeOther)
+				return
+			}
+			a.handleLogin(w, r)
+			return
+		}
+		// 订阅得让客户端直接拉，带不了登录态，所以这条路放行。
+		// 它不是无门槛：handleSub 自己校验一串独立口令，且仍在访问路径之后。
+		// /healthz 同理放行：只返回计数与版本等非敏感字段（见 healthz.go），
+		// 供本机探活与负载均衡免登录轮询。
+		if r.URL.Path == "/sub" || r.URL.Path == "/healthz" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Public build assets are needed by the login page itself. They contain
+		// no management data and are safe to serve before authentication.
+		if isPublicAsset(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if c, err := r.Cookie(sessionCookie); err == nil && a.valid(c.Value) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "未登录"})
+			return
+		}
+		serveLoginPage(w)
+	})
+}
+
+func wantsHTMLRedirect(r *http.Request) bool {
+	if strings.EqualFold(r.Header.Get("Sec-Fetch-Mode"), "navigate") {
+		return true
+	}
+	accept := r.Header.Get("Accept")
+	return strings.Contains(accept, "text/html") && !strings.Contains(accept, "application/json")
+}
+
+// safeReferer keeps the post-login redirect on this management instance. The
+// path is ignored unless it belongs to the current access path.
+func safeReferer(r *http.Request) string {
+	ref := r.Referer()
+	if ref == "" {
+		return "./"
+	}
+	u, err := url.Parse(ref)
+	if err != nil || (u.Host != "" && u.Host != r.Host) {
+		return "./"
+	}
+	p := u.EscapedPath()
+	base := currentBasePath()
+	if p == "" || p == "/login" || p == base+"/login" {
+		return "./"
+	}
+	if !strings.HasPrefix(p, base+"/") {
+		return "./"
+	}
+	if u.RawQuery != "" {
+		p += "?" + u.RawQuery
+	}
+	return p
+}
+
+// blocked 判断某来源 IP 是否处于登录冷却期。
+func (a *Auth) blocked(ip string) bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	f, ok := a.fails[ip]
+	return ok && time.Now().Before(f.blocked)
+}
+
+// recordFail 记一次失败，达到阈值就进入冷却。
+func (a *Auth) recordFail(ip string) {
+	now := time.Now()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	f, ok := a.fails[ip]
+	// 距上次失败太久就重新计数，避免长期累积误伤
+	if !ok || (f.blocked.IsZero() && now.Sub(f.last) > loginFailReset) {
+		f = &loginFails{}
+		a.fails[ip] = f
+	}
+	f.count++
+	f.last = now
+	if f.count >= loginMaxFails {
+		f.blocked = now.Add(loginBlockFor)
+		f.count = 0
+	}
+	// 顺手清掉早已过期的记录，别让 map 无限增长
+	for k, v := range a.fails {
+		if now.Sub(v.last) > loginFailReset && now.After(v.blocked) {
+			delete(a.fails, k)
+		}
+	}
+}
+
+// clearFails 登录成功后清掉该 IP 的失败记录。
+func (a *Auth) clearFails(ip string) {
+	a.mu.Lock()
+	delete(a.fails, ip)
+	a.mu.Unlock()
+}
+
+// clientIP 从 RemoteAddr 取来源 IP。服务直接监听公网端口、不在反代后，
+// 所以不采信 X-Forwarded-For 之类可伪造的头。
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+func (a *Auth) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		serveLoginPage(w)
+		return
+	}
+	// 登录表单是公开入口，先限制请求体，避免超大表单消耗内存或临时文件。
+	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+	ip := clientIP(r)
+	if a.blocked(ip) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "登录失败次数过多，请稍后再试"})
+		return
+	}
+	if !a.check(r.FormValue("password")) {
+		a.recordFail(ip)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "口令不对"})
+		return
+	}
+	a.clearFails(ip)
+	tok, err := a.issue()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    tok,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   requestIsHTTPS(r),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(sessionTTL.Seconds()),
+	})
+	if wantsHTMLRedirect(r) {
+		http.Redirect(w, r, safeReferer(r), http.StatusSeeOther)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"ok": "已登录"})
+}

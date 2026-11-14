@@ -1,0 +1,38 @@
+[Unit]
+Description=vgatebox exit manager and subscription
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/vgatebox-fanout
+ExecStart=/usr/local/bin/vgatebox-fanout -dir /var/lib/vgatebox/fanout -panel native
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=mixed
+UMask=0077
+# 沙箱加固（P2-4）：本服务必须以 root 运行（netns/iptables/openvpn），
+# 因此不用 User=/DynamicUser=，也不收 Capability（P4 权限分离再做）。
+# 以下每条都只收与本服务无关的面，写集合见 ReadWritePaths；
+# 故意不收的：PrivateDevices（要 /dev/net/tun）、PrivateNetwork（要出网）、
+# ProtectKernelTunables（要开 ip_forward）、RestrictNamespaces（要建 netns）、
+# RestrictAddressFamilies（要 netlink/unix）、SystemCallFilter（子进程
+# openvpn/xray/python/sstpc 全被连带，不敢收）、ProtectProc（ip netns pids 要看别家）。
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=read-only
+ProtectSystem=strict
+# /run/netns 由下行 RuntimeDirectory 自建（tmpfs，重启消失）；
+# /etc/netns 是持久共享目录，由安装器建好（卸载不删，里面可能有别家命名空间）。
+RuntimeDirectory=netns
+RuntimeDirectoryMode=0755
+ReadWritePaths=/var/lib/vgatebox /etc/vgatebox /etc/netns /var/lib/vgatebox-deploy /var/backups/vgatebox
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+ProtectHostname=yes
+ProtectClock=yes
+
+[Install]
+WantedBy=multi-user.target

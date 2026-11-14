@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Disposable, privileged CI container only; never run the inner test on a VPS.
+set -euo pipefail
+[[ ${GITHUB_ACTIONS:-} == true ]] || { echo 'Requires a disposable GitHub runner'; exit 1; }
+image=${1:?base image required}
+root=$(cd "$(dirname "$0")/.." && pwd)
+command -v docker >/dev/null
+test_mount=()
+if [[ ${VGB_TEST_CLIENT:-} == mihomo ]]; then
+  python3 "$root/scripts/install_mihomo_test.py"
+  test_mount=(-v "$root/tools/bin:/mihomo:ro")
+fi
+for attempt in {1..3}; do
+  if docker build --build-arg "BASE_IMAGE=$image" -f "$root/tests/distro.Dockerfile" -t vgatebox-distro-check "$root/tests"; then break; fi
+  ((attempt < 3)) || exit 1
+  sleep 2
+done
+name=vgatebox-distro-$RANDOM
+trap 'docker logs "$name"; docker rm -f "$name" >/dev/null' EXIT
+docker run -d --name "$name" --privileged --cgroupns=host \
+  --tmpfs /run --tmpfs /run/lock --tmpfs /tmp \
+  -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+  -v "$root:/src:ro" -v "$root/dist:/package:ro" "${test_mount[@]}" vgatebox-distro-check
+for attempt in {1..30}; do
+  if docker exec "$name" systemctl show --property=Version --value >/dev/null 2>&1; then break; fi
+  sleep 1
+done
+docker exec "$name" bash /src/tests/distro_install_inner.sh

@@ -1,0 +1,9 @@
+{
+  "source_urls": ["https://www.vpngate.net/api/iphone/", "https://download.vpngate.jp/api/iphone/"],
+  "pool_source_timeout_seconds": 10,
+  "mirror_fallback": {"enabled": true, "max_age_hours": 24},
+  "countries": [],
+  "node_timeout_seconds": 30,
+  "intelligence_ttl_seconds": 86400,
+  "intelligence_query_limit": 50
+}

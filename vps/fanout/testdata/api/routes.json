@@ -1,0 +1,514 @@
+{
+  "schema_version": 1,
+  "generated_from": "vps/fanout/routes.go allAPIRoutes()",
+  "routes": [
+    {
+      "path": "/",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "handler": "handleIndex",
+      "auth": "mixed"
+    },
+    {
+      "path": "/api/config/rollback",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "handler": "apiRollbackNative",
+      "auth": "session"
+    },
+    {
+      "path": "/api/console",
+      "methods": [
+        "GET"
+      ],
+      "handler": "Console.apiConsole",
+      "auth": "session"
+    },
+    {
+      "path": "/api/console/automation",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "handler": "Console.apiAutomation",
+      "auth": "session"
+    },
+    {
+      "path": "/api/console/check",
+      "methods": [
+        "POST"
+      ],
+      "handler": "Console.apiCheck",
+      "auth": "session"
+    },
+    {
+      "path": "/api/console/check/cancel",
+      "methods": [
+        "POST"
+      ],
+      "handler": "Console.apiCheckCancel",
+      "auth": "session"
+    },
+    {
+      "path": "/api/console/check/settings",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "handler": "Console.apiCheckSettings",
+      "auth": "session"
+    },
+    {
+      "path": "/api/console/direct",
+      "methods": [
+        "POST"
+      ],
+      "handler": "Console.apiHostDirect",
+      "auth": "session"
+    },
+    {
+      "path": "/api/console/ip-type-cache",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "handler": "Console.apiIPTypeCache",
+      "auth": "session"
+    },
+    {
+      "path": "/api/console/qr",
+      "methods": [
+        "GET"
+      ],
+      "handler": "Console.apiConsoleQR",
+      "auth": "session"
+    },
+    {
+      "path": "/api/console/refresh",
+      "methods": [
+        "POST"
+      ],
+      "handler": "Console.apiPoolRefresh",
+      "auth": "session"
+    },
+    {
+      "path": "/api/console/slot/delete",
+      "methods": [
+        "POST"
+      ],
+      "handler": "Console.apiDeleteSlot",
+      "auth": "session"
+    },
+    {
+      "path": "/api/console/socks",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "handler": "Console.apiPublicSocks",
+      "auth": "session"
+    },
+    {
+      "path": "/api/console/source-settings",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "handler": "Console.apiSourceSettings",
+      "auth": "session"
+    },
+    {
+      "path": "/api/console/target",
+      "methods": [
+        "POST"
+      ],
+      "handler": "Console.apiApplyTarget",
+      "auth": "session"
+    },
+    {
+      "path": "/api/console/version",
+      "methods": [
+        "GET"
+      ],
+      "handler": "Console.apiConsoleVersion",
+      "auth": "session"
+    },
+    {
+      "path": "/api/cred",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiCred",
+      "auth": "session"
+    },
+    {
+      "path": "/api/exits",
+      "methods": [
+        "GET"
+      ],
+      "handler": "apiExits",
+      "auth": "session"
+    },
+    {
+      "path": "/api/export/xray",
+      "methods": [
+        "GET"
+      ],
+      "handler": "apiExportXray",
+      "auth": "session"
+    },
+    {
+      "path": "/api/jobs",
+      "methods": [
+        "GET"
+      ],
+      "handler": "apiJobs",
+      "auth": "session"
+    },
+    {
+      "path": "/api/jobs/dismiss",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiJobDismiss",
+      "auth": "session"
+    },
+    {
+      "path": "/api/metrics",
+      "methods": [
+        "GET"
+      ],
+      "handler": "Console.apiMetrics",
+      "auth": "session"
+    },
+    {
+      "path": "/api/nodes",
+      "methods": [
+        "GET"
+      ],
+      "handler": "apiNodes",
+      "auth": "session"
+    },
+    {
+      "path": "/api/panel/client/add",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiClientAdd",
+      "auth": "session"
+    },
+    {
+      "path": "/api/panel/client/del",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiClientDelete",
+      "auth": "session"
+    },
+    {
+      "path": "/api/panel/client/reset",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiClientReset",
+      "auth": "session"
+    },
+    {
+      "path": "/api/panel/inbound/new",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiInboundCreate",
+      "auth": "session"
+    },
+    {
+      "path": "/api/panel/inbound/update",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiInboundUpdate",
+      "auth": "session"
+    },
+    {
+      "path": "/api/provision",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiProvision",
+      "auth": "session"
+    },
+    {
+      "path": "/api/regions",
+      "methods": [
+        "GET"
+      ],
+      "handler": "apiRegions",
+      "auth": "session"
+    },
+    {
+      "path": "/api/resources/sstp",
+      "methods": [
+        "GET"
+      ],
+      "handler": "SstpManager.apiView",
+      "auth": "session"
+    },
+    {
+      "path": "/api/resources/sstp/cancel",
+      "methods": [
+        "POST"
+      ],
+      "handler": "SstpManager.apiCancelCheck",
+      "auth": "session"
+    },
+    {
+      "path": "/api/resources/sstp/check",
+      "methods": [
+        "POST"
+      ],
+      "handler": "SstpManager.apiStartCheck",
+      "auth": "session"
+    },
+    {
+      "path": "/api/resources/sstp/export",
+      "methods": [
+        "GET"
+      ],
+      "handler": "SstpManager.apiExport",
+      "auth": "session"
+    },
+    {
+      "path": "/api/resources/sstp/settings",
+      "methods": [
+        "POST"
+      ],
+      "handler": "SstpManager.apiSettings",
+      "auth": "session"
+    },
+    {
+      "path": "/api/resources/third-party",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "handler": "ThirdPartyManager.apiResources",
+      "auth": "session"
+    },
+    {
+      "path": "/api/resources/third-party/check",
+      "methods": [
+        "POST"
+      ],
+      "handler": "ThirdPartyManager.apiStartCheck",
+      "auth": "session"
+    },
+    {
+      "path": "/api/resources/third-party/delete",
+      "methods": [
+        "POST"
+      ],
+      "handler": "ThirdPartyManager.thirdPartyActionHandler",
+      "auth": "session"
+    },
+    {
+      "path": "/api/resources/third-party/subscribe",
+      "methods": [
+        "POST"
+      ],
+      "handler": "ThirdPartyManager.thirdPartyActionHandler",
+      "auth": "session"
+    },
+    {
+      "path": "/api/resources/third-party/toggle",
+      "methods": [
+        "POST"
+      ],
+      "handler": "ThirdPartyManager.thirdPartyActionHandler",
+      "auth": "session"
+    },
+    {
+      "path": "/api/settings",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "handler": "apiSettings",
+      "auth": "session"
+    },
+    {
+      "path": "/api/slot/delete",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiSlotLifecycle",
+      "auth": "session"
+    },
+    {
+      "path": "/api/slot/policy",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "handler": "apiSlotPolicy",
+      "auth": "session"
+    },
+    {
+      "path": "/api/slot/policy/rollback",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiRollbackSlotPolicy",
+      "auth": "session"
+    },
+    {
+      "path": "/api/slot/resume",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiSlotLifecycle",
+      "auth": "session"
+    },
+    {
+      "path": "/api/stop",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiStop",
+      "auth": "session"
+    },
+    {
+      "path": "/api/sub",
+      "methods": [
+        "GET"
+      ],
+      "handler": "apiSub",
+      "auth": "session"
+    },
+    {
+      "path": "/api/sub/reset",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiSubReset",
+      "auth": "session"
+    },
+    {
+      "path": "/api/swap",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiSwap",
+      "auth": "session"
+    },
+    {
+      "path": "/api/update/apply",
+      "methods": [
+        "POST"
+      ],
+      "handler": "UpdateManager.apply",
+      "auth": "session"
+    },
+    {
+      "path": "/api/update/check",
+      "methods": [
+        "GET"
+      ],
+      "handler": "UpdateManager.check",
+      "auth": "session"
+    },
+    {
+      "path": "/api/update/status",
+      "methods": [
+        "GET"
+      ],
+      "handler": "UpdateManager.status",
+      "auth": "session"
+    },
+    {
+      "path": "/api/xui/bind",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiXUIBind",
+      "auth": "session"
+    },
+    {
+      "path": "/api/xui/clone",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiXUIClone",
+      "auth": "session"
+    },
+    {
+      "path": "/api/xui/delete",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiXUIDelete",
+      "auth": "session"
+    },
+    {
+      "path": "/api/xui/detail",
+      "methods": [
+        "GET"
+      ],
+      "handler": "apiXUIDetail",
+      "auth": "session"
+    },
+    {
+      "path": "/api/xui/encryption/rotate",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiXUIRotateEncryption",
+      "auth": "session"
+    },
+    {
+      "path": "/api/xui/encryption/set",
+      "methods": [
+        "POST"
+      ],
+      "handler": "apiXUISetEncryption",
+      "auth": "session"
+    },
+    {
+      "path": "/api/xui/inbounds",
+      "methods": [
+        "GET"
+      ],
+      "handler": "apiXUIInbounds",
+      "auth": "session"
+    },
+    {
+      "path": "/api/xui/links",
+      "methods": [
+        "GET"
+      ],
+      "handler": "apiXUILinks",
+      "auth": "session"
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET",
+        "HEAD"
+      ],
+      "handler": "handleHealthz",
+      "auth": "none"
+    },
+    {
+      "path": "/sub",
+      "methods": [
+        "GET"
+      ],
+      "handler": "handleSub",
+      "auth": "token"
+    }
+  ]
+}

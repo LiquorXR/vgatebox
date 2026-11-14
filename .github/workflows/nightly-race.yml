@@ -1,0 +1,50 @@
+name: Nightly full race
+on:
+  schedule:
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nightly-race
+  cancel-in-progress: false
+jobs:
+  full-race:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.0'
+          cache-dependency-path: vps/fanout/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: vps/fanout/frontend/package-lock.json
+      - name: Build the new console
+        working-directory: vps/fanout/frontend
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/xray-archive
+          key: xray-${{ hashFiles('config/xray-release.json') }}
+      - run: python scripts/install_xray.py --archive ${{ runner.temp }}/xray-archive/Xray-linux-64.zip
+      - run: python scripts/install_mihomo_test.py
+      # 全量 -race：vps.yml 里 PR 门禁只跑 -race 子集（-run 过滤），
+      # 且全量只跑无 race 的 sudo 二进制；这里补上“全量 + race”的 nightly。
+      # 仍用编译后 sudo 运行：完整单测需要 root（netns/iptables），与 vps.yml 一致；
+      # race 会慢 5-10 倍，所以 -test.timeout 放到 30m，job 放到 45m。
+      - name: Full suite with race detector
+        working-directory: vps/fanout
+        run: |
+          go test -c -race -o /tmp/vgatebox-race-tests .
+          sudo /tmp/vgatebox-race-tests -test.v -test.timeout 30m

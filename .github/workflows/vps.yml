@@ -1,0 +1,173 @@
+name: VPS tests and package
+on:
+  push:
+    paths: ['vps/**', 'src/**', 'config/**', 'tests/**', 'scripts/build_vps_package.py', 'scripts/install_mihomo_test.py', '.github/workflows/vps.yml']
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version; use an explicit vX.Y.Z for a release candidate'
+        default: dev
+        required: true
+        type: string
+      live_mirror:
+        description: 'Also verify local Linux acquisition of the opt-in public mirror (external network required)'
+        default: false
+        required: false
+        type: boolean
+permissions:
+  contents: read
+jobs:
+  vps:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.0'
+          cache-dependency-path: vps/fanout/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: vps/fanout/frontend/package-lock.json
+      - name: Build the new console
+        working-directory: vps/fanout/frontend
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/xray-archive
+          key: xray-${{ hashFiles('config/xray-release.json') }}
+      - run: python scripts/install_xray.py --archive ${{ runner.temp }}/xray-archive/Xray-linux-64.zip
+      - run: python scripts/install_mihomo_test.py
+      - run: |
+          go test -c -o /tmp/vgatebox-tests
+          sudo /tmp/vgatebox-tests -test.v
+        working-directory: vps/fanout
+      - name: Check diagnostic concurrency for races
+        run: go test -race -run 'Test(NetnsDNS|Automation|Checks|Health|IPPure|IPType|ProbePair|CheckSettings|Clash|ConnectBudget|ConnectObservations|CountryEvidence|ManualEntry|ThirdParty|Update|PoolRefresh|ConsoleDefaultTarget|ConsoleRefresh|ConsoleSource|PoolSource|Sstp|ExplicitHostDirect|PublicSocks|HostDirectSubscription|AccessStore|ShutdownPersistence|ShutdownWaits|NetworkLinks|Diagnostic128|ProductionNetwork|DynamicDiagnostic|Console128|ConsoleManual|ConsoleFullSource|ConsoleCheckSettings|ConsoleTwoWorkers|ConsoleCancellation|ConsoleParallelism|ConsoleCandidateQueue|ConsoleRunningCandidate|ConsoleShutdown|DiagnosticLease|CancelledProduction|DiagnosticBusy|CandidateReuse|Preflight|TCPPreflight|Schema|SlotHealth|SharedDB|FlushRemoves)' ./...
+        working-directory: vps/fanout
+      - name: Verify uninstall with real isolated network resources
+        run: sudo python3 tests/uninstall_linux.py
+      - name: Verify uninstall stop and reset with real systemd
+        run: sudo --preserve-env=GITHUB_ACTIONS python3 tests/uninstall_systemd.py
+      - run: bash -n vps/install.sh vps/deploy/vgatebox
+      - name: Build the package from this tested commit
+        env:
+          TAG_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          PACKAGE_VERSION="${TAG_VERSION:-${INPUT_VERSION:-dev}}"
+          [[ "$PACKAGE_VERSION" =~ ^(dev|v[0-9]+\.[0-9]+\.[0-9]+)$ ]]
+          if [[ -n "$TAG_VERSION" && "$PACKAGE_VERSION" != "$TAG_VERSION" ]]; then echo "version/tag mismatch"; exit 1; fi
+          python scripts/build_vps_package.py --version "$PACKAGE_VERSION" --xray-archive ${{ runner.temp }}/xray-archive/Xray-linux-64.zip
+          cp vps/install.sh dist/install.sh
+          cp vps/deploy/uninstall.py dist/uninstall.py
+          test -s dist/install.sh
+          test -s dist/uninstall.py
+          bash -n dist/install.sh
+          python3 -c "compile(open('dist/uninstall.py','rb').read(), 'uninstall.py', 'exec')"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: vgatebox-linux-amd64
+          path: dist/
+
+  distro-install:
+    name: Install ${{ matrix.image }}
+    needs: vps
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['debian:12', 'debian:13', 'ubuntu:22.04', 'ubuntu:24.04']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v5
+        with:
+          name: vgatebox-linux-amd64
+          path: dist/
+      - run: bash tests/distro_install.sh "${{ matrix.image }}"
+        env:
+          VGB_TEST_CLIENT: ${{ matrix.image == 'debian:12' && 'mihomo' || '' }}
+
+  mirror-source:
+    if: github.event_name == 'workflow_dispatch' && inputs.live_mirror
+    needs: vps
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python3 tests/live_mirror_builder.py
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [vps, distro-install]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: vgatebox-linux-amd64
+          path: package
+      - name: Validate tested package and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          (cd package && sha256sum --check checksums.txt)
+          test -s package/install.sh
+          test -s package/uninstall.py
+          bash -n package/install.sh
+          python3 -c "compile(open('package/uninstall.py','rb').read(), 'uninstall.py', 'exec')"
+          python3 - <<'PYCODE'
+          import hashlib,json,os,pathlib,tarfile
+          with tarfile.open('package/vgatebox-linux-amd64.tar.gz') as t:
+              members=t.getmembers()
+              assert all(m.isfile() or m.isdir() for m in members), 'Unexpected archive entry'
+              assert all(not pathlib.PurePosixPath(m.name).is_absolute() and '..' not in pathlib.PurePosixPath(m.name).parts for m in members), 'Unsafe archive path'
+              assert len({m.name for m in members})==len(members), 'Duplicate archive entry'
+              files={m.name:t.extractfile(m).read() for m in members if m.isfile()}
+          sums=json.loads(files['package-sha256.json'])
+          assert set(sums)==set(files)-{'package-sha256.json'}, 'Incomplete package manifest'
+          assert all(hashlib.sha256(files[n]).hexdigest()==h for n,h in sums.items()), 'Package member mismatch'
+          build=json.loads(files['BUILD.json'])
+          assert files['VERSION'].decode().strip()==os.environ['RELEASE_TAG']==build['version'], 'Package version does not match release tag'
+          assert build['git_head']==os.environ['SOURCE_SHA'], 'Package is from another commit'
+          assert build['source_dirty'] is False and build['manager_origin']=='built_from_source', 'Release requires a clean source build'
+          PYCODE
+          if ! gh release view "$RELEASE_TAG" --json isDraft,targetCommitish > existing-release.json; then
+            gh release create "$RELEASE_TAG" --draft --title "vgatebox $RELEASE_TAG" --notes 'VPS Standalone. See repository README for installation and validation limits.'
+            gh release view "$RELEASE_TAG" --json isDraft,targetCommitish > existing-release.json
+          fi
+          python3 - <<'PYCODE'
+          import json
+          release=json.load(open('existing-release.json'))
+          assert release['isDraft'], 'Refusing to overwrite a published release'
+          PYCODE
+          gh release upload "$RELEASE_TAG" package/vgatebox-linux-amd64.tar.gz package/checksums.txt package/install.sh package/uninstall.py --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest

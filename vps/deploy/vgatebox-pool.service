@@ -1,0 +1,24 @@
+[Unit]
+Description=vgatebox shared candidate pool builder
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/vgatebox/scripts/toolbox.py --config /etc/vgatebox/pool.json pool --output /var/lib/vgatebox/pool --schedule-dir /var/lib/vgatebox/fanout/state --scheduled
+TimeoutStartSec=120
+UMask=0077
+# 与 fanout 主服务同套沙箱（写集合是其子集：读 /etc/vgatebox，
+# 写 pool 输出目录与 state/ 的 refresh-state.json）。
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=read-only
+ProtectSystem=strict
+RuntimeDirectory=netns
+RuntimeDirectoryMode=0755
+ReadWritePaths=/var/lib/vgatebox /etc/vgatebox /etc/netns /var/lib/vgatebox-deploy /var/backups/vgatebox
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+ProtectHostname=yes
+ProtectClock=yes
