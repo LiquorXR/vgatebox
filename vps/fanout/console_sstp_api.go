@@ -164,7 +164,7 @@ func (s *SstpManager) apiExport(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Unlock()
 	if len(rows) == 0 {
-		http.Error(w, "所选范围内没有仍有效的 VPS SSTP 实测结果", 409)
+		http.Error(w, "所选范围内没有仍有效的 VPS SSTP 实测结果", http.StatusConflict)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")

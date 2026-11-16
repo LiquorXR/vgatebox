@@ -27,12 +27,12 @@
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.10.0",
     "@vitejs/plugin-vue": "^6.0.10",
-    "@vue/test-utils": "^2.5.1",
+    "@vue/test-utils": "^2.4.11",
     "happy-dom": "^21.0.4",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
     "vite": "^7.3.7",
-    "vitest": "^3.2.7",
+    "vitest": "^5.1.0",
     "vue-tsc": "^3.3.14"
   }
 }

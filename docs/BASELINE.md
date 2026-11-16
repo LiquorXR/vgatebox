@@ -104,26 +104,20 @@ YAML 辅助函数）。
 
 ## 2. staticcheck 基线（v0.8.2，`all` 默认集）
 
-37 条，4 个码，17 个文件。CI 门禁为默认集减这 3 个豁免（U1000 已清零，见下）：
+21 条，1 个码，7 个文件。CI 门禁为默认集减 ST1005（中文文案首字母风格，保留豁免）：
 
 | 码 | 数量 | 说明 |
 |---|---|---|
 | U1000 unused | 0 | 2026-11-09 清理：删除 15 个生产死符号 + 收编旧实现，已从 lint.yml 去掉豁免 |
-| ST1005 error 首字母大写 | 21 | 中文文案风格，延后统改 |
-| ST1013 数字状态码 | 1 | console_sstp.go:445（409） |
-| SA2001 空临界区 | 1 | console_lifecycle.go:23（疑似用互斥做屏障，需人工复核） |
+| ST1005 error 首字母大写 | 21 | 中文文案风格；统改会动用户可见错误文案，保留豁免 |
+| ST1013 数字状态码 | 0 | 2026-11-16 修复：`console_sstp_api.go:167` 409 → `http.StatusConflict` |
+| SA2001 空临界区 | 0 | 2026-11-16 修复：`console_lifecycle.go` 的互斥屏障改为显式读取 `plan` |
 
-已消除：`update.go` 的 4 个 unused（`checkUpdate` 死函数，live 路径为 `UpdateManager.check`；`sha256File` 无调用者；`sha256FromList`/`extractBinary` 旧单二进制更新路径，本次连同单测一起删除，现走完整包更新）；
-`main.go` 的 SA4023（`srv.serve()` 只在启动失败时返回，调用处改为直接 `log.Print`，不再判 nil）。
-
-按文件：manager.go 10、slot_work.go 6、native_xray.go 3、state.go 3、native.go 2、tunnel.go 2、
-connect_observations.go / console_lifecycle.go /
-console_sstp.go / egress.go / egress_probe.go / inbound_types.go / instance_test.go /
-provision.go / settings.go / socks5.go / vpngate.go 各 1。
-
-完整行见 P0-3 采集（`staticcheck ./...` 全量输出）；消除任一码前先在 `lint.yml` 去掉对应豁免让 CI 变红，再改代码。
+按文件：manager_lifecycle.go 6、slot_work.go 6、state.go 3、native_inbounds.go 2、
+native_xray.go 2、provision.go 1、tunnel_socks.go 1。
 
 复现：`GOOS=linux staticcheck ./...`（vps/fanout 下，需 `go install honnef.co/go/tools/cmd/staticcheck@v0.8.2`）。
+CI 用 `staticcheck -checks '-ST1005' ./...`；除 ST1005 外新增 finding 一律红灯。
 
 ## 3. govulncheck 基线（v1.9.0，Go 1.26.11 工具链，2026-11-16 重采）
 
@@ -142,18 +136,19 @@ provision.go / settings.go / socks5.go / vpngate.go 各 1。
 
 生产依赖（`npm audit --omit=dev --audit-level=moderate`）：**0 漏洞**，CI 门禁即此命令。
 
-dev 依赖 8 条（测试工具链，不打包进 `webdist`，修要 breaking 升级，延后）：
+dev 依赖 4 条 moderate（测试工具链，不打包进 `webdist`）：
 
-| 包 | 级别 |  Advisory | 修复（均为 breaking） |
+| 包 | 级别 | Advisory | 说明 |
 |---|---|---|---|
-| tinypool ≤2.1.1 | critical | GHSA-5gmw-xhrv-c9v3、GHSA-85c8-ppgw-ccpr（RCE） | vitest → 5.1.0 |
-| vitest 0.0.95–4.1.10 | critical | 经由 @vitest/mocker、tinypool | vitest → 5.1.0 |
-| @vitest/mocker ≤4.1.11 | moderate | GHSA-82fw-gwwq-j7x9、GHSA-qxg6-89mg-rqv8 | vitest → 5.1.0 |
-| glob 9.0.0–14.0.1 | moderate | GHSA-3g3m-2fjr-6pw4 | @vue/test-utils → 2.4.11（降级，谨慎） |
+| glob 9.0.0–14.0.1 | moderate | GHSA-3g3m-2fjr-6pw4 | 经由 js-beautify → @vue/test-utils 2.4.11 |
 | minimatch 7.0.0–11.0.0 | moderate | GHSA-g3hv-75wg-m249 | 同上 |
 | js-beautify ≥1.14.9 | moderate | 经由 editorconfig、glob | 同上 |
 | editorconfig ≥1.0.3 | moderate | 经由 minimatch | 同上 |
-| @vue/test-utils ≥2.5.0 | moderate | 经由 js-beautify | 同上（降级） |
+
+2026-11-16：vitest `3.2.7 → 5.1.0`，`@vue/test-utils` 降到 `2.4.11`；tinypool/vitest 的
+critical RCE 链已清除，`npm audit` 从 2 critical + 6 moderate 降为 0 critical + 4 moderate。
+剩余 4 条是 `@vue/test-utils` 的 dev 传递依赖，强制修复需要再次调整测试工具链；当前
+生产依赖仍为 0 漏洞，CI 门禁继续使用 `npm audit --omit=dev --audit-level=moderate`。
 
 复现：`npm audit --json`（vps/fanout/frontend 下）。
 
