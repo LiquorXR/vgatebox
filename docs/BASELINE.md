@@ -102,6 +102,23 @@ YAML 辅助函数）。
   “容量预检”；不改变 `-max`，不阻止创建。
 - 新增 `TestFreeRandomPortExhausted` 与容量估算表驱动测试。
 
+### 1.4 当前基线汇总（2026-11-16，代码采集自 `d5757bd`）
+
+| 指标 | 当前值 | 口径 |
+|---|---|---|
+| 图谱规模 | 4,518 节点 / 21,605 边 | codebase-memory-mcp |
+| Go 生产/测试行数 | 18,846 / 12,857 | git 跟踪文件 |
+| Go 测试函数 | 454 | `func Test/Fuzz/Benchmark` |
+| Python 测试函数 | 123 | `def test_` |
+| 前端用例 | 73 | Vitest 5.1.0 |
+| `runFanout` | 51 行 / 9 / 9 | 图谱 Function |
+| 生产函数 complexity ≥ 20 | **0** | 图谱 Function |
+| 调用环 | 3 | 清理互锁、自动化重试、YAML 互调 |
+| 路由契约 | 62/62 | `TestAPIContract` 源码覆盖；图谱 HANDLES 30/62 |
+| staticcheck | 21 条 ST1005 | 仅保留中文文案豁免 |
+| govulncheck | 0 | Go 1.26.11 |
+| npm audit | 生产 0 / dev 4 moderate | Vitest 5.1.0 + @vue/test-utils 2.4.11 |
+
 ## 2. staticcheck 基线（v0.8.2，`all` 默认集）
 
 21 条，1 个码，7 个文件。CI 门禁为默认集减 ST1005（中文文案首字母风格，保留豁免）：
@@ -162,10 +179,14 @@ critical RCE 链已清除，`npm audit` 从 2 critical + 6 moderate 降为 0 cri
 | govulncheck | v1.9.0 | `go install golang.org/x/vuln/cmd/govulncheck@v1.9.0` |
 | Node | 22（frontend engines ≥22.12） | npm audit 在此版本下采集 |
 
-## 6. 待观察（2026-11-07 实测回填）
+## 6. 工具观察（2026-11-16 更新）
 
 - `nightly-race.yml` 全量 `-race`：#2 手动跑 1分36秒通过（阈值 `-test.timeout 30m` / job 45m 富余充足）。
 - `lint.yml` CI runner 实测（总数 53秒）：`go-vet 20秒 / staticcheck 50秒 / govulncheck 46秒 / npm-audit 7秒`，缓存命中正常。
 - `e2e.yml` 手动跑 #24 59秒、#25 1分15秒通过；`vps.yml` 主作业 4分50秒、`test.yml` 29秒通过。
 - 本地 Windows 无法执行 Go 单测（二进制含 `unix.PidfdOpen` 等 Linux-only 代码，改前即如此）；
   本地门禁 = `GOOS=linux go vet` + 交叉编译 + 各门禁脚本的本地复跑，完整执行在 Linux CI。
+- `codebase-memory-mcp` 索引的已知缺口（2026-11-16）：`vps/deploy` 被工具 skip-list 整棵排除；
+  `src/styles/main.css` 的 Tailwind `@custom-variant`（第 5 行）局部解析失败；62 条路由中
+  HANDLES 仅归因 30 条（闭包构造器）。三者都不影响 `TestAPIContract` 的 62/62 源码级覆盖，
+  安装器/卸载器由 `tests/test_installer.py`、`tests/test_uninstall.py` 覆盖。
