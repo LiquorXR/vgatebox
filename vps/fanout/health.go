@@ -361,7 +361,8 @@ func (m *Manager) reconnectTo(t *Tunnel, oldHost string, node *Node, cause strin
 	if cause != "" {
 		reason = cause
 	}
-	t.Status, t.Err, t.ExitIP = "starting", reason, ""
+	t.setPhaseLocked(slotStarting)
+	t.Err, t.ExitIP = reason, ""
 	t.nextRetryAt = time.Time{}
 	if node != nil {
 		t.Node = *node

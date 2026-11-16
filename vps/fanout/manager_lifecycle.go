@@ -118,7 +118,7 @@ func (m *Manager) bringUpPersistContext(t *Tunnel, notify, persist bool, ctx con
 				return
 			}
 			t.mu.Lock()
-			t.Status = "waiting_for_nodes"
+			t.setPhaseLocked(slotWaitingForNodes)
 			t.nextRetryAt = time.Time{}
 			t.mu.Unlock()
 			if serr := m.saveState(); serr != nil {
@@ -128,7 +128,7 @@ func (m *Manager) bringUpPersistContext(t *Tunnel, notify, persist bool, ctx con
 		}
 
 		t.mu.Lock()
-		t.Status = "waiting_for_nodes"
+		t.setPhaseLocked(slotWaitingForNodes)
 		t.Err = fmt.Sprintf("暂无符合策略的节点，%.0f 秒后重试", backoff.Seconds())
 		t.nextRetryAt = time.Now().Add(backoff)
 		t.mu.Unlock()

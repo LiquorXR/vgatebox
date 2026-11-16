@@ -108,13 +108,13 @@ type Tunnel struct {
 	// vpnRemotes 是建链时解析的远端集合（killswitch 放行依据），
 	// killswitchRefreshedAt 是上次增量刷新时间。运行期 DNS 轮换只增量
 	// 加规则；拆除时按此快照删，保证旧规则不残留。
-	vpnRemotes              []vpnRemote
-	killswitchRefreshedAt   time.Time
+	vpnRemotes            []vpnRemote
+	killswitchRefreshedAt time.Time
 }
 
 // servingStatus 隧道是否在出网服务：up 与 degraded 都接受新连接，
 // 区别只在 degraded 正被健康检查观察、持续不达标会升级为重连。
-func servingStatus(s string) bool { return s == "up" || s == "degraded" }
+func servingStatus(s string) bool { return slotPhase(s).serving() }
 
 // prevHostOf 读"换节点未收尾"标记。
 func (t *Tunnel) prevHostOf() string {
@@ -301,7 +301,7 @@ func (t *Tunnel) stopWithCleanup(cleanup func()) {
 	t.opMu.Lock()
 	defer t.opMu.Unlock()
 	t.mu.Lock()
-	t.Status = "stopped"
+	t.setPhaseLocked(slotStopped)
 	t.mu.Unlock()
 	if t.listener != nil {
 		t.listener.Close()

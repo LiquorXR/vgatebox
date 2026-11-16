@@ -5,7 +5,7 @@ package main
 // 契约三方：
 //  1. vps/fanout/routes.go 的 allAPIRoutes()（代码里的表）；
 //  2. vps/fanout/testdata/api/routes.json（金样本）；
-//  3. main.go / console*.go 里的 mux.HandleFunc 注册点（实际行为）。
+//  3. boot.go / console*.go 里的 mux.HandleFunc 注册点（实际行为）。
 //
 // 改路由的正确流程：改 allAPIRoutes()，跑
 // VGATEBOX_UPDATE_API_GOLDEN=1 go test -run TestAPIContract ./...,
@@ -32,7 +32,7 @@ type apiGoldenDoc struct {
 }
 
 var apiRouteFiles = []string{
-	"main.go",
+	"boot.go",
 	"console_api.go",
 	"console_sstp_api.go",
 	"console_third_party.go",

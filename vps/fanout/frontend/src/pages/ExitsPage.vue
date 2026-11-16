@@ -5,7 +5,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { post, queryString } from "@/api/client";
 import { keys, useConsoleQuery, useExitsQuery, useNodesQuery } from "@/api/queries";
-import type { Exit, ExitInbound, ExitPlan, SlotPolicy } from "@/api/types";
+import type { Exit, ExitInbound, SlotPolicy } from "@/api/types";
 import DialogShell from "@/components/DialogShell.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import EmptyState from "@/components/EmptyState.vue";
@@ -18,8 +18,9 @@ import SkeletonBlock from "@/components/SkeletonBlock.vue";
 import Spinner from "@/components/Spinner.vue";
 import StatusBadge from "@/components/StatusBadge.vue";
 import UiButton from "@/components/UiButton.vue";
+import ExitTargetDialog from "@/pages/exit/ExitTargetDialog.vue";
 import { countryName, formatDateTime, formatLatency, formatRelative, pad2 } from "@/lib/format";
-import { initialTarget } from "@/lib/plan";
+import { clonePolicy, defaultPolicy } from "@/lib/policy";
 import { toast, toastError } from "@/lib/toast";
 import {
   countryTag,
@@ -35,37 +36,6 @@ import {
   ipTypeLabels,
   phaseLabels,
 } from "@/lib/status";
-
-const ALL_TYPES = Object.keys(ipTypeLabels);
-
-function normalizeTypes(types: string[] | undefined): string[] {
-  const out = new Set<string>();
-  for (const type of types || []) {
-    if (type === "strict_residential" || type === "residential") out.add("strict_residential");
-    else out.add("unknown");
-  }
-  if (!out.size) out.add("unknown");
-  return [...out];
-}
-
-function clonePolicy(value: SlotPolicy): SlotPolicy {
-  const copy = JSON.parse(JSON.stringify(value)) as SlotPolicy;
-  copy.allowed_ip_types = normalizeTypes(copy.allowed_ip_types);
-  return copy;
-}
-
-function defaultPolicy(country = ""): SlotPolicy {
-  return {
-    country,
-    allowed_ip_types: [...ALL_TYPES],
-    preferred_isp: [],
-    allowed_isp: [],
-    blocked_isp: [],
-    allowed_asn: [],
-    blocked_asn: [],
-    maximum_latency_ms: 0,
-  };
-}
 
 const route = useRoute();
 const router = useRouter();
@@ -176,58 +146,13 @@ function lastExitText(exit: Exit): string | null {
 
 // Target dialog
 const targetOpen = ref(false);
-const targetCount = ref(6);
-const targetCountry = ref("");
-const targetServer = ref("www.tesla.com");
-const confirmTargetOpen = ref(false);
-const pendingSave = ref<(() => Promise<void>) | null>(null);
 
 function openTarget() {
-  const s = summary.value;
-  if (!s) {
+  if (!summary.value) {
     toast("请等待状态读取完成");
     return;
   }
-  targetCount.value = initialTarget(s);
-  targetCountry.value = s.plan?.policy?.country || "";
-  targetServer.value = s.plan?.server_name || s.default_server_name || "www.tesla.com";
   targetOpen.value = true;
-}
-
-const targetMutation = useMutation({
-  mutationFn: async () => {
-    const count = Math.max(0, Math.trunc(Number(targetCount.value)));
-    if (!Number.isFinite(count) || count < 0 || count > (summary.value?.capacity || 0)) {
-      throw new Error(`出口数量须为 0–${summary.value?.capacity || 0}`);
-    }
-    const base = summary.value?.plan?.policy;
-    const policy: SlotPolicy = base ? clonePolicy(base) : defaultPolicy();
-    policy.country = targetCountry.value.trim().toUpperCase();
-    const serverName = targetServer.value.trim().toLowerCase();
-    if (!serverName || !serverName.includes(".")) throw new Error("REALITY 目标须为有效域名");
-    const body: ExitPlan = { count, policy, server_name: serverName };
-    return post("api/console/target", body);
-  },
-  onSuccess: () => {
-    toast("目标数量已保存，正在按策略连接", { tone: "success" });
-    targetOpen.value = false;
-    confirmTargetOpen.value = false;
-    void queryClient.invalidateQueries({ queryKey: keys.console });
-    void queryClient.invalidateQueries({ queryKey: keys.exits });
-  },
-  onError: (error) => toastError(error, "保存出口数量失败"),
-});
-
-function submitTarget() {
-  const count = Math.max(0, Math.trunc(Number(targetCount.value)));
-  if (count < allocated.value) {
-    pendingSave.value = async () => {
-      await targetMutation.mutateAsync();
-    };
-    confirmTargetOpen.value = true;
-    return;
-  }
-  targetMutation.mutate();
 }
 
 // Check all
@@ -315,49 +240,6 @@ const countryOptions = computed(() => {
   if (policyForm.country) map.set(policyForm.country, countryName(policyForm.country));
   return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "zh-CN"));
 });
-
-const targetRegionOptions = computed(() => {
-  const stats = summary.value?.regions || [];
-  const options = stats.length
-    ? stats.map((region) => ({
-        code: region.code,
-        name: region.name || countryName(region.code),
-        available: region.available,
-        best_ping: region.best_ping,
-        best_speed_mbps: region.best_speed_mbps,
-      }))
-    : countryOptions.value.map(([code, name]) => ({
-        code,
-        name,
-        available: 0,
-        best_ping: 0,
-        best_speed_mbps: 0,
-      }));
-  if (targetCountry.value && !options.some((region) => region.code === targetCountry.value)) {
-    options.push({
-      code: targetCountry.value,
-      name: countryName(targetCountry.value),
-      available: 0,
-      best_ping: 0,
-      best_speed_mbps: 0,
-    });
-  }
-  return options;
-});
-
-function regionOptionLabel(region: {
-  name: string;
-  code: string;
-  available: number;
-  best_ping: number;
-  best_speed_mbps: number;
-}): string {
-  let label = `${region.name}（${region.code}）`;
-  if (region.available > 0) label += ` · ${region.available} 个空闲`;
-  if (region.best_ping > 0) label += ` · ${region.best_ping}ms`;
-  if (region.best_speed_mbps > 0) label += ` · ${region.best_speed_mbps}Mbps`;
-  return label;
-}
 
 function populateDrawer(exit: Exit | null) {
   for (const key of Object.keys(nameEdits)) delete nameEdits[Number(key)];
@@ -681,54 +563,11 @@ const statusOptions = [
       </div>
     </Panel>
 
-    <DialogShell
-      :open="targetOpen"
-      title="调整 VPN Gate 数量"
-      description="按服务器资源和上游供给设置目标；候选不足时会保留策略等待。"
-      size="md"
-      @update:open="targetOpen = $event"
-    >
-      <form class="space-y-4" @submit.prevent="submitTarget">
-        <label class="block">
-          <span class="mb-1 block text-xs font-medium text-ink">目标数量</span>
-          <input v-model.number="targetCount" name="target-count" type="number" inputmode="numeric" min="0" :max="summary?.capacity || 0" required class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
-          <span class="mt-1 block text-[11px] text-faint">当前已分配 {{ allocated }} 个；设为 0 会移除全部活动出口。</span>
-        </label>
-        <div class="grid gap-3 sm:grid-cols-2">
-          <label class="block">
-            <span class="mb-1 block text-xs font-medium text-ink">新增出口国家</span>
-            <select v-model="targetCountry" name="target-country" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent">
-              <option value="">自动选择</option>
-              <option v-for="region in targetRegionOptions" :key="region.code" :value="region.code">
-                {{ regionOptionLabel(region) }}
-              </option>
-            </select>
-            <span class="mt-1 block text-[11px] text-faint">空闲数量是当前候选库存，不代表已通过检测。</span>
-          </label>
-          <label class="block">
-            <span class="mb-1 block text-xs font-medium text-ink">REALITY 目标域名</span>
-            <input v-model="targetServer" name="target-server" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
-            <span class="mt-1 block text-[11px] text-faint">默认 {{ summary?.default_server_name || "www.tesla.com" }}。</span>
-          </label>
-        </div>
-        <div v-if="targetCount < allocated" class="rounded-lg border border-warn/25 bg-warn-soft px-3 py-2 text-xs leading-relaxed text-warn">
-          目标数量低于当前分配数，将从编号最大的出口开始移除，相关连接会中断。
-        </div>
-        <div class="flex justify-end gap-2 pt-1">
-          <UiButton variant="ghost" @click="targetOpen = false">取消</UiButton>
-          <UiButton type="submit" variant="primary" :loading="targetMutation.isPending.value">保存并应用</UiButton>
-        </div>
-      </form>
-    </DialogShell>
-
-    <ConfirmDialog
-      :open="confirmTargetOpen"
-      title="确认减少出口数量"
-      :description="`将从编号最大的出口开始移除，目标数量为 ${targetCount} 个；正在使用的连接会中断。`"
-      confirm-label="确认移除"
-      :busy="targetMutation.isPending.value"
-      @update:open="confirmTargetOpen = $event"
-      @confirm="pendingSave?.()"
+    <ExitTargetDialog
+      v-model:open="targetOpen"
+      :summary="summary"
+      :allocated="allocated"
+      :country-options="countryOptions"
     />
 
     <DialogShell

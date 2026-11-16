@@ -264,7 +264,7 @@ func prepareRestoredTunnels(st *persistedState, nodes []Node) ([]*Tunnel, error)
 		}
 		t.setPrevHost(bindingHost)
 		if p.Stopped {
-			t.Status = "stopped"
+			t.setPhase(slotStopped)
 		}
 		tunnels = append(tunnels, t)
 	}

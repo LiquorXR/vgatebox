@@ -38,6 +38,14 @@ python3 scripts/install_xray.py
 python3 -m unittest discover -s tests -v
 ```
 
+本地可用一条命令跑门禁：
+
+```sh
+sh scripts/check.sh
+```
+
+Linux 上会执行完整 Go/Python 测试；Windows/macOS 只执行 `GOOS=linux` 交叉编译检查与前端测试，Linux-only 的 netns/pidfd/权限用例交给 CI。
+
 Python 检查解析、证据一致性、异常响应、证书拒绝、订阅清理、私密性、锁和进程清理。新控制台的纯逻辑和页面集成流程由 Vitest 检查。Linux Go 测试包含网络隔离、出口生命周期、阻断及并发检查。合成测试与真实 VPN 节点验收分别记录，不因前者通过而认定后者可用。
 
 Go fuzz（`vps/fanout/fuzz_test.go`，纯函数无网络磁盘）：`clashProxy`、`normalizePolicy`、`normalizeInboundSpec`，平时 `go test` 只跑种子语义断言；延长跑 `go test -fuzz=FuzzClashProxy -fuzztime=5m vps/fanout`（余类推），每夜全量 race 会带上种子部分。

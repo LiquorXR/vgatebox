@@ -21,7 +21,7 @@ type apiRoute struct {
 }
 
 // allAPIRoutes 返回全部后端路由契约，按 path 排序。
-// main.go 的 37 条 + Console 的 15 条 + SstpManager 的 5 条 +
+// boot.go 的 37 条 + Console 的 15 条 + SstpManager 的 5 条 +
 // ThirdPartyManager 的 5 条 = 62 条。
 func allAPIRoutes() []apiRoute {
 	return []apiRoute{

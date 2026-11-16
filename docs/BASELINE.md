@@ -31,6 +31,25 @@ GOOS=linux go test -c -o /tmp/check .                     # 含 TestAPIContract 
 VGATEBOX_UPDATE_API_GOLDEN=1 GOOS=linux go test -run TestAPIContract .  # 金样本自重写（与 routes.go 同源）
 ```
 
+### 1.1 启动拆分后（2026-11-16，分支 `refactor/boot-phases`）
+
+| 指标 | 拆分前 | 拆分后 | 口径 |
+|---|---|---|---|
+| `runFanout()` | 238 行 / 复杂度 41 / 认知 44（§1 基线记录） | 51 行 / 9 / 9（main.go） | 图谱 Function 节点 |
+| `bootstrapHost()` | — | 49 行 / 12 / 13（boot.go） | 图谱 Function 节点 |
+| `initControl()` | — | 31 行 / 7 / 9 | 图谱 Function 节点 |
+| `initHTTP()` + `registerRoutes()` | — | 32 / 4 / 4 + 40 / 0 / 0 | 图谱 Function 节点 |
+| `installShutdownHandler()` + `serveUntilSignal()` | — | 13 / 1 / 1 + 4 / 0 / 0 | 图谱 Function 节点 |
+
+启动顺序、日志文案与退出码不变；`boot_test.go` 覆盖默认值、显式 flag、未知 flag、
+`-h`、容量边界、`FANOUT_PUBLIC_IP` 回退、`-version` 与 `-check-state`。
+本表在 BASELINE 全量重采时并入 §1 的总表，并注明新提交号。
+
+B1（Slot 状态类型）同步落地：`slot_phase.go` 定义 `starting/up/degraded/blocked/
+waiting_for_nodes/failed/stopped` 转换表，生产代码 14 处直接 `Status` 写入收敛为
+`setPhaseLocked`/`setPhase`；转换表见 ADR-0008。B1 目前只记录非法边，
+换节点控制器（B2）完成后再改为硬失败。
+
 ## 2. staticcheck 基线（v0.8.2，`all` 默认集）
 
 37 条，4 个码，17 个文件。CI 门禁为默认集减这 3 个豁免（U1000 已清零，见下）：

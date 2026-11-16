@@ -31,9 +31,10 @@ vps/fanout/frontend/
   src/
     api/                typed client、查询键、接口类型
     components/         AppShell、导航、表格、对话框、Toast
-    lib/                状态词表、格式化、订阅 URL、主题、计划默认值
+    lib/                状态词表、格式化、订阅 URL、主题、计划与策略默认值
     login/              登录页
     pages/              总览、出口、节点池、订阅、接入、设置
+    pages/exit/         出口页拆出的对话框（目标数量）
     styles/             设计 token 与基础样式
   vite.config.ts        多入口、base './'、输出到 webdist
   webdist/.gitkeep      保证未构建时 Go 仍可编译

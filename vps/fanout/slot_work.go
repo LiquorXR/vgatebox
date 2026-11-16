@@ -32,7 +32,7 @@ func (t *Tunnel) blockWork() {
 	}
 	t.validating = false
 	if t.Status != "stopped" {
-		t.Status = "starting"
+		t.setPhaseLocked(slotStarting)
 	}
 	clients := make([]net.Conn, 0, len(t.clients))
 	for c := range t.clients {
@@ -48,7 +48,8 @@ func (t *Tunnel) blockForPolicy(reason string) {
 	t.blockWork()
 	t.mu.Lock()
 	if t.Status != "stopped" {
-		t.Status, t.Err = "blocked", reason
+		t.setPhaseLocked(slotBlocked)
+		t.Err = reason
 	}
 	t.mu.Unlock()
 }
@@ -59,7 +60,8 @@ func (t *Tunnel) blockForPolicy(reason string) {
 func (t *Tunnel) markDegraded(reason string) {
 	t.mu.Lock()
 	if t.Status == "up" || t.Status == "degraded" {
-		t.Status, t.Err = "degraded", reason
+		t.setPhaseLocked(slotDegraded)
+		t.Err = reason
 	}
 	t.mu.Unlock()
 }
@@ -89,7 +91,8 @@ func (t *Tunnel) markRecovered(latency float64) {
 	t.absorbLatency(latency)
 	t.mu.Lock()
 	if t.Status == "degraded" {
-		t.Status, t.Err = "up", ""
+		t.setPhaseLocked(slotUp)
+		t.Err = ""
 		t.probeStage, t.probeStageAt = "", time.Time{}
 	}
 	t.mu.Unlock()
@@ -175,7 +178,8 @@ func (m *Manager) claimNode(t *Tunnel, node Node, ctx context.Context) bool {
 	if t.Status == "stopped" || ctx.Err() != nil {
 		return false
 	}
-	t.Node, t.Status = node, "starting"
+	t.Node = node
+	t.setPhaseLocked(slotStarting)
 	t.nextRetryAt = time.Time{}
 	return true
 }
@@ -205,7 +209,8 @@ func (m *Manager) publishUp(t *Tunnel, ctx context.Context) bool {
 	if ctx.Err() != nil || t.workCtx != ctx || t.Status == "stopped" || t.egress == nil {
 		return false
 	}
-	t.Status, t.Err = "up", ""
+	t.setPhaseLocked(slotUp)
+	t.Err = ""
 	// 完整验活通过：记下上次可用出口，重连清空 ExitIP 后界面仍可展示。
 	if ip != "" {
 		t.lastExitIP, t.lastExitAt = ip, time.Now()
@@ -274,9 +279,9 @@ func (m *Manager) setSlotPolicyLocked(t *Tunnel, normalized SlotPolicy) error {
 		t.Policy = &old
 		t.previousPolicy = oldPrevious
 		if stopped {
-			t.Status = "stopped"
+			t.setPhaseLocked(slotStopped)
 		} else {
-			t.Status = "blocked"
+			t.setPhaseLocked(slotBlocked)
 		}
 		t.Err = "策略保存失败，Slot 保持阻断"
 		t.mu.Unlock()
@@ -314,7 +319,7 @@ func (m *Manager) Resume(slot int) error {
 		return fmt.Errorf("Slot 已在运行或连接中")
 	}
 	t.mu.Lock()
-	t.Status = "starting"
+	t.setPhaseLocked(slotStarting)
 	t.mu.Unlock()
 	t.clearFlap()
 	t.clearSpeculation()
