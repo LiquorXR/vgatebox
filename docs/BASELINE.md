@@ -56,6 +56,11 @@ B2（换节点分派器 + 单 worker 队列）同步落地：`rotation.go` 引�
 图谱换节点调用环已消失（cycles 4 → 3，剩余为清理互锁、自动化重试与
 YAML 辅助函数）。
 
+前端 C1 同步落地：`ExitsPage.vue` 从 863 行降到 387 行；目标对话框
+`ExitTargetDialog.vue`（186 行）、详情抽屉 `ExitDetailDrawer.vue`（350 行）、
+策略/倒计时逻辑分别在 `lib/policy.ts` 与 `lib/exit-time.ts`。Vitest 从
+66 增至 73 个用例。
+
 ## 2. staticcheck 基线（v0.8.2，`all` 默认集）
 
 37 条，4 个码，17 个文件。CI 门禁为默认集减这 3 个豁免（U1000 已清零，见下）：
