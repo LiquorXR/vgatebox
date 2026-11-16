@@ -55,22 +55,56 @@ func containsFold(values []string, value string) bool {
 }
 
 func normalizePolicy(p SlotPolicy) (SlotPolicy, error) {
-	p.Country = strings.ToUpper(strings.TrimSpace(p.Country))
-	if p.Country != "" && !policyCountry.MatchString(p.Country) {
-		return p, fmt.Errorf("国家必须是两位代码或留空")
+	if err := normalizePolicyCountry(&p); err != nil {
+		return p, err
 	}
 	if p.MaximumLatencyMS < 0 || p.MaximumLatencyMS > 120000 {
 		return p, fmt.Errorf("延迟上限必须为 0..120000 毫秒，0 表示不限")
 	}
-	if len(p.AllowedIPTypes) > 100 {
-		return p, fmt.Errorf("策略列表最多 100 项")
+	types, err := normalizePolicyTypes(p.AllowedIPTypes)
+	if err != nil {
+		return p, err
+	}
+	p.AllowedIPTypes = types
+	for _, field := range []struct {
+		value *[]string
+		asn   bool
+	}{
+		{&p.PreferredISP, false},
+		{&p.AllowedISP, false},
+		{&p.BlockedISP, false},
+		{&p.AllowedASN, true},
+		{&p.BlockedASN, true},
+	} {
+		*field.value, err = normalizePolicyTextList(*field.value, field.asn)
+		if err != nil {
+			return p, err
+		}
+	}
+	if policyListsConflict(p.AllowedISP, p.BlockedISP) || policyListsConflict(p.AllowedASN, p.BlockedASN) {
+		return p, fmt.Errorf("同一值不能同时允许和阻止")
+	}
+	return p, nil
+}
+
+func normalizePolicyCountry(p *SlotPolicy) error {
+	p.Country = strings.ToUpper(strings.TrimSpace(p.Country))
+	if p.Country != "" && !policyCountry.MatchString(p.Country) {
+		return fmt.Errorf("国家必须是两位代码或留空")
+	}
+	return nil
+}
+
+func normalizePolicyTypes(raw []string) ([]string, error) {
+	if len(raw) > 100 {
+		return nil, fmt.Errorf("策略列表最多 100 项")
 	}
 	types := make([]string, 0, 2)
-	seenTypes := map[string]bool{}
-	for _, text := range p.AllowedIPTypes {
+	seen := map[string]bool{}
+	for _, text := range raw {
 		value := strings.TrimSpace(text)
 		if value == "" || len(value) > 200 || strings.ContainsAny(value, "\r\n\x00") {
-			return p, fmt.Errorf("策略列表包含无效值")
+			return nil, fmt.Errorf("策略列表包含无效值")
 		}
 		switch strings.ToLower(value) {
 		case "residential", "strict_residential":
@@ -79,48 +113,49 @@ func normalizePolicy(p SlotPolicy) (SlotPolicy, error) {
 			// Legacy non-strict values are retained as the only remaining fallback.
 			value = "unknown"
 		default:
-			return p, fmt.Errorf("未知 IP 类型: %s", value)
+			return nil, fmt.Errorf("未知 IP 类型: %s", value)
 		}
-		if !seenTypes[value] {
-			seenTypes[value] = true
+		if !seen[value] {
+			seen[value] = true
 			types = append(types, value)
 		}
 	}
 	if len(types) == 0 {
-		return p, fmt.Errorf("至少允许一种 IP 类型；unknown 必须显式允许")
+		return nil, fmt.Errorf("至少允许一种 IP 类型；unknown 必须显式允许")
 	}
-	p.AllowedIPTypes = types
-	lists := []*[]string{&p.PreferredISP, &p.AllowedISP, &p.BlockedISP, &p.AllowedASN, &p.BlockedASN}
-	for i, ptr := range lists {
-		if len(*ptr) > 100 {
-			return p, fmt.Errorf("策略列表最多 100 项")
+	return types, nil
+}
+
+func normalizePolicyTextList(raw []string, asn bool) ([]string, error) {
+	if len(raw) > 100 {
+		return nil, fmt.Errorf("策略列表最多 100 项")
+	}
+	out := make([]string, 0, len(raw))
+	for _, text := range raw {
+		value := strings.TrimSpace(text)
+		if value == "" || len(value) > 200 || strings.ContainsAny(value, "\r\n\x00") {
+			return nil, fmt.Errorf("策略列表包含无效值")
 		}
-		out := make([]string, 0, len(*ptr))
-		for _, text := range *ptr {
-			value := strings.TrimSpace(text)
-			if value == "" || len(value) > 200 || strings.ContainsAny(value, "\r\n\x00") {
-				return p, fmt.Errorf("策略列表包含无效值")
-			}
-			if i >= 3 {
-				value = strings.ToUpper(value)
-				if !policyASN.MatchString(value) {
-					return p, fmt.Errorf("ASN 必须使用 AS 加数字")
-				}
-			}
-			if !containsFold(out, value) {
-				out = append(out, value)
+		if asn {
+			value = strings.ToUpper(value)
+			if !policyASN.MatchString(value) {
+				return nil, fmt.Errorf("ASN 必须使用 AS 加数字")
 			}
 		}
-		*ptr = out
-	}
-	for _, pair := range [][2][]string{{p.AllowedISP, p.BlockedISP}, {p.AllowedASN, p.BlockedASN}} {
-		for _, value := range pair[0] {
-			if containsFold(pair[1], value) {
-				return p, fmt.Errorf("同一值不能同时允许和阻止")
-			}
+		if !containsFold(out, value) {
+			out = append(out, value)
 		}
 	}
-	return p, nil
+	return out, nil
+}
+
+func policyListsConflict(allowed, blocked []string) bool {
+	for _, value := range allowed {
+		if containsFold(blocked, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *Tunnel) policySnapshot() SlotPolicy {

@@ -40,8 +40,25 @@ func findXray(workDir string) (string, error) {
 // Every slot keeps its outbound identity when the backing node changes.
 // Unbound, unavailable and stale bindings are blocked, never sent via the host.
 func buildXrayConfig(inbounds []*nativeInbound, tunnels []*Tunnel) map[string]any {
+	bound, slots, bySlot := indexXrayTunnels(tunnels)
+	ins := buildXrayInbounds(inbounds, bySlot)
+	outs := buildXrayOutbounds(tunnels, inbounds)
+	rules := buildXrayRules(inbounds, bound, slots)
+	return map[string]any{
+		"log":       map[string]any{"loglevel": "warning"},
+		"inbounds":  ins,
+		"outbounds": outs,
+		"routing": map[string]any{
+			"domainStrategy": "AsIs",
+			"rules":          rules,
+		},
+	}
+}
+
+func indexXrayTunnels(tunnels []*Tunnel) (map[string]string, map[int]bool, map[int]*Tunnel) {
 	bound := map[string]string{}
 	slots := map[int]bool{}
+	bySlot := map[int]*Tunnel{}
 	for _, t := range tunnels {
 		if t.Slot > 0 {
 			slots[t.Slot] = true
@@ -49,12 +66,12 @@ func buildXrayConfig(inbounds []*nativeInbound, tunnels []*Tunnel) map[string]an
 				bound[sanitizeTag(host)] = slotOutboundTag(t.Slot)
 			}
 		}
-	}
-
-	bySlot := map[int]*Tunnel{}
-	for _, t := range tunnels {
 		bySlot[t.Slot] = t
 	}
+	return bound, slots, bySlot
+}
+
+func buildXrayInbounds(inbounds []*nativeInbound, bySlot map[int]*Tunnel) []any {
 	ins := make([]any, 0, len(inbounds))
 	for _, ib := range inbounds {
 		if !ib.Enable {
@@ -70,7 +87,10 @@ func buildXrayConfig(inbounds []*nativeInbound, tunnels []*Tunnel) map[string]an
 		}
 		ins = append(ins, nativeInboundJSON(ib))
 	}
+	return ins
+}
 
+func buildXrayOutbounds(tunnels []*Tunnel, inbounds []*nativeInbound) []any {
 	outs := slotOutbounds(tunnels)
 	for _, ib := range inbounds {
 		if thirdPartyBound(ib) && ib.Enable {
@@ -84,47 +104,45 @@ func buildXrayConfig(inbounds []*nativeInbound, tunnels []*Tunnel) map[string]an
 			break
 		}
 	}
+	return outs
+}
 
+func buildXrayRules(inbounds []*nativeInbound, bound map[string]string, slots map[int]bool) []any {
 	rules := []any{}
 	for _, ib := range inbounds {
 		if !ib.Enable {
 			continue
 		}
-		tag := bound[ib.BoundTo]
-		if ib.BoundSlot > 0 {
-			tag = ""
-			if slots[ib.BoundSlot] {
-				tag = slotOutboundTag(ib.BoundSlot)
-			}
-		}
-		if ib.HostDirect && ib.BoundSlot == 0 && ib.BoundTo == "" && ib.SocksSlot == 0 {
-			tag = "host-direct"
-		}
-		if ib.ThirdParty != nil {
-			tag = ""
-			if thirdPartyBound(ib) {
-				tag = thirdPartyTag(ib.ID)
-			}
-		}
-		if tag == "" {
-			tag = "block"
-		}
 		rules = append(rules, map[string]any{
 			"type":        "field",
 			"inboundTag":  []any{ib.tag()},
-			"outboundTag": tag,
+			"outboundTag": inboundOutboundTag(ib, bound, slots),
 		})
 	}
+	return rules
+}
 
-	return map[string]any{
-		"log":       map[string]any{"loglevel": "warning"},
-		"inbounds":  ins,
-		"outbounds": outs,
-		"routing": map[string]any{
-			"domainStrategy": "AsIs",
-			"rules":          rules,
-		},
+func inboundOutboundTag(ib *nativeInbound, bound map[string]string, slots map[int]bool) string {
+	tag := bound[ib.BoundTo]
+	if ib.BoundSlot > 0 {
+		tag = ""
+		if slots[ib.BoundSlot] {
+			tag = slotOutboundTag(ib.BoundSlot)
+		}
 	}
+	if ib.HostDirect && ib.BoundSlot == 0 && ib.BoundTo == "" && ib.SocksSlot == 0 {
+		tag = "host-direct"
+	}
+	if ib.ThirdParty != nil {
+		tag = ""
+		if thirdPartyBound(ib) {
+			tag = thirdPartyTag(ib.ID)
+		}
+	}
+	if tag == "" {
+		return "block"
+	}
+	return tag
 }
 
 // nativeInboundJSON 把一个入站转成 Xray 的 inbound 配置。

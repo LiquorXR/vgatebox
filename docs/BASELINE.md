@@ -87,10 +87,11 @@ YAML 辅助函数）。
 | `shareLink` | 24 → 1 | 传输、TLS、REALITY、加密参数分段 |
 | `handleSub` | 23 → 5 | 鉴权、target、订阅选项、响应写出分段 |
 | `dispatchCheckRun` | 23 → 12 | 入队、取消、空闲完成、诊断槽位分段 |
+| `normalizePolicy` | 21 → 6 | 国家、IP 类型、文本列表、冲突检查分段 |
+| `buildXrayConfig` | 20 → 0 | 隧道索引、入站、出站、路由规则、tag 归因分段 |
+| `mirror_source.fetch_mirror` | 22 → 2 | 索引解析、快照年龄、回滚、下载校验分段 |
 
-生产函数 complexity ≥ 20 的数量从 11 降到 3；剩余为
-`mirror_source.fetch_mirror`（22）、`normalizePolicy`（21）、
-`buildXrayConfig`（20）。
+生产函数 complexity ≥ 20 的数量从 11 降到 **0**。
 
 ## 2. staticcheck 基线（v0.8.2，`all` 默认集）
 
