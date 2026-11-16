@@ -191,6 +191,9 @@ type controlRuntime struct {
 // 临时检测清理 → 状态恢复 → 首装 Slot → 内置接入恢复。
 func initControl(cfg bootConfig) (*controlRuntime, error) {
 	mgr := NewManager(cfg.maxSlots, cfg.workDir)
+	// 换节点 worker 必须在状态恢复前就绪：restoreState 会拉起隧道，
+	// 发布成功后可能立刻排队下一次换节点。
+	mgr.startRotationWorker()
 	log.Printf("正在拉取节点列表...")
 	if n, err := mgr.RefreshNodes(); err != nil {
 		log.Printf("拉取失败（可在 Web 界面重试）: %v", err)

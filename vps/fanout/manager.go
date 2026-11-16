@@ -33,8 +33,8 @@ type Manager struct {
 	// observationStats 记每 hostname 在窗口内的通过/失败次数，用于失败率排序；
 	// 配置变化即重置，过期由 pruneConnectivity 清理。
 	observationStats map[string]*hostStats
-	diagnostics     map[string]*diagnosticLease
-	console         *Console
+	diagnostics      map[string]*diagnosticLease
+	console          *Console
 
 	// Health probing is bounded and test seams use the same paths as production.
 	healthEvery         time.Duration
@@ -50,6 +50,14 @@ type Manager struct {
 	ipTypeInitMu sync.Mutex
 	ipType       *ipTypeCache
 	ipTypeTTL    time.Duration
+
+	// rotationCh/rotationOnce 是换节点请求的单 worker 队列。dispatchRotation
+	// 只入队，真正的 Swap/SwapTo/reconnectTo 由 rotationWorker 串行执行，
+	// 这样发布路径不会直接回调换节点，静态调用环也被 worker 边界切断。
+	rotationCh   chan rotationJob
+	rotationOnce sync.Once
+	// rotationHook 是单测 seam：非空时 executeRotation 只调用它，不碰网络。
+	rotationHook func(*Tunnel, *rotationRequest)
 
 	// slotHealthDoc 存出口观察快照：SQLite 可用时走共享库的 slot_health
 	// 文档，无库（单测裸 Manager）时回退旧文件。快照可再生，fail-open。
@@ -72,5 +80,6 @@ func NewManager(maxSlots int, workDir string) *Manager {
 		observations:  map[string]CheckResult{},
 		diagnostics:   map[string]*diagnosticLease{},
 		ipTypeTTL:     defaultIPTypeTTL,
+		rotationCh:    make(chan rotationJob, 128),
 	}
 }

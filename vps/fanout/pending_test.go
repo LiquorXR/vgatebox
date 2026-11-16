@@ -87,6 +87,25 @@ func TestTakePendingRotationClearsQueue(t *testing.T) {
 	}
 }
 
+func TestDispatchRotationUsesWorker(t *testing.T) {
+	m := NewManager(1, t.TempDir())
+	m.startRotationWorker()
+	tun := &Tunnel{Slot: 1, Status: "up"}
+	m.tunnels[1] = tun
+	got := make(chan *rotationRequest, 1)
+	m.rotationHook = func(_ *Tunnel, req *rotationRequest) { got <- req }
+	req := &rotationRequest{kind: rotationTarget, node: &Node{HostName: "target"}, cause: "test"}
+	m.dispatchRotation(tun, req)
+	select {
+	case gotReq := <-got:
+		if gotReq != req {
+			t.Fatalf("worker received %+v; want the queued request", gotReq)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("rotation worker did not process the queued request")
+	}
+}
+
 func TestStopDropsPendingSwap(t *testing.T) {
 	m := NewManager(4, t.TempDir())
 	tun := &Tunnel{Slot: 1, Status: "starting", Node: Node{HostName: "cur"}}
