@@ -250,7 +250,11 @@ func TestConsoleSubscriptionActualCountrySelectionCustomNames(t *testing.T) {
 	m.tunnels[1] = ts[0]
 	m.tunnels[2] = &Tunnel{Slot: 2, Status: "up", Node: Node{HostName: "b"}}
 	m.tunnels[3] = &Tunnel{Slot: 3, Status: "waiting"}
-	links, err := subLinksSources(m, "fixture.invalid", true, map[int]bool{1: true}, false, false, nil)
+	links, err := subLinksSources(m, subLinkOptions{
+		host:      "fixture.invalid",
+		boundOnly: true,
+		selected:  map[int]bool{1: true},
+	})
 	if err != nil || len(links) != 1 {
 		t.Fatal("selection failed", err, len(links))
 	}
@@ -266,7 +270,12 @@ func TestConsoleSubscriptionActualCountrySelectionCustomNames(t *testing.T) {
 	if err != nil || detail.NameMode != "auto" {
 		t.Fatal("legacy default was exposed as custom in connection detail")
 	}
-	links, err = subLinksSources(m, "fixture.invalid", true, nil, true, true, nil)
+	links, err = subLinksSources(m, subLinkOptions{
+		host:          "fixture.invalid",
+		boundOnly:     true,
+		includeDirect: true,
+		includeThird:  true,
+	})
 	if err != nil || len(links) != 2 {
 		t.Fatal("waiting slot leaked", err, len(links))
 	}

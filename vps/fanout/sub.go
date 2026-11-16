@@ -94,115 +94,155 @@ func apiSubReset(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func subLinksSources(m *Manager, host string, boundOnly bool, selected map[int]bool, includeDirect, includeThird bool, proxies map[int]bool) ([]string, error) {
+type subLinkOptions struct {
+	host          string
+	boundOnly     bool
+	selected      map[int]bool
+	includeDirect bool
+	includeThird  bool
+	proxies       map[int]bool
+}
+
+func subLinksSources(m *Manager, opts subLinkOptions) ([]string, error) {
 	p, err := openPanel()
 	if err != nil {
 		return nil, err
 	}
+	if native, ok := p.(*Native); ok && opts.boundOnly {
+		return nativeSubscriptionLinks(m, native, opts)
+	}
+	ids, err := subscriptionInboundIDs(m, p, opts)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	return p.InboundLinks(ids, opts.host)
+}
 
-	var ids []int
-	if _, native := p.(*Native); native && boundOnly {
-		var links []string
-		names := map[string]bool{}
-		view := m.ExitsOf()
-		sort.Slice(view.HostDirect, func(i, j int) bool { return view.HostDirect[i].ID < view.HostDirect[j].ID })
-		if includeDirect {
-			for _, ib := range view.HostDirect {
-				if !ib.Enable {
-					continue
-				}
-				rows, err := p.InboundLinks([]int{ib.ID}, host)
-				if err != nil {
-					return nil, err
-				}
-				for _, link := range rows {
-					u, err := url.Parse(link)
-					if err != nil {
-						return nil, err
-					}
-					u.Fragment = uniqueRemark(directDisplayName(ib), names)
-					u.RawFragment = ""
-					names[u.Fragment] = true
-					links = append(links, u.String())
-				}
-			}
+func nativeSubscriptionLinks(m *Manager, n *Native, opts subLinkOptions) ([]string, error) {
+	view := m.ExitsOf()
+	names := map[string]bool{}
+	sort.Slice(view.HostDirect, func(i, j int) bool { return view.HostDirect[i].ID < view.HostDirect[j].ID })
+	var links []string
+	var err error
+	if opts.includeDirect {
+		links, err = appendDirectSubscriptionLinks(n, view.HostDirect, opts.host, names, links)
+		if err != nil {
+			return nil, err
 		}
-		if includeThird {
-			n := p.(*Native)
-			records := map[int]ThirdPartyRecord{}
-			if m.console != nil && m.console.third != nil {
-				records = m.console.third.snapshot()
-			}
-			rows, err := n.thirdPartyLinks(host, proxies, records, names)
+	}
+	if opts.includeThird {
+		links, err = appendThirdPartySubscriptionLinks(m, n, opts, names, links)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return appendSlotSubscriptionLinks(n, view.Exits, opts, names, links)
+}
+
+func appendDirectSubscriptionLinks(p Panel, inbounds []ExitInbound, host string, names map[string]bool, links []string) ([]string, error) {
+	for _, ib := range inbounds {
+		if !ib.Enable {
+			continue
+		}
+		rows, err := p.InboundLinks([]int{ib.ID}, host)
+		if err != nil {
+			return nil, err
+		}
+		for _, link := range rows {
+			u, err := url.Parse(link)
 			if err != nil {
 				return nil, err
 			}
-			links = append(links, rows...)
+			u.Fragment = uniqueRemark(directDisplayName(ib), names)
+			u.RawFragment = ""
+			names[u.Fragment] = true
+			links = append(links, u.String())
 		}
-		for _, e := range view.Exits {
-			if e.Status != "up" || (selected != nil && !selected[e.Slot]) {
-				continue
-			}
-			sort.Slice(e.Inbounds, func(i, j int) bool { return e.Inbounds[i].ID < e.Inbounds[j].ID })
-			for _, ib := range e.Inbounds {
-				if !ib.Enable {
-					continue
-				}
-				rows, err := p.InboundLinks([]int{ib.ID}, host)
-				if err != nil {
-					return nil, err
-				}
-				label := ib.Remark
-				if automaticName(ib) {
-					label = subscriptionExitName(e)
-					if len(e.Inbounds) > 1 {
-						label += fmt.Sprintf(" · %d", ib.Port)
-					}
-				}
-				if !strings.Contains(label, "VPN Gate") {
-					label += " · VPN Gate"
-				}
-				for _, link := range rows {
-					name := uniqueRemark(label, names)
-					names[name] = true
-					u, err := url.Parse(link)
-					if err != nil {
-						return nil, fmt.Errorf("节点链接无效")
-					}
-					u.Fragment = name
-					u.RawFragment = ""
-					links = append(links, u.String())
-				}
-			}
-		}
-		return links, nil
 	}
-	if boundOnly {
-		for _, e := range m.ExitsOf().Exits {
-			if selected != nil && !selected[e.Slot] {
+	return links, nil
+}
+
+func appendThirdPartySubscriptionLinks(m *Manager, n *Native, opts subLinkOptions, names map[string]bool, links []string) ([]string, error) {
+	records := map[int]ThirdPartyRecord{}
+	if m.console != nil && m.console.third != nil {
+		records = m.console.third.snapshot()
+	}
+	rows, err := n.thirdPartyLinks(opts.host, opts.proxies, records, names)
+	if err != nil {
+		return nil, err
+	}
+	return append(links, rows...), nil
+}
+
+func appendSlotSubscriptionLinks(p Panel, exits []Exit, opts subLinkOptions, names map[string]bool, links []string) ([]string, error) {
+	for _, e := range exits {
+		if e.Status != "up" || (opts.selected != nil && !opts.selected[e.Slot]) {
+			continue
+		}
+		sort.Slice(e.Inbounds, func(i, j int) bool { return e.Inbounds[i].ID < e.Inbounds[j].ID })
+		for _, ib := range e.Inbounds {
+			if !ib.Enable {
 				continue
 			}
-			for _, ib := range e.Inbounds {
-				if ib.Enable {
-					ids = append(ids, ib.ID)
+			rows, err := p.InboundLinks([]int{ib.ID}, opts.host)
+			if err != nil {
+				return nil, err
+			}
+			label := ib.Remark
+			if automaticName(ib) {
+				label = subscriptionExitName(e)
+				if len(e.Inbounds) > 1 {
+					label += fmt.Sprintf(" · %d", ib.Port)
 				}
 			}
+			if !strings.Contains(label, "VPN Gate") {
+				label += " · VPN Gate"
+			}
+			for _, link := range rows {
+				name := uniqueRemark(label, names)
+				names[name] = true
+				u, err := url.Parse(link)
+				if err != nil {
+					return nil, fmt.Errorf("节点链接无效")
+				}
+				u.Fragment = name
+				u.RawFragment = ""
+				links = append(links, u.String())
+			}
 		}
-	} else {
-		list, lerr := p.Inbounds(nil)
-		if lerr != nil {
-			return nil, lerr
+	}
+	return links, nil
+}
+
+func subscriptionInboundIDs(m *Manager, p Panel, opts subLinkOptions) ([]int, error) {
+	if !opts.boundOnly {
+		list, err := p.Inbounds(nil)
+		if err != nil {
+			return nil, err
 		}
+		ids := make([]int, 0, len(list))
 		for _, ib := range list {
 			if ib.Enable {
 				ids = append(ids, ib.ID)
 			}
 		}
+		return ids, nil
 	}
-	if len(ids) == 0 {
-		return nil, nil
+	var ids []int
+	for _, e := range m.ExitsOf().Exits {
+		if opts.selected != nil && !opts.selected[e.Slot] {
+			continue
+		}
+		for _, ib := range e.Inbounds {
+			if ib.Enable {
+				ids = append(ids, ib.ID)
+			}
+		}
 	}
-	return p.InboundLinks(ids, host)
+	return ids, nil
 }
 
 // handleSub 是订阅本体。走的是免登录路径，所以第一件事是验口令。
@@ -281,7 +321,14 @@ func handleSub(m *Manager) http.HandlerFunc {
 			http.Error(w, "第三方选择无效", 400)
 			return
 		}
-		links, err := subLinksSources(m, host, q.Get("bound") != "0", selected, includeDirect, includeThird, proxies)
+		links, err := subLinksSources(m, subLinkOptions{
+			host:          host,
+			boundOnly:     q.Get("bound") != "0",
+			selected:      selected,
+			includeDirect: includeDirect,
+			includeThird:  includeThird,
+			proxies:       proxies,
+		})
 		if err != nil {
 			// 内置 Xray 无法生成链接时直接返回错误，不回退到空订阅。
 			http.Error(w, "生成订阅失败: "+firstLine(err.Error()), http.StatusBadGateway)
@@ -294,22 +341,29 @@ func handleSub(m *Manager) http.HandlerFunc {
 			return
 		}
 
-		body:=[]byte(encodeSub(links,target))
-		if target=="clash" {
+		body := []byte(encodeSub(links, target))
+		if target == "clash" {
 			var omitted []string
-			body,omitted,err=renderClash(links)
-			if err!=nil {http.Error(w,err.Error(),400);return}
-			if len(omitted)>0 {
-				w.Header().Set("X-Vgatebox-Omitted",strconv.Itoa(len(omitted)))
-				w.Header().Set("X-Vgatebox-Warning","some entries were omitted because Mihomo cannot represent their transport")
+			body, omitted, err = renderClash(links)
+			if err != nil {
+				http.Error(w, err.Error(), 400)
+				return
 			}
-			w.Header().Set("Content-Type","application/yaml; charset=utf-8")
-		} else {w.Header().Set("Content-Type", "text/plain; charset=utf-8")}
+			if len(omitted) > 0 {
+				w.Header().Set("X-Vgatebox-Omitted", strconv.Itoa(len(omitted)))
+				w.Header().Set("X-Vgatebox-Warning", "some entries were omitted because Mihomo cannot represent their transport")
+			}
+			w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+		} else {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		// 客户端据此决定多久自动拉一次；出口增删之外的变化不影响链接，12 小时够
 		w.Header().Set("Profile-Update-Interval", "12")
 		w.Header().Set("Content-Disposition", "inline; filename=fanout")
-		if target=="clash" {w.Header().Set("Content-Disposition","inline; filename=vgatebox-clash.yaml")}
+		if target == "clash" {
+			w.Header().Set("Content-Disposition", "inline; filename=vgatebox-clash.yaml")
+		}
 		_, _ = w.Write(body)
 	}
 }

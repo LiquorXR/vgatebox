@@ -264,7 +264,12 @@ func TestThirdPartySubscriptionScopesAndSecrets(t *testing.T) {
 		t.Fatal("third-party QR failed")
 	}
 	n.store.Inbounds[1].ThirdParty.Subscribe = false
-	links, err := subLinksSources(m, "fixture.invalid", true, map[int]bool{}, false, true, nil)
+	links, err := subLinksSources(m, subLinkOptions{
+		host:         "fixture.invalid",
+		boundOnly:    true,
+		selected:     map[int]bool{},
+		includeThird: true,
+	})
 	if err != nil || len(links) != 0 {
 		t.Fatal("subscription opt-out ignored")
 	}

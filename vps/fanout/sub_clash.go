@@ -19,23 +19,11 @@ func (e *clashUnsupportedError) Error() string { return e.reason }
 // clashProxy 把一个 VLESS 分享链接转成 mihomo 出站配置。
 // 面板与第三方接入只生成 vless://，其他协议在导出前就被拒绝。
 func clashProxy(link string) (map[string]any, error) {
-	u, err := url.Parse(link)
-	if err != nil || u.User == nil || u.Hostname() == "" {
-		return nil, fmt.Errorf("invalid_share_link")
-	}
-	if !strings.EqualFold(u.Scheme, "vless") {
-		return nil, fmt.Errorf("unsupported_clash_protocol")
-	}
-	port, err := strconv.Atoi(u.Port())
-	if err != nil || port < 1 || port > 65535 {
-		return nil, fmt.Errorf("invalid_share_port")
-	}
-	uuid := u.User.Username()
-	if uuid == "" {
-		return nil, fmt.Errorf("missing_share_credential")
+	u, port, uuid, err := parseClashLink(link)
+	if err != nil {
+		return nil, err
 	}
 	q := u.Query()
-
 	p := map[string]any{
 		"name":   u.Fragment,
 		"type":   "vless",
@@ -44,7 +32,42 @@ func clashProxy(link string) (map[string]any, error) {
 		"uuid":   uuid,
 		"udp":    true,
 	}
+	transport, err := applyClashTransport(p, q)
+	if err != nil {
+		return nil, err
+	}
+	if err := applyClashSecurity(p, q, transport); err != nil {
+		return nil, err
+	}
+	if err := applyClashVLESSOptions(p, q); err != nil {
+		return nil, err
+	}
+	// XUDP gives Mihomo a UDP path that also works over XHTTP; it is a
+	// separate wire encoding from the proxy protocol and is safe for TCP too.
+	p["packet-encoding"] = "xudp"
+	return p, nil
+}
 
+func parseClashLink(link string) (*url.URL, int, string, error) {
+	u, err := url.Parse(link)
+	if err != nil || u.User == nil || u.Hostname() == "" {
+		return nil, 0, "", fmt.Errorf("invalid_share_link")
+	}
+	if !strings.EqualFold(u.Scheme, "vless") {
+		return nil, 0, "", fmt.Errorf("unsupported_clash_protocol")
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil || port < 1 || port > 65535 {
+		return nil, 0, "", fmt.Errorf("invalid_share_port")
+	}
+	uuid := u.User.Username()
+	if uuid == "" {
+		return nil, 0, "", fmt.Errorf("missing_share_credential")
+	}
+	return u, port, uuid, nil
+}
+
+func applyClashTransport(p map[string]any, q url.Values) (string, error) {
 	transport := strings.ToLower(strings.TrimSpace(q.Get("type")))
 	if transport == "" {
 		transport = "tcp"
@@ -65,60 +88,31 @@ func clashProxy(link string) (map[string]any, error) {
 		p["network"] = "xhttp"
 		p["xhttp-opts"] = clashXHTTPOpts(q)
 	case "mkcp", "kcp":
-		return nil, &clashUnsupportedError{reason: "Mihomo cannot represent the mKCP transport"}
+		return "", &clashUnsupportedError{reason: "Mihomo cannot represent the mKCP transport"}
 	default:
-		return nil, fmt.Errorf("unsupported_clash_transport")
+		return "", fmt.Errorf("unsupported_clash_transport")
 	}
+	return transport, nil
+}
 
+func applyClashSecurity(p map[string]any, q url.Values, transport string) error {
 	security := strings.ToLower(strings.TrimSpace(q.Get("security")))
 	if security == "" {
 		security = "none"
 	}
-	if security != "none" && security != "tls" && security != "reality" {
-		return nil, fmt.Errorf("unsupported_clash_security")
+	switch security {
+	case "none", "tls", "reality":
+	default:
+		return fmt.Errorf("unsupported_clash_security")
 	}
 	if security != "none" {
-		p["tls"], p["skip-cert-verify"] = true, false
-		if sni := q.Get("sni"); sni != "" {
-			p["servername"] = sni
-		}
-		if fp := q.Get("fp"); fp != "" {
-			p["client-fingerprint"] = fp
-		} else if security == "reality" {
-			p["client-fingerprint"] = "chrome"
-		}
-		if alpn := q.Get("alpn"); alpn != "" {
-			p["alpn"] = strings.Split(alpn, ",")
-		}
-		if pin := q.Get("pcs"); pin != "" {
-			normalized, e := normalizeCertificatePin(pin)
-			if e != nil {
-				return nil, e
-			}
-			p["fingerprint"] = normalized
-		} else if pin := q.Get("pinSHA256"); pin != "" {
-			normalized, e := normalizeCertificatePin(pin)
-			if e != nil {
-				return nil, e
-			}
-			p["fingerprint"] = normalized
+		if err := applyClashTLS(p, q, security); err != nil {
+			return err
 		}
 	}
 	if security == "reality" {
-		key, e := base64.RawURLEncoding.DecodeString(q.Get("pbk"))
-		if e != nil || len(key) != 32 {
-			return nil, fmt.Errorf("invalid_reality_key")
-		}
-		sid := q.Get("sid")
-		if _, e := hex.DecodeString(sid); e != nil || len(sid) > 16 {
-			return nil, fmt.Errorf("invalid_reality_short_id")
-		}
-		// Xray 26.9+ 的 REALITY 服务端要求 ClientHello 携带 X25519MLKEM768；
-		// Mihomo 默认仍会移除该 key share，显式开启后才能完成认证。
-		p["reality-opts"] = map[string]any{
-			"public-key":             q.Get("pbk"),
-			"short-id":               sid,
-			"support-x25519mlkem768": true,
+		if err := applyClashReality(p, q); err != nil {
+			return err
 		}
 	}
 	// XHTTP 在 TLS/REALITY 下默认走 h2；显式写出与官方示例一致。
@@ -127,9 +121,70 @@ func clashProxy(link string) (map[string]any, error) {
 			p["alpn"] = []string{"h2"}
 		}
 	}
+	return nil
+}
+
+func applyClashTLS(p map[string]any, q url.Values, security string) error {
+	p["tls"], p["skip-cert-verify"] = true, false
+	if sni := q.Get("sni"); sni != "" {
+		p["servername"] = sni
+	}
+	if fp := q.Get("fp"); fp != "" {
+		p["client-fingerprint"] = fp
+	} else if security == "reality" {
+		p["client-fingerprint"] = "chrome"
+	}
+	if alpn := q.Get("alpn"); alpn != "" {
+		p["alpn"] = strings.Split(alpn, ",")
+	}
+	pin, ok, err := clashCertificatePin(q)
+	if err != nil {
+		return err
+	}
+	if ok {
+		p["fingerprint"] = pin
+	}
+	return nil
+}
+
+func clashCertificatePin(q url.Values) (string, bool, error) {
+	raw := q.Get("pcs")
+	if raw == "" {
+		raw = q.Get("pinSHA256")
+	}
+	if raw == "" {
+		return "", false, nil
+	}
+	normalized, err := normalizeCertificatePin(raw)
+	if err != nil {
+		return "", false, err
+	}
+	return normalized, true, nil
+}
+
+func applyClashReality(p map[string]any, q url.Values) error {
+	key, err := base64.RawURLEncoding.DecodeString(q.Get("pbk"))
+	if err != nil || len(key) != 32 {
+		return fmt.Errorf("invalid_reality_key")
+	}
+	sid := q.Get("sid")
+	if _, err := hex.DecodeString(sid); err != nil || len(sid) > 16 {
+		return fmt.Errorf("invalid_reality_short_id")
+	}
+	// Xray 26.9+ 的 REALITY 服务端要求 ClientHello 携带 X25519MLKEM768；
+	// Mihomo 默认仍会移除该 key share，显式开启后才能完成认证。
+	p["reality-opts"] = map[string]any{
+		"public-key":             q.Get("pbk"),
+		"short-id":               sid,
+		"support-x25519mlkem768": true,
+	}
+	return nil
+}
+
+func applyClashVLESSOptions(p map[string]any, q url.Values) error {
 	if flow := strings.TrimSpace(q.Get("flow")); flow != "" {
 		if flow != "xtls-rprx-vision" {
-			return nil, fmt.Errorf("unsupported_clash_flow")
+			return fmt.Errorf("unsupported_clash_flow")
 		}
 		// flow 是 VLESS 请求头里的 addons，与传输层无关。Xray 服务端在账号
 		// 配置了 Vision 时会拒绝没有 flow 的客户端，所以所有传输都要写出。
@@ -138,10 +193,7 @@ func clashProxy(link string) (map[string]any, error) {
 	if enc := strings.TrimSpace(q.Get("encryption")); enc != "" && enc != "none" {
 		p["encryption"] = enc
 	}
-	// XUDP gives Mihomo a UDP path that also works over XHTTP; it is a
-	// separate wire encoding from the proxy protocol and is safe for TCP too.
-	p["packet-encoding"] = "xudp"
-	return p, nil
+	return nil
 }
 
 func clashWSOpts(q url.Values, upgrade bool) map[string]any {

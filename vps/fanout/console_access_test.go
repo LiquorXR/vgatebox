@@ -116,7 +116,13 @@ func TestHostDirectSubscriptionScopesAndPersistence(t *testing.T) {
 	}{
 		{nil, true, 2}, {nil, false, 1}, {map[int]bool{1: true}, false, 1}, {map[int]bool{}, true, 1},
 	} {
-		links, err := subLinksSources(m, "fixture.invalid", true, tc.slots, tc.direct, tc.slots == nil, nil)
+		links, err := subLinksSources(m, subLinkOptions{
+			host:          "fixture.invalid",
+			boundOnly:     true,
+			selected:      tc.slots,
+			includeDirect: tc.direct,
+			includeThird:  tc.slots == nil,
+		})
 		if err != nil || len(links) != tc.want {
 			t.Fatal("scope incorrect", err, len(links), tc.want)
 		}
@@ -130,7 +136,12 @@ func TestHostDirectSubscriptionScopesAndPersistence(t *testing.T) {
 	// 自定义名称应透传到订阅 Fragment；auto/空备注回退默认名。
 	n.store.Inbounds[1].Remark = "我的直出"
 	invalidateInbounds()
-	links, err := subLinksSources(m, "fixture.invalid", true, nil, true, true, nil)
+	links, err := subLinksSources(m, subLinkOptions{
+		host:          "fixture.invalid",
+		boundOnly:     true,
+		includeDirect: true,
+		includeThird:  true,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -75,6 +75,21 @@ YAML 辅助函数）。
 至此所有页面/组件均 ≤ 400 行（`ExitsPage` 387、`AdvancedAccessPanel` 329、
 `NodesPage` 400）。
 
+### 1.2 后端复杂度热点（D，2026-11-16）
+
+| 函数 | 复杂度（前 → 后） | 拆分 |
+|---|---|---|
+| `clashProxy` | 32 → 4 | `parseClashLink` / `applyClashTransport` / `applyClashSecurity` / `applyClashTLS` / `applyClashReality` / `applyClashVLESSOptions` |
+| `subLinksSources` | 30 → 4 | `subLinkOptions` + 原生/直出/第三方/Slot 链接分段 |
+| `commitManagementSettings` | 30 → 7 | 校验、目录守卫、监听准备、文件写入、运行时应用 |
+| `checkMigrationState` | 30 → 4 | 期刊、计划、SSTP、设置、密码、basepath、state、native 分项检查 |
+| `normalizeInboundSpec` | 25 → 4 | 名称/端口/路径/备注/加密/Vision/KCP 分段 |
+| `shareLink` | 24 → 1 | 传输、TLS、REALITY、加密参数分段 |
+
+生产函数 complexity ≥ 20 的数量从 11 降到 5；剩余为 `handleSub`（23）、
+`dispatchCheckRun`（23）、`mirror_source.fetch_mirror`（22）、
+`normalizePolicy`（21）、`buildXrayConfig`（20）。
+
 ## 2. staticcheck 基线（v0.8.2，`all` 默认集）
 
 37 条，4 个码，17 个文件。CI 门禁为默认集减这 3 个豁免（U1000 已清零，见下）：

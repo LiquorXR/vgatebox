@@ -139,15 +139,27 @@ func formatShareHost(host string) string {
 func shareLink(ib *nativeInbound, c nativeClient, host string) string {
 	net := ib.netOrTCP()
 	sec := ib.securityOrNone()
-
 	q := url.Values{}
-	linkType := net
-	if linkType == "mkcp" {
-		linkType = "kcp"
-	}
-	q.Set("type", linkType)
+	q.Set("type", shareLinkType(net))
 	q.Set("security", sec)
+	applyShareTransport(q, ib, net)
+	applyShareSecurity(q, ib, sec)
+	if c.Flow != "" && ib.Protocol == "vless" {
+		q.Set("flow", c.Flow)
+	}
+	applyShareEncryption(q, ib)
+	frag := url.PathEscape(ib.Remark)
+	return fmt.Sprintf("vless://%s@%s:%d?%s#%s", c.ID, formatShareHost(host), ib.Port, q.Encode(), frag)
+}
 
+func shareLinkType(network string) string {
+	if network == "mkcp" {
+		return "kcp"
+	}
+	return network
+}
+
+func applyShareTransport(q url.Values, ib *nativeInbound, net string) {
 	switch net {
 	case "ws", "httpupgrade", "xhttp":
 		path := ib.Path
@@ -181,50 +193,57 @@ func shareLink(ib *nativeInbound, c nativeClient, host string) string {
 			}
 		}
 	}
+}
 
+func applyShareSecurity(q url.Values, ib *nativeInbound, sec string) {
 	switch sec {
 	case "tls":
-		if ib.TLS != nil {
-			if ib.TLS.ServerName != "" {
-				q.Set("sni", ib.TLS.ServerName)
-			}
-			// 自签证书验不过 CA。Xray 26.x 移除了 allowInsecure，
-			// 改用证书指纹让客户端固定信任这一张。pcs 是 Xray/v2rayN
-			// 共用的标准字段；旧的 pinSHA256 只保留给兼容解析。
-			if ib.TLS.SelfSigned && ib.TLS.CertSha256 != "" {
-				q.Set("pcs", ib.TLS.CertSha256)
-			}
-		}
+		applyShareTLS(q, ib.TLS)
 	case "reality":
-		if ib.Reality != nil {
-			if len(ib.Reality.ServerNames) > 0 {
-				q.Set("sni", ib.Reality.ServerNames[0])
-			}
-			// pbk 是分享链接的通用写法，各家客户端都认；
-			// 注意 Xray 26.x 自己的配置文件里这个字段叫 password 而不是 publicKey
-			q.Set("pbk", ib.Reality.PublicKey)
-			if len(ib.Reality.ShortIDs) > 0 {
-				q.Set("sid", ib.Reality.ShortIDs[0])
-			}
-			if ib.Reality.Fingerprint != "" {
-				q.Set("fp", ib.Reality.Fingerprint)
-			}
-		}
+		applyShareReality(q, ib.Reality)
 	}
+}
 
-	if c.Flow != "" && ib.Protocol == "vless" {
-		q.Set("flow", c.Flow)
+func applyShareTLS(q url.Values, tls *tlsConfig) {
+	if tls == nil {
+		return
 	}
+	if tls.ServerName != "" {
+		q.Set("sni", tls.ServerName)
+	}
+	// 自签证书验不过 CA。Xray 26.x 移除了 allowInsecure，
+	// 改用证书指纹让客户端固定信任这一张。pcs 是 Xray/v2rayN
+	// 共用的标准字段；旧的 pinSHA256 只保留给兼容解析。
+	if tls.SelfSigned && tls.CertSha256 != "" {
+		q.Set("pcs", tls.CertSha256)
+	}
+}
 
-	frag := url.PathEscape(ib.Remark)
+func applyShareReality(q url.Values, reality *realityConfig) {
+	if reality == nil {
+		return
+	}
+	if len(reality.ServerNames) > 0 {
+		q.Set("sni", reality.ServerNames[0])
+	}
+	// pbk 是分享链接的通用写法，各家客户端都认；
+	// 注意 Xray 26.x 自己的配置文件里这个字段叫 password 而不是 publicKey
+	q.Set("pbk", reality.PublicKey)
+	if len(reality.ShortIDs) > 0 {
+		q.Set("sid", reality.ShortIDs[0])
+	}
+	if reality.Fingerprint != "" {
+		q.Set("fp", reality.Fingerprint)
+	}
+}
 
+func applyShareEncryption(q url.Values, ib *nativeInbound) {
 	// VLESS Encryption 是协议层参数，所有传输都可以叠加。
 	if ib.VLESSEncryption != nil && ib.VLESSEncryption.Enabled && ib.VLESSEncryption.ClientEncryption != "" {
 		q.Set("encryption", ib.VLESSEncryption.ClientEncryption)
-	} else {
-		q.Set("encryption", "none")
+		return
 	}
-	return fmt.Sprintf("vless://%s@%s:%d?%s#%s", c.ID, formatShareHost(host), ib.Port, q.Encode(), frag)
+	q.Set("encryption", "none")
 }
 
 // buildTLS 组装 TLS 配置。没给证书路径就生成一张自签的，落在 dir/certs 下。
