@@ -78,6 +78,10 @@ YAML 辅助函数）。
 至此所有页面/组件均 ≤ 400 行（`ExitsPage` 387、`AdvancedAccessPanel` 329、
 `NodesPage` 400）。
 
+前端 C5（可选）同步落地：接入页四个 tab 改为 `defineAsyncComponent` 懒加载；
+`AccessPage` 主 chunk 从约 146.8 kB 降到约 3.3 kB，SOCKS/SSTP/第三方/高级接入
+分别生成独立 chunk。
+
 ### 1.2 后端复杂度热点（D，2026-11-16）
 
 | 函数 | 复杂度（前 → 后） | 拆分 |
@@ -111,33 +115,29 @@ YAML 辅助函数）。
 |---|---|---|
 | 图谱规模 | 4,518 节点 / 21,605 边 | codebase-memory-mcp |
 | Go 生产/测试行数 | 18,846 / 12,857 | git 跟踪文件 |
-| Go 测试函数 | 454 | `func Test/Fuzz/Benchmark` |
+| Go 测试函数 | 456 | `func Test/Fuzz/Benchmark` |
 | Python 测试函数 | 123 | `def test_` |
 | 前端用例 | 73 | Vitest 5.1.0 |
 | `runFanout` | 51 行 / 9 / 9 | 图谱 Function |
 | 生产函数 complexity ≥ 20 | **0** | 图谱 Function |
 | 调用环 | 3 | 清理互锁、自动化重试、YAML 互调 |
 | 路由契约 | 62/62 | `TestAPIContract` 源码覆盖；图谱 HANDLES 30/62 |
-| staticcheck | 21 条 ST1005 | 仅保留中文文案豁免 |
+| staticcheck | 0 条 | 无豁免 |
 | govulncheck | 0 | Go 1.26.11 |
-| npm audit | 生产 0 / dev 4 moderate | Vitest 5.1.0 + @vue/test-utils 2.4.11 |
+| npm audit | 生产 0 / dev 0 | Vitest 5.1.0 + @vue/test-utils 2.4.11 + overrides |
 
 ## 2. staticcheck 基线（v0.8.2，`all` 默认集）
 
-21 条，1 个码，7 个文件。CI 门禁为默认集减 ST1005（中文文案首字母风格，保留豁免）：
+**0 条，0 个码。CI 门禁即 `staticcheck ./...`，无豁免。**
 
-| 码 | 数量 | 说明 |
-|---|---|---|
-| U1000 unused | 0 | 2026-11-09 清理：删除 15 个生产死符号 + 收编旧实现，已从 lint.yml 去掉豁免 |
-| ST1005 error 首字母大写 | 21 | 中文文案风格；统改会动用户可见错误文案，保留豁免 |
-| ST1013 数字状态码 | 0 | 2026-11-16 修复：`console_sstp_api.go:167` 409 → `http.StatusConflict` |
-| SA2001 空临界区 | 0 | 2026-11-16 修复：`console_lifecycle.go` 的互斥屏障改为显式读取 `plan` |
+2026-11-16 收尾：
 
-按文件：manager_lifecycle.go 6、slot_work.go 6、state.go 3、native_inbounds.go 2、
-native_xray.go 2、provision.go 1、tunnel_socks.go 1。
+- U1000 已于 2026-11-09 清零。
+- ST1013：`console_sstp_api.go:167` 的 409 → `http.StatusConflict`。
+- SA2001：`console_lifecycle.go` 的互斥屏障改为显式读取 `plan`。
+- ST1005：21 处 `Slot ...` / `Xray ...` 错误文案改为中文起始（“槽位 ...”“内置 Xray ...”）。
 
 复现：`GOOS=linux staticcheck ./...`（vps/fanout 下，需 `go install honnef.co/go/tools/cmd/staticcheck@v0.8.2`）。
-CI 用 `staticcheck -checks '-ST1005' ./...`；除 ST1005 外新增 finding 一律红灯。
 
 ## 3. govulncheck 基线（v1.9.0，Go 1.26.11 工具链，2026-11-16 重采）
 
@@ -156,19 +156,12 @@ CI 用 `staticcheck -checks '-ST1005' ./...`；除 ST1005 外新增 finding 一�
 
 生产依赖（`npm audit --omit=dev --audit-level=moderate`）：**0 漏洞**，CI 门禁即此命令。
 
-dev 依赖 4 条 moderate（测试工具链，不打包进 `webdist`）：
+dev 依赖：**0 漏洞**（2026-11-16）。
 
-| 包 | 级别 | Advisory | 说明 |
-|---|---|---|---|
-| glob 9.0.0–14.0.1 | moderate | GHSA-3g3m-2fjr-6pw4 | 经由 js-beautify → @vue/test-utils 2.4.11 |
-| minimatch 7.0.0–11.0.0 | moderate | GHSA-g3hv-75wg-m249 | 同上 |
-| js-beautify ≥1.14.9 | moderate | 经由 editorconfig、glob | 同上 |
-| editorconfig ≥1.0.3 | moderate | 经由 minimatch | 同上 |
-
-2026-11-16：vitest `3.2.7 → 5.1.0`，`@vue/test-utils` 降到 `2.4.11`；tinypool/vitest 的
-critical RCE 链已清除，`npm audit` 从 2 critical + 6 moderate 降为 0 critical + 4 moderate。
-剩余 4 条是 `@vue/test-utils` 的 dev 传递依赖，强制修复需要再次调整测试工具链；当前
-生产依赖仍为 0 漏洞，CI 门禁继续使用 `npm audit --omit=dev --audit-level=moderate`。
+- vitest `3.2.7 → 5.1.0`，`@vue/test-utils 2.5.1 → 2.4.11`，清除 tinypool/vitest 的 critical RCE 链。
+- `package.json` 增加 overrides：`glob ^14.0.6`、`minimatch ^11.0.8`，消除
+  `@vue/test-utils → js-beautify → editorconfig/glob` 的 4 个 moderate 传递依赖。
+- `npm ci --ignore-scripts` 后 `npm audit` 为 0，Vitest 73 用例与生产构建均通过。
 
 复现：`npm audit --json`（vps/fanout/frontend 下）。
 

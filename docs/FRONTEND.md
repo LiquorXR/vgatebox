@@ -159,6 +159,7 @@ Vitest 覆盖纯逻辑、API 客户端、主题、状态/订阅/自动化格式�
 
 ## 当前边界
 
+- 接入页四个 tab 使用 `defineAsyncComponent` 懒加载；`AccessPage` 主 chunk 约 3.3 kB，SOCKS/SSTP/第三方/高级接入各自独立 chunk。
 - `/advanced` 只做重定向；旧页面和样式已删除。
 - 候选列表由 `/api/nodes` 服务端分页（`limit`/`offset`，默认 200/页）返回；不带 `limit` 时保持旧全量形状供外部调用。
 - `console` 全量不再 5 秒轮询，改为小版本轮询 + 变化拉取 + 60 秒兜底；ETag、SSE 和凭据按需加载尚未实现。

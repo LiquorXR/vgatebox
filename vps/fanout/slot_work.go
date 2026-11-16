@@ -253,7 +253,7 @@ func (m *Manager) SetSlotPolicy(slot int, p SlotPolicy) error {
 	t := m.tunnels[slot]
 	m.mu.RUnlock()
 	if t == nil {
-		return fmt.Errorf("Slot 不存在")
+		return fmt.Errorf("槽位 不存在")
 	}
 	t.changeMu.Lock()
 	defer t.changeMu.Unlock()
@@ -262,7 +262,7 @@ func (m *Manager) SetSlotPolicy(slot int, p SlotPolicy) error {
 
 func (m *Manager) setSlotPolicyLocked(t *Tunnel, normalized SlotPolicy) error {
 	if !m.ownsTunnel(t) {
-		return fmt.Errorf("Slot 已删除")
+		return fmt.Errorf("槽位 已删除")
 	}
 	// Block before waiting on an in-flight handshake/query; cancellation kills
 	// its child command and prevents it from publishing up under an old policy.
@@ -310,18 +310,18 @@ func (m *Manager) Resume(slot int) error {
 	t := m.tunnels[slot]
 	m.mu.RUnlock()
 	if t == nil {
-		return fmt.Errorf("Slot 不存在")
+		return fmt.Errorf("槽位 不存在")
 	}
 	t.changeMu.Lock()
 	defer t.changeMu.Unlock()
 	if !m.ownsTunnel(t) {
-		return fmt.Errorf("Slot 已删除")
+		return fmt.Errorf("槽位 已删除")
 	}
 	t.mu.Lock()
 	stopped := t.Status == "stopped" || t.Status == "blocked" || t.Status == "waiting_for_nodes" || t.Status == "failed"
 	t.mu.Unlock()
 	if !stopped {
-		return fmt.Errorf("Slot 已在运行或连接中")
+		return fmt.Errorf("槽位 已在运行或连接中")
 	}
 	t.mu.Lock()
 	t.setPhaseLocked(slotStarting)
@@ -337,7 +337,7 @@ func (m *Manager) RollbackSlotPolicy(slot int) error {
 	t := m.tunnels[slot]
 	m.mu.RUnlock()
 	if t == nil {
-		return fmt.Errorf("Slot 不存在")
+		return fmt.Errorf("槽位 不存在")
 	}
 	t.changeMu.Lock()
 	defer t.changeMu.Unlock()

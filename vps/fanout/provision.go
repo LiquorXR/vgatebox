@@ -139,7 +139,7 @@ func (m *Manager) planProvision(req ProvisionRequest) ([]Node, SlotPolicy, error
 	room := m.maxSlots - len(m.tunnels)
 	m.mu.RUnlock()
 	if room <= 0 {
-		return nil, p, fmt.Errorf("Slot 已满；停止保留 Slot，删除才释放")
+		return nil, p, fmt.Errorf("槽位 已满；停止保留 Slot，删除才释放")
 	}
 	if req.Count < 1 || req.Count > room {
 		return nil, p, fmt.Errorf("数量超出空闲 Slot 数量")

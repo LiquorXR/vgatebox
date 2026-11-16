@@ -425,7 +425,7 @@ func (n *Native) RotateVLESSEncryption(id int, tunnels []*Tunnel) (*vlessEncrypt
 		return nil, fmt.Errorf("该入站未启用 VLESS Encryption")
 	}
 	if n.proc == nil {
-		return nil, fmt.Errorf("Xray 运行时未就绪")
+		return nil, fmt.Errorf("内置 Xray 运行时未就绪")
 	}
 	enc, err := newVLESSEncryption(n.proc.bin, ib.VLESSEncryption.KeyType)
 	if err != nil {
@@ -469,7 +469,7 @@ func (n *Native) SetVLESSEncryption(id int, enabled bool, keyType string, tunnel
 		return ib.VLESSEncryption, nil
 	}
 	if n.proc == nil {
-		return nil, fmt.Errorf("Xray 运行时未就绪")
+		return nil, fmt.Errorf("内置 Xray 运行时未就绪")
 	}
 	enc, err := newVLESSEncryption(n.proc.bin, kt)
 	if err != nil {

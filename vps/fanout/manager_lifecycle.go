@@ -229,7 +229,7 @@ func (m *Manager) tryCandidatesContext(t *Tunnel, notify bool, ctx context.Conte
 			return true
 		}
 		if err == nil {
-			err = fmt.Errorf("Slot 操作已取消或出口与另一 Slot 重复")
+			err = fmt.Errorf("槽位 操作已取消或出口与另一 Slot 重复")
 		}
 		log.Printf("隧道 %d 候选 %s 失败: %v", t.Slot, node.HostName, err)
 		t.teardownNetns()
@@ -335,7 +335,7 @@ func (m *Manager) tryNode(t *Tunnel) error {
 		return err
 	}
 	if !m.tunnelActive(t) || t.workContext().Err() != nil {
-		return fmt.Errorf("Slot 操作已取消")
+		return fmt.Errorf("槽位 操作已取消")
 	}
 	// 首个样本直接初始化平滑值（前面 clearEgress 已清零）。
 	t.absorbLatency(latency)
@@ -397,7 +397,7 @@ func (m *Manager) deleteSlot(slot int) error {
 	t := m.tunnels[slot]
 	m.mu.RUnlock()
 	if t == nil {
-		return fmt.Errorf("Slot 不存在")
+		return fmt.Errorf("槽位 不存在")
 	}
 	t.changeMu.Lock()
 	defer t.changeMu.Unlock()
@@ -431,7 +431,7 @@ func (m *Manager) Swap(slot int) error {
 	t.changeMu.Lock()
 	defer t.changeMu.Unlock()
 	if t.Status == "stopped" {
-		return fmt.Errorf("Slot 已停止，请先启动")
+		return fmt.Errorf("槽位 已停止，请先启动")
 	}
 	// 连接中不再拒绝：记下自动换节点意向，发布成功后执行。
 	// 用户在界面上经 pending_swap 可见排队态。
@@ -474,7 +474,7 @@ func (m *Manager) SwapTo(slot int, host string) error {
 	t.changeMu.Lock()
 	defer t.changeMu.Unlock()
 	if t.Status == "stopped" {
-		return fmt.Errorf("Slot 已停止，请先启动")
+		return fmt.Errorf("槽位 已停止，请先启动")
 	}
 	policy := t.policySnapshot()
 	if image := freshCandidateImage(node); image != nil {
@@ -569,7 +569,7 @@ func (m *Manager) SetCred(slot int, cred SocksCred) (SocksCred, error) {
 	t.changeMu.Lock()
 	defer t.changeMu.Unlock()
 	if !m.ownsTunnel(t) {
-		return SocksCred{}, fmt.Errorf("Slot 已删除")
+		return SocksCred{}, fmt.Errorf("槽位 已删除")
 	}
 	t.opMu.Lock()
 	defer t.opMu.Unlock()

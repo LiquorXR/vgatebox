@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"io"
+	"os"
 	"strings"
 	"testing"
 )
@@ -173,5 +174,35 @@ func TestRunFanoutCheckStateDoesNotRequireRoot(t *testing.T) {
 	dir := t.TempDir()
 	if code := runFanout([]string{"-dir", dir, "-check-state", "-max", "2"}, io.Discard, io.Discard); code != 1 {
 		t.Errorf("runFanout(-check-state on empty dir) = %d; want 1", code)
+	}
+}
+
+func TestBootPhaseOrderInRunFanout(t *testing.T) {
+	// runFanout is an orchestrator; this source-level guard catches a phase
+	// being moved before the storage/privilege step it depends on.
+	blob, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	src := string(blob)
+	last := -1
+	for _, phase := range []string{
+		"parseBootConfig",
+		"validateBootConfig",
+		"bootstrapHost",
+		"initControl",
+		"startBackground",
+		"installShutdownHandler",
+		"initHTTP",
+		"serveUntilSignal",
+	} {
+		at := strings.Index(src, phase)
+		if at < 0 {
+			t.Fatalf("runFanout missing phase %s", phase)
+		}
+		if at <= last {
+			t.Fatalf("phase %s appears out of order", phase)
+		}
+		last = at
 	}
 }

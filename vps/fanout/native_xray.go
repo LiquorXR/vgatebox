@@ -288,7 +288,7 @@ func toAnySlice(in []string) []any {
 func verifyXrayConfig(bin, cfgPath string) error {
 	_, err := cmdCombined(exec.Command(bin, "run", "-test", "-c", cfgPath))
 	if err != nil {
-		return fmt.Errorf("Xray 配置校验失败: %w", err)
+		return fmt.Errorf("内置 Xray 配置校验失败: %w", err)
 	}
 	return nil
 }
@@ -338,7 +338,7 @@ func (p *xrayProc) restart(cfgPath string) error {
 	case <-p.done:
 		p.cmd = nil
 		p.done = nil
-		return fmt.Errorf("Xray 启动后立刻退出，详见 %s", logPath)
+		return fmt.Errorf("内置 Xray 启动后立刻退出，详见 %s", logPath)
 	case <-time.After(400 * time.Millisecond):
 		return nil
 	}

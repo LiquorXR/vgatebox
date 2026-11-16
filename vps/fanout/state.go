@@ -170,7 +170,7 @@ func decodePersistedState(blob []byte, maxSlots int) (*persistedState, error) {
 		return nil, err
 	}
 	if maxSlots < 1 {
-		return nil, fmt.Errorf("Slot 上限无效")
+		return nil, fmt.Errorf("槽位 上限无效")
 	}
 	seen := map[int]bool{}
 	ports := map[int]bool{}
@@ -187,7 +187,7 @@ func decodePersistedState(blob []byte, maxSlots int) (*persistedState, error) {
 		}
 		normalized, err := normalizePolicy(policy)
 		if err != nil {
-			return nil, fmt.Errorf("Slot %d 策略无效", p.Slot)
+			return nil, fmt.Errorf("槽位 %d 策略无效", p.Slot)
 		}
 		p.Policy = &normalized
 		if p.PreviousPolicy != nil {
@@ -201,7 +201,7 @@ func decodePersistedState(blob []byte, maxSlots int) (*persistedState, error) {
 		// existing half-pair silently would invalidate deployed clients.
 		if p.SocksUser != "" || p.SocksPass != "" {
 			if err := validateCred(SocksCred{User: p.SocksUser, Pass: p.SocksPass}); err != nil {
-				return nil, fmt.Errorf("Slot %d 持久化 SOCKS 凭据无效", p.Slot)
+				return nil, fmt.Errorf("槽位 %d 持久化 SOCKS 凭据无效", p.Slot)
 			}
 		}
 	}

@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, defineAsyncComponent, ref } from "vue";
 import { useExitsQuery, useSocksLinksQuery, useSstpQuery, useThirdPartyQuery } from "@/api/queries";
-import AdvancedAccessPanel from "@/components/AdvancedAccessPanel.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import SectionTabs from "@/components/SectionTabs.vue";
 import SkeletonBlock from "@/components/SkeletonBlock.vue";
-import SocksAccessTab from "@/pages/access/SocksAccessTab.vue";
-import SstpAccessTab from "@/pages/access/SstpAccessTab.vue";
-import ThirdPartyAccessTab from "@/pages/access/ThirdPartyAccessTab.vue";
+
+const AdvancedAccessPanel = defineAsyncComponent(() => import("@/components/AdvancedAccessPanel.vue"));
+const SocksAccessTab = defineAsyncComponent(() => import("@/pages/access/SocksAccessTab.vue"));
+const SstpAccessTab = defineAsyncComponent(() => import("@/pages/access/SstpAccessTab.vue"));
+const ThirdPartyAccessTab = defineAsyncComponent(() => import("@/pages/access/ThirdPartyAccessTab.vue"));
 
 const tab = ref("socks");
 const { data: exitsView, isLoading: exitsLoading } = useExitsQuery(true);

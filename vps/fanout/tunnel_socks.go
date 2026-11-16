@@ -30,7 +30,7 @@ func (t *Tunnel) serve() error {
 		}
 	}
 	if err != nil {
-		return fmt.Errorf("Slot 固定端口 %d 监听失败: %w", t.Port, err)
+		return fmt.Errorf("槽位 固定端口 %d 监听失败: %w", t.Port, err)
 	}
 	t.listener = ln
 	dial := dialerInNetns(t.nsName())
