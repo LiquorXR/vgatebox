@@ -49,6 +49,9 @@ B1（Slot 状态类型）同步落地：`slot_phase.go` 定义 `starting/up/degr
 waiting_for_nodes/failed/stopped` 转换表，生产代码 14 处直接 `Status` 写入收敛为
 `setPhaseLocked`/`setPhase`；转换表见 ADR-0008。
 
+B3 同步落地：转换表从 warning 改为硬约束，非法边记录 `slot.phase.rejected`
+并保持原状态；`slot_phase_test.go` 覆盖 stopped→up 的拒绝路径。
+
 B2（换节点分派器 + 单 worker 队列）同步落地：`rotation.go` 引入
 `rotationRequest`/`dispatchRotation`/`rotationWorker`；`publishUp` 只登记
 `pendingRotation`，`tryCandidatesContext` 退出 `opMu` 后入队，
@@ -190,3 +193,6 @@ critical RCE 链已清除，`npm audit` 从 2 critical + 6 moderate 降为 0 cri
   `src/styles/main.css` 的 Tailwind `@custom-variant`（第 5 行）局部解析失败；62 条路由中
   HANDLES 仅归因 30 条（闭包构造器）。三者都不影响 `TestAPIContract` 的 62/62 源码级覆盖，
   安装器/卸载器由 `tests/test_installer.py`、`tests/test_uninstall.py` 覆盖。
+- 剩余 3 个 CALLS 环（2026-11-16）：`stop/Close/blockWork` 清理互锁、`automationTick/
+  waitRefreshThenTick` 重试推进、`writeYAMLMap/writeYAMLField` 纯递归写入。前三者是有意的
+  控制流，最后一个无并发、无 I/O；D6 不再为了图谱指标强行拆分。

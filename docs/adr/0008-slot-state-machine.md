@@ -1,6 +1,6 @@
 # ADR-0008：Slot 状态类型、转换表与换节点分派（B1/B2）
 
-- Status: accepted（B1 + B2a 分派器 + B2b 单 worker 队列）
+- Status: accepted（B1 + B2 分派/worker + B3 硬失败）
 - Date: 2026-11-16
 - 范围：`vps/fanout/slot_phase.go`、`rotation.go`、`slot_work.go`、
   `manager_lifecycle.go`、`boot.go`、`health.go`、`state.go`、`tunnel.go`、
@@ -20,9 +20,9 @@
 2. 引入 `slotPhaseTransitions` 转换表；`stopped` 只能由显式 Start/Resume
    离开，`up` 只能由 `publishUp` 进入，`degraded` 只允许 `up/degraded` 之间流转。
 3. 所有 `Tunnel.Status` 写入改为 `setPhaseLocked`（持锁）或 `setPhase`（内部加锁）。
-4. B1 阶段转换表是**观测性**的：非法边记录 `slot.phase.unexpected` warning，
-   但仍按旧行为写入，避免在缺少 Linux 集成测试的改动中改变运行语义。
-   转换表硬失败留作后续，需要先用全量集成测试覆盖恢复、策略与诊断路径。
+4. 转换表是**硬约束**：`setPhaseLocked` 对非法边记录 `slot.phase.rejected`
+   并保持原状态，不再写入；合法边记录 `slot.phase`。空状态（未初始化
+   Tunnel）仍允许进入任意状态，供测试夹具与构造中的对象使用。
 5. B2 把换节点请求收敛到 `rotationRequest` + `dispatchRotation` +
    `rotationWorker`：
    - `publishUp` 只把 `pendingSwap` 转成 `pendingRotation`，不再直接
@@ -43,9 +43,10 @@
 - 好处：状态字符串集中定义；转换意图可读；新增日志字段 `slot/from/to`
   便于排查“为什么这条隧道变成 blocked/waiting”；换节点入口唯一，图谱中的
   换节点调用环已消失。
-- 代价：仍有大量状态读取使用字符串比较；B1 不强制拒绝非法边；换节点请求
-  现在经过一个全局 worker，某个 Slot 的 `changeMu` 等待会短暂推迟其他
-  Slot 的换节点（每个执行体本身很快，`reconnectTo` 会另起建链 goroutine）。
+- 代价：仍有大量状态读取使用字符串比较；非法转换现在会被拒绝并记录
+  `slot.phase.rejected`，排查时需要同时看 `from/to` 与调用路径；换节点请求
+  经过一个全局 worker，某个 Slot 的 `changeMu` 等待会短暂推迟其他 Slot 的
+  换节点（每个执行体本身很快，`reconnectTo` 会另起建链 goroutine）。
 
 ## Invariants（B2 必须保持）
 

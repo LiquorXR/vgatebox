@@ -85,19 +85,35 @@ func TestSlotPhasePersistedStrings(t *testing.T) {
 
 func TestSetPhaseLockedUpdatesStatus(t *testing.T) {
 	tun := &Tunnel{Slot: 7, Status: string(slotUp)}
-	tun.setPhaseLocked(slotDegraded)
+	if !tun.setPhaseLocked(slotDegraded) {
+		t.Fatal("allowed transition rejected")
+	}
 	if tun.Status != string(slotDegraded) {
 		t.Errorf("status = %q; want %q", tun.Status, slotDegraded)
 	}
-	tun.setPhaseLocked(slotUp)
+	if !tun.setPhaseLocked(slotUp) {
+		t.Fatal("allowed recovery rejected")
+	}
 	if tun.Status != string(slotUp) {
 		t.Errorf("status = %q; want %q", tun.Status, slotUp)
 	}
 }
 
+func TestSetPhaseLockedRejectsIllegalTransition(t *testing.T) {
+	tun := &Tunnel{Slot: 7, Status: string(slotStopped)}
+	if tun.setPhaseLocked(slotUp) {
+		t.Fatal("stopped -> up was accepted")
+	}
+	if tun.Status != string(slotStopped) {
+		t.Errorf("status = %q; want stopped unchanged", tun.Status)
+	}
+}
+
 func TestSetPhaseUsesTunnelLock(t *testing.T) {
 	tun := &Tunnel{Slot: 3, Status: string(slotStarting)}
-	tun.setPhase(slotUp)
+	if !tun.setPhase(slotUp) {
+		t.Fatal("allowed transition rejected")
+	}
 	if tun.Status != string(slotUp) {
 		t.Errorf("status = %q; want %q", tun.Status, slotUp)
 	}

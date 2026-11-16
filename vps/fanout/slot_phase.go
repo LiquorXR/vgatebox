@@ -71,25 +71,26 @@ func slotTransitionAllowed(from, to slotPhase) bool {
 	return slotPhaseTransitions[from][to]
 }
 
-// setPhaseLocked 在持有 t.mu 时更新状态。B1 阶段只做类型化与可观测性：
-// 转换表之外的边会记录 warning，但仍按旧行为写入，避免在缺少 Linux
-// 集成测试的改动中引入行为变化；B2 会把非法边改成硬失败。
-func (t *Tunnel) setPhaseLocked(to slotPhase) {
+// setPhaseLocked 在持有 t.mu 时更新状态。转换表之外的边是硬失败：
+// 记录 error 并保持原状态，避免后台把 Slot 带进未定义状态。空状态
+// 表示未初始化的 Tunnel（测试夹具或构造中的对象），允许进入任意状态。
+func (t *Tunnel) setPhaseLocked(to slotPhase) bool {
 	from := slotPhase(t.Status)
 	if from == to {
-		return
+		return true
 	}
 	if !slotTransitionAllowed(from, to) {
-		slog.Warn("slot.phase.unexpected", "slot", t.Slot, "from", from, "to", to)
-	} else {
-		slog.Info("slot.phase", "slot", t.Slot, "from", from, "to", to)
+		slog.Error("slot.phase.rejected", "slot", t.Slot, "from", from, "to", to)
+		return false
 	}
+	slog.Info("slot.phase", "slot", t.Slot, "from", from, "to", to)
 	t.Status = string(to)
+	return true
 }
 
 // setPhase 是 setPhaseLocked 的加锁版本，供尚未持有 t.mu 的调用方使用。
-func (t *Tunnel) setPhase(to slotPhase) {
+func (t *Tunnel) setPhase(to slotPhase) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.setPhaseLocked(to)
+	return t.setPhaseLocked(to)
 }

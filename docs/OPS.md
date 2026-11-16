@@ -16,6 +16,16 @@ ARM64、CentOS 7/8、OpenVZ、非 systemd 不在支持范围。防火墙需放�
 - 启动日志的“容量预检”按 `RLIMIT_NOFILE`、`MemAvailable` 和端口区间给出建议值；它只提示，不修改 `-max`，也不阻止创建。
 - 估算口径：每个 Slot 预留 64 个 fd（另留 256 个给进程/诊断），约 32 MiB 可用内存；随机端口默认 `20000-60000`，设置 `FANOUT_SLOT_PORT_BASE` 后为基址到 `65535`。
 - 实际容量还受 OpenVPN 进程数、netns/veth、内核内存、iptables 规则和上游节点质量影响。首次部署建议先用较小目标实测 RSS、fd 和连接稳定性，再逐步提高。
+- 实测参考（在 VPS 上执行，替换 `<slot>`）：
+
+  ```sh
+  ip netns list
+  ps -eo pid,rss,cmd | grep '[o]penvpn'
+  ls /proc/<openvpn-pid>/fd | wc -l
+  ss -lnt | grep -E ':(20000|30000|17928)'
+  ```
+
+- 备份目录权限为 `0700`、归档为 `0600`；`tests/test_installer.py` 已断言该权限。备份仍含凭据，请限制访问，不要上传到不可信存储。
 - 清理/备份会带上 `state/` 下的 SQLite `-wal`/`-shm` 与凭据；备份目录含私密信息，请限制访问权限，不要上传到不可信存储。
 
 ## 更新
