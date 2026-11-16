@@ -47,8 +47,12 @@ VGATEBOX_UPDATE_API_GOLDEN=1 GOOS=linux go test -run TestAPIContract .  # 金样
 
 B1（Slot 状态类型）同步落地：`slot_phase.go` 定义 `starting/up/degraded/blocked/
 waiting_for_nodes/failed/stopped` 转换表，生产代码 14 处直接 `Status` 写入收敛为
-`setPhaseLocked`/`setPhase`；转换表见 ADR-0008。B1 目前只记录非法边，
-换节点控制器（B2）完成后再改为硬失败。
+`setPhaseLocked`/`setPhase`；转换表见 ADR-0008。
+
+B2a（换节点分派器）同步落地：`rotation.go` 引入 `rotationRequest`/
+`dispatchRotation`；`publishUp` 只登记 `pendingRotation`，`tryCandidatesContext`
+退出 `opMu` 后统一分派，`rotateIfPerfWorse` 也走同一入口。生产调用环从
+8 节点缩为 7 节点，但入口已统一；彻底断开需要 B2b 的单 worker 队列。
 
 ## 2. staticcheck 基线（v0.8.2，`all` 默认集）
 

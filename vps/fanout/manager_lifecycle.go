@@ -161,7 +161,14 @@ func (m *Manager) tryCandidates(t *Tunnel, notify bool) bool {
 
 func (m *Manager) tryCandidatesContext(t *Tunnel, notify bool, ctx context.Context) bool {
 	t.opMu.Lock()
-	defer t.opMu.Unlock()
+	defer func() {
+		t.opMu.Unlock()
+		// publishUp 只登记意向，不直接回调 Swap/reconnectTo；在这里退出
+		// opMu 后统一交给 dispatchRotation，避免持锁路径上的调用环与死锁。
+		if req := t.takePendingRotation(); req != nil {
+			m.dispatchRotation(t, req)
+		}
+	}()
 	if ctx.Err() != nil {
 		return false
 	}
@@ -366,6 +373,7 @@ func (m *Manager) Stop(slot int) error {
 	t.stop()
 	// 停即弃：排队意向不再执行，避免 Resume 后冒出过期操作。
 	t.clearPendingSwap()
+	t.clearPendingRotation()
 	if err := m.saveState(); err != nil {
 		log.Printf("保存状态失败: %v", err)
 		m.notifyPanel()
@@ -495,30 +503,6 @@ func (m *Manager) SwapTo(slot int, host string) error {
 	t.clearSpeculation()
 	m.reconnectTo(t, oldHost, &node, "手动换节点，正在连接新节点")
 	return nil
-}
-
-// swapPending 执行排队意向（publishUp 成功后异步调用）。
-// 用实时校验后委托给 Swap/SwapTo，保证与手动操作同语义；
-// Slot 已停/已删则丢弃（Stop 即弃）。
-func (m *Manager) swapPending(t *Tunnel, node *Node, auto bool) {
-	if !m.tunnelActive(t) {
-		return
-	}
-	t.mu.Lock()
-	stopped := t.Status == "stopped"
-	t.mu.Unlock()
-	if stopped {
-		return
-	}
-	var err error
-	if auto {
-		err = m.Swap(t.Slot)
-	} else if node != nil {
-		err = m.SwapTo(t.Slot, node.HostName)
-	}
-	if err != nil {
-		log.Printf("隧道 %d 排队换节点未执行: %v", t.Slot, err)
-	}
 }
 
 // hasPendingSwap 供 API 区分“已排队”与“执行中”。

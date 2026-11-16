@@ -223,7 +223,9 @@ func (m *Manager) rotateIfPerfWorse(t *Tunnel) {
 	}
 	log.Printf("隧道 %d 新出口延迟 %.0fms 差于换前 %.0fms，再换到 %s",
 		t.Slot, t.smoothLatency(), floor, node.HostName)
-	oldHost := t.Node.HostName
-	t.rememberSwap(oldHost)
-	m.reconnectTo(t, oldHost, &node, "新出口仍慢，正在换下一个节点")
+	m.dispatchRotation(t, &rotationRequest{
+		kind:  rotationPerformance,
+		node:  &node,
+		cause: "新出口仍慢，正在换下一个节点",
+	})
 }

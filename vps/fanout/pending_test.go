@@ -34,7 +34,7 @@ func TestSwapToQueuesValidatedTargetWhileStarting(t *testing.T) {
 	}
 }
 
-func TestPublishUpConsumesPendingSwap(t *testing.T) {
+func TestPublishUpQueuesPendingRotation(t *testing.T) {
 	m := NewManager(4, t.TempDir())
 	tun := &Tunnel{Slot: 1, Status: "starting", Node: Node{HostName: "cur"}, ExitIP: "203.0.113.60"}
 	tun.egress = &EgressProfile{IP: "203.0.113.60", Protocol: "openvpn"}
@@ -48,16 +48,42 @@ func TestPublishUpConsumesPendingSwap(t *testing.T) {
 	if tun.snapshot().Phase != "" {
 		t.Fatal("build stage survived publishUp")
 	}
-	if tun.hasPendingSwap() {
-		t.Fatal("pending swap survived publishUp")
-	}
-	// 空池：排队委托的 Swap 找不到候选即止，不碰已发布的上线状态。
-	deadline := time.Now().Add(2 * time.Second)
-	for tun.Status != "up" && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
 	if tun.Status != "up" {
-		t.Fatalf("failed swap disturbed the published tunnel: %s", tun.Status)
+		t.Fatalf("publish did not mark the tunnel up: %s", tun.Status)
+	}
+	if !tun.hasPendingSwap() {
+		t.Fatal("pending rotation not reported by hasPendingSwap")
+	}
+	req := tun.takePendingRotation()
+	if req == nil || req.kind != rotationAuto {
+		t.Fatalf("pending rotation not queued: %+v", req)
+	}
+	if tun.hasPendingSwap() {
+		t.Fatal("pending rotation survived take")
+	}
+}
+
+func TestTakePendingRotationClearsQueue(t *testing.T) {
+	tun := &Tunnel{Slot: 1, Node: Node{HostName: "cur"}}
+	tun.mu.Lock()
+	tun.pendingRotation = &rotationRequest{
+		kind:  rotationTarget,
+		node:  &Node{HostName: "target"},
+		cause: "test",
+	}
+	tun.mu.Unlock()
+	if !tun.hasPendingSwap() {
+		t.Fatal("hasPendingSwap did not see the queued rotation")
+	}
+	req := tun.takePendingRotation()
+	if req == nil || req.kind != rotationTarget || req.node == nil || req.node.HostName != "target" {
+		t.Fatalf("take returned %+v", req)
+	}
+	if tun.hasPendingSwap() {
+		t.Fatal("take did not clear the rotation")
+	}
+	if again := tun.takePendingRotation(); again != nil {
+		t.Fatalf("second take returned %+v", again)
 	}
 }
 
@@ -66,11 +92,17 @@ func TestStopDropsPendingSwap(t *testing.T) {
 	tun := &Tunnel{Slot: 1, Status: "starting", Node: Node{HostName: "cur"}}
 	m.tunnels[1] = tun
 	tun.queuePendingSwap(nil, true)
+	tun.mu.Lock()
+	tun.pendingRotation = &rotationRequest{kind: rotationTarget, node: &Node{HostName: "target"}}
+	tun.mu.Unlock()
 	if err := m.Stop(1); err != nil {
 		t.Fatalf("stop failed: %v", err)
 	}
 	if tun.hasPendingSwap() {
 		t.Fatal("stop kept a stale queued swap")
+	}
+	if req := tun.takePendingRotation(); req != nil {
+		t.Fatalf("stop kept a stale queued rotation: %+v", req)
 	}
 }
 

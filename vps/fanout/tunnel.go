@@ -102,9 +102,12 @@ type Tunnel struct {
 	// failCounts 记各候选连续失败次数，用于指数退避；成功/手动操作即清。
 	failCounts map[string]int
 	// pendingSwap* 是 starting 期间收到的换节点意向：SwapTo 记具体节点，
-	// Swap 记 auto。发布成功后异步执行，原子取出；Stop 即弃。
+	// Swap 记 auto。发布成功后转成 pendingRotation，由调用方在 opMu 之外执行。
 	pendingSwapAuto bool
 	pendingSwapTo   *Node
+	// pendingRotation 是 publishUp 消费 pendingSwap 后留下的待执行请求；
+	// 由 tryCandidatesContext 在释放 opMu 后统一 dispatch，Stop 即弃。
+	pendingRotation *rotationRequest
 	// vpnRemotes 是建链时解析的远端集合（killswitch 放行依据），
 	// killswitchRefreshedAt 是上次增量刷新时间。运行期 DNS 轮换只增量
 	// 加规则；拆除时按此快照删，保证旧规则不残留。

@@ -99,7 +99,8 @@ func (t *Tunnel) markRecovered(latency float64) {
 }
 
 // queuePendingSwap 记录排队意向：to!=nil 为 SwapTo 指定节点，auto 为 Swap。
-// 调用方（starting 中）不再报错，发布成功后由 swapPending 异步执行。
+// 调用方（starting 中）不再报错，发布成功后转成 pendingRotation，
+// 由 tryCandidatesContext 在退出 opMu 后交给 dispatchRotation 执行。
 func (t *Tunnel) queuePendingSwap(node *Node, auto bool) {
 	t.mu.Lock()
 	t.pendingSwapTo, t.pendingSwapAuto = node, auto
@@ -115,7 +116,7 @@ func (t *Tunnel) clearPendingSwap() {
 func (t *Tunnel) hasPendingSwap() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.pendingSwapAuto || t.pendingSwapTo != nil
+	return t.pendingSwapAuto || t.pendingSwapTo != nil || t.pendingRotation != nil
 }
 
 // takePendingSwap 原子取出排队意向：node==nil 且 auto 为真表示自动挑。
@@ -215,15 +216,19 @@ func (m *Manager) publishUp(t *Tunnel, ctx context.Context) bool {
 	if ip != "" {
 		t.lastExitIP, t.lastExitAt = ip, time.Now()
 	}
-	// 建连成功：热备已消费，失败计数清零；排队意向原子取出后异步执行
-	// （调用方持有 opMu，同步调 reconnectTo 会自死锁）。
+	// 建连成功：热备已消费，失败计数清零；排队意向转成 pendingRotation，
+	// 由 tryCandidatesContext 在退出 opMu 后统一执行（同步调 reconnectTo 会自死锁）。
 	// 阶段一并清空：“查询出口画像”只是最后一站的残留，留着误导。
 	t.probeStage, t.probeStageAt = "", time.Time{}
 	t.prewarmNode, t.failCounts = nil, nil
 	pendingNode, pendingAuto := t.pendingSwapTo, t.pendingSwapAuto
 	t.pendingSwapTo, t.pendingSwapAuto = nil, false
 	if pendingAuto || pendingNode != nil {
-		go m.swapPending(t, pendingNode, pendingAuto)
+		kind := rotationAuto
+		if pendingNode != nil {
+			kind = rotationTarget
+		}
+		t.pendingRotation = &rotationRequest{kind: kind, node: pendingNode, cause: "发布成功后执行排队的换节点"}
 	}
 	return true
 }
