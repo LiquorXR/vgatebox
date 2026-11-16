@@ -1,21 +1,29 @@
 <script setup lang="ts">
 import { Download, Link2, Plus, RefreshCw, RotateCcw, Trash2 } from "@lucide/vue";
 import { useMutation, useQueryClient } from "@tanstack/vue-query";
-import { computed, reactive, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { api, apiUrl, post, queryString } from "@/api/client";
 import { keys, useInboundsQuery } from "@/api/queries";
-import type { Exit, Inbound, InboundDetail } from "@/api/types";
+import type { Exit, Inbound } from "@/api/types";
 import ConfirmDialog from "./ConfirmDialog.vue";
-import CopyButton from "./CopyButton.vue";
-import DialogShell from "./DialogShell.vue";
 import EmptyState from "./EmptyState.vue";
 import Panel from "./Panel.vue";
 import SkeletonBlock from "./SkeletonBlock.vue";
 import StatusBadge from "./StatusBadge.vue";
 import UiButton from "./UiButton.vue";
+import InboundCreateDialog from "@/pages/access/InboundCreateDialog.vue";
+import InboundDetailDrawer from "@/pages/access/InboundDetailDrawer.vue";
 import { copyText } from "@/lib/clipboard";
 import { truncate } from "@/lib/format";
-import { exitName, exitStatusLabel, exitStatusTone, directInboundName } from "@/lib/status";
+import {
+  bindLabel as bindLabelFor,
+  bindValue,
+  inboundKind,
+  inboundName,
+  inboundState,
+  ownerOf as ownerOfInbound,
+} from "@/lib/inbound";
+import { exitName, exitStatusLabel } from "@/lib/status";
 import { toast, toastError } from "@/lib/toast";
 
 const props = defineProps<{
@@ -26,53 +34,11 @@ const queryClient = useQueryClient();
 const { data: inbounds, isLoading, isError, error, refetch } = useInboundsQuery(true);
 
 const rows = computed<Inbound[]>(() => inbounds.value || []);
-
-function ownerOf(inbound: Inbound): Exit | null {
-  if (inbound.bound_slot) return props.exits.find((exit) => exit.slot === inbound.bound_slot) || null;
-  if (inbound.bound_to) return props.exits.find((exit) => exit.host === inbound.bound_to) || null;
-  return null;
-}
-
-function rowName(inbound: Inbound): string {
-  const owner = ownerOf(inbound);
-  if (inbound.managed_slot) {
-    if (owner) return exitName(owner);
-    return inbound.remark ? `${inbound.remark} · 归档` : "归档入口";
-  }
-  if (inbound.host_direct) return directInboundName(inbound);
-  return inbound.remark || `${inbound.protocol.toUpperCase()} · ${inbound.port}`;
-}
-
-function rowKind(inbound: Inbound): string {
-  if (inbound.host_direct) return "本机网络";
-  if (inbound.managed_slot) return ownerOf(inbound) ? "自动入口" : "归档入口";
-  if (inbound.manual) return "手动入口";
-  return "接入入口";
-}
-
-function rowState(inbound: Inbound): { label: string; tone: "ok" | "warn" | "bad" | "info" | "neutral" } {
-  if (inbound.managed_slot && !ownerOf(inbound)) return { label: "出口已删除 · 归档阻断", tone: "bad" };
-  if (!inbound.enable) return { label: "已停用", tone: "neutral" };
-  if (inbound.host_direct) return { label: "已启用", tone: "ok" };
-  const owner = ownerOf(inbound);
-  if (!owner) return { label: "未绑定 · 阻断", tone: "bad" };
-  return { label: exitStatusLabel(owner.status), tone: exitStatusTone(owner.status) };
-}
-
-function bindValue(inbound: Inbound): string {
-  return `slot:${inbound.bound_slot || 0}`;
-}
-
-function bindLabel(inbound: Inbound): string {
-  const owner = ownerOf(inbound);
-  if (inbound.host_direct) return "独立使用服务器网络";
-  if (inbound.managed_slot) {
-    if (owner) return `随出口 ${exitName(owner)}`;
-    const slot = inbound.bound_slot ? `出口 ${String(inbound.bound_slot).padStart(2, "0")}` : "出口";
-    return `${slot} 已删除 · 归档`;
-  }
-  return owner ? `${exitName(owner)} · ${exitStatusLabel(owner.status)}` : "未绑定（阻断）";
-}
+const ownerOf = (inbound: Inbound) => ownerOfInbound(inbound, props.exits);
+const rowName = (inbound: Inbound) => inboundName(inbound, props.exits);
+const rowKind = (inbound: Inbound) => inboundKind(inbound, props.exits);
+const rowState = (inbound: Inbound) => inboundState(inbound, props.exits);
+const bindLabel = (inbound: Inbound) => bindLabelFor(inbound, props.exits);
 
 function invalidate(): void {
   void queryClient.invalidateQueries({ queryKey: keys.inbounds });
@@ -108,235 +74,18 @@ const toggleMutation = useMutation({
 
 // Create dialog
 const createOpen = ref(false);
-const createForm = reactive({
-  slot: 0,
-  protocol: "vless",
-  network: "xhttp",
-  security: "reality",
-  vision: false,
-  port: "",
-  remark: "",
-  path: "",
-  sni: "",
-  cert: "",
-  key: "",
-  dest: "",
-  vless_encryption: false,
-  vless_encryption_type: "x25519",
-  kcp_mtu: "",
-  kcp_tti: "",
-  kcp_uplink: "",
-  kcp_downlink: "",
-});
-const realityAllowed = computed(() => ["tcp", "xhttp", "grpc"].includes(createForm.network));
-const visionAllowed = computed(
-  () =>
-    createForm.protocol === "vless" &&
-    (createForm.vless_encryption ||
-      (createForm.network === "tcp" && createForm.security !== "none")),
-);
-const needPath = computed(() => ["ws", "httpupgrade", "xhttp", "grpc"].includes(createForm.network));
-
-watch(
-  () => [createForm.network, createForm.security, createForm.vless_encryption],
-  () => {
-    if (!realityAllowed.value && createForm.security === "reality") createForm.security = "none";
-    if (!visionAllowed.value) createForm.vision = false;
-  },
-);
 
 function openCreate() {
-  Object.assign(createForm, {
-    slot: props.exits.find((exit) => exit.status === "up")?.slot || 0,
-    protocol: "vless",
-    network: "xhttp",
-    security: "reality",
-    vision: false,
-    port: "",
-    remark: "",
-    path: "",
-    sni: "",
-    cert: "",
-    key: "",
-    dest: "",
-    vless_encryption: false,
-    vless_encryption_type: "x25519",
-    kcp_mtu: "",
-    kcp_tti: "",
-    kcp_uplink: "",
-    kcp_downlink: "",
-  });
   createOpen.value = true;
 }
 
-const createMutation = useMutation({
-  mutationFn: () => {
-    const params: Record<string, string | number> = {
-      protocol: createForm.protocol,
-      network: createForm.network,
-      security: createForm.security,
-      port: createForm.port.trim(),
-      remark: createForm.remark.trim(),
-      path: createForm.path.trim(),
-      sni: createForm.sni.trim(),
-      cert: createForm.cert.trim(),
-      key: createForm.key.trim(),
-      dest: createForm.dest.trim(),
-      kcp_mtu: createForm.kcp_mtu,
-      kcp_tti: createForm.kcp_tti,
-      kcp_uplink: createForm.kcp_uplink,
-      kcp_downlink: createForm.kcp_downlink,
-      vless_encryption_type: createForm.vless_encryption_type,
-    };
-    params.slot = createForm.slot;
-    if (createForm.vision) params.vision = 1;
-    if (createForm.vless_encryption) params.vless_encryption = 1;
-    return post(`api/panel/inbound/new${queryString(params)}`, {});
-  },
-  onSuccess: (value) => {
-    const result = value as { port?: number };
-    createOpen.value = false;
-    toast(`入口已创建${result.port ? `，端口 ${result.port}` : ""}`, { tone: "success" });
-    invalidate();
-  },
-  onError: (error) => toastError(error, "创建入口失败"),
-});
-
 // Detail drawer
 const detailOpen = ref(false);
-const detailLoading = ref(false);
-const detail = ref<InboundDetail | null>(null);
-const detailForm = reactive({ nameMode: "auto", remark: "", port: 0, enable: true });
+const detailInbound = ref<Inbound | null>(null);
 
-async function openDetail(inbound: Inbound) {
+function openDetail(inbound: Inbound) {
+  detailInbound.value = inbound;
   detailOpen.value = true;
-  detailLoading.value = true;
-  detail.value = null;
-  try {
-    const value = await api<InboundDetail>(`api/xui/detail${queryString({ id: inbound.id })}`);
-    detail.value = value;
-    Object.assign(detailForm, {
-      nameMode: value.name_mode || "auto",
-      remark: value.remark || "",
-      port: value.port,
-      enable: value.enable,
-    });
-  } catch (error) {
-    toastError(error, "读取入口详情失败");
-  } finally {
-    detailLoading.value = false;
-  }
-}
-
-async function refreshDetail() {
-  if (!detail.value) return;
-  const id = detail.value.id;
-  try {
-    const value = await api<InboundDetail>(`api/xui/detail${queryString({ id })}`);
-    detail.value = value;
-    Object.assign(detailForm, {
-      nameMode: value.name_mode || "auto",
-      remark: value.remark || "",
-      port: value.port,
-      enable: value.enable,
-    });
-    invalidate();
-  } catch (error) {
-    toastError(error, "刷新入口详情失败");
-  }
-}
-
-const detailSaveMutation = useMutation({
-  mutationFn: () => {
-    if (!detail.value) throw new Error("入口不存在");
-    const port = Number(detailForm.port);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("端口须为 1–65535");
-    return post(
-      `api/panel/inbound/update${queryString({
-        id: detail.value.id,
-        port,
-        remark: detailForm.remark.trim(),
-        name_mode: detailForm.nameMode,
-        enable: detailForm.enable ? 1 : 0,
-      })}`,
-      {},
-    );
-  },
-  onSuccess: async () => {
-    toast("入口已保存", { tone: "success" });
-    await refreshDetail();
-  },
-  onError: (error) => toastError(error, "保存入口失败"),
-});
-
-const rotateEncryptionMutation = useMutation({
-  mutationFn: () => {
-    if (!detail.value) throw new Error("入口不存在");
-    return post(`api/xui/encryption/rotate${queryString({ id: detail.value.id })}`, {});
-  },
-  onSuccess: async () => {
-    toast("VLESS Encryption 参数已重新生成；旧链接会失效", { tone: "success" });
-    await refreshDetail();
-    invalidate();
-  },
-  onError: (error) => toastError(error, "重新生成加密参数失败"),
-});
-
-const setEncryptionMutation = useMutation({
-  mutationFn: (enabled: boolean) => {
-    if (!detail.value) throw new Error("入口不存在");
-    return post(
-      `api/xui/encryption/set${queryString({
-        id: detail.value.id,
-        enabled: enabled ? 1 : 0,
-        key_type: "x25519",
-      })}`,
-      {},
-    );
-  },
-  onSuccess: async (_, enabled) => {
-    toast(enabled ? "VLESS Encryption 已启用" : "VLESS Encryption 已停用", { tone: "success" });
-    await refreshDetail();
-    invalidate();
-  },
-  onError: (error) => toastError(error, "更新 VLESS Encryption 失败"),
-});
-
-const clientAddMutation = useMutation({
-  mutationFn: () => {
-    if (!detail.value) throw new Error("入口不存在");
-    return post(`api/panel/client/add${queryString({ id: detail.value.id })}`, {});
-  },
-  onSuccess: async () => {
-    toast("客户端已添加", { tone: "success" });
-    await refreshDetail();
-  },
-  onError: (error) => toastError(error, "添加客户端失败"),
-});
-
-const cloneMutation = useMutation({
-  mutationFn: () => {
-    if (!detail.value) throw new Error("入口不存在");
-    return post(`api/xui/clone${queryString({ id: detail.value.id })}`, {});
-  },
-  onSuccess: (value) => {
-    const created = (value as { created?: number[] }).created?.length || 0;
-    toast(`已创建 ${created} 个接入入口`, { tone: "success" });
-    void refreshDetail();
-    invalidate();
-  },
-  onError: (error) => toastError(error, "复制入口失败"),
-});
-
-function cloneInbound(inbound: InboundDetail) {
-  ask(
-    "复制到所有就绪出口",
-    `以 ${rowName(inbound)} 为模板，为所有已就绪出口各创建一个接入入口。已有入口不会被删除。`,
-    async () => {
-      await cloneMutation.mutateAsync();
-    },
-    "复制",
-  );
 }
 
 // Destructive confirmation
@@ -381,7 +130,7 @@ async function runConfirm() {
 function deleteInbound(inbound: Inbound) {
   ask("删除接入入口", `删除 ${rowName(inbound)} · ${inbound.protocol.toUpperCase()}:${inbound.port}？使用它的客户端链接会立即失效。`, async () => {
     await post(`api/xui/delete${queryString({ ids: inbound.id })}`, {});
-    if (detail.value?.id === inbound.id) detailOpen.value = false;
+    detailOpen.value = false;
     toast("入口已删除", { tone: "success" });
     invalidate();
   }, "删除");
@@ -401,7 +150,7 @@ function deleteManagedExit(inbound: Inbound) {
         slot: owner.slot,
         cleanup_archive: confirmCleanup.value,
       });
-      if (detail.value?.id === inbound.id) detailOpen.value = false;
+      detailOpen.value = false;
       if (result.cleanup_error) {
         toast(`出口已删除，但归档入口清理失败：${result.cleanup_error}`, { tone: "error" });
       } else {
@@ -422,39 +171,11 @@ function deleteArchivedInbound(inbound: Inbound) {
     `删除 ${rowName(inbound)}？对应出口已不存在，本操作只清理这个归档入口及其客户端凭据。`,
     async () => {
       await post(`api/xui/delete${queryString({ ids: inbound.id })}`, {});
-      if (detail.value?.id === inbound.id) detailOpen.value = false;
+      detailOpen.value = false;
       toast("归档入口已清理", { tone: "success" });
       invalidate();
     },
     "清理",
-  );
-}
-
-function resetClient(email: string) {
-  if (!detail.value) return;
-  ask(
-    "重置客户端凭据",
-    `重置 ${email} 的凭据？已经分发的旧链接会立即失效。`,
-    async () => {
-      await post(`api/panel/client/reset${queryString({ id: detail.value?.id, email })}`, {});
-      toast("客户端凭据已重置", { tone: "success" });
-      await refreshDetail();
-    },
-    "重置",
-  );
-}
-
-function deleteClient(email: string) {
-  if (!detail.value) return;
-  ask(
-    "删除客户端",
-    `删除客户端 ${email}？它的链接会立即失效。`,
-    async () => {
-      await post(`api/panel/client/del${queryString({ id: detail.value?.id, email })}`, {});
-      toast("客户端已删除", { tone: "success" });
-      await refreshDetail();
-    },
-    "删除",
   );
 }
 
@@ -494,14 +215,6 @@ async function copyAllLinks() {
 function exportXray() {
   window.location.href = apiUrl("api/export/xray");
 }
-
-const createSecurityOptions = computed(() =>
-  [
-    { value: "none", label: "无" },
-    { value: "tls", label: "TLS" },
-    { value: "reality", label: "REALITY", disabled: !realityAllowed.value },
-  ],
-);
 </script>
 
 <template>
@@ -608,123 +321,16 @@ const createSecurityOptions = computed(() =>
       </div>
     </Panel>
 
-    <DialogShell :open="createOpen" title="新增接入入口" description="等待中的出口也可以预先绑定；未绑定时流量阻断。" size="lg" @update:open="createOpen = $event">
-      <form class="space-y-4" @submit.prevent="createMutation.mutate()">
-        <label class="block">
-          <span class="mb-1 block text-xs font-medium">绑定出口</span>
-          <select v-model.number="createForm.slot" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent">
-            <option :value="0">未绑定（阻断流量）</option>
-            <option v-for="exit in exits" :key="exit.slot" :value="exit.slot">{{ exitName(exit) }} · {{ exitStatusLabel(exit.status) }}</option>
-          </select>
-        </label>
-        <div class="grid gap-3 sm:grid-cols-3">
-          <label class="block"><span class="mb-1 block text-xs font-medium">协议</span><select v-model="createForm.protocol" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-2 text-sm"><option value="vless">VLESS</option></select></label>
-          <label class="block"><span class="mb-1 block text-xs font-medium">传输</span><select v-model="createForm.network" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-2 text-sm"><option value="tcp">TCP / RAW</option><option value="ws">WebSocket</option><option value="grpc">gRPC</option><option value="httpupgrade">HTTPUpgrade</option><option value="xhttp">XHTTP</option><option value="mkcp">mKCP</option></select></label>
-          <label class="block"><span class="mb-1 block text-xs font-medium">安全</span><select v-model="createForm.security" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-2 text-sm"><option v-for="option in createSecurityOptions" :key="option.value" :value="option.value" :disabled="option.disabled">{{ option.label }}</option></select></label>
-        </div>
-        <p v-if="createForm.protocol === 'vless' && createForm.security === 'none' && !createForm.vless_encryption" class="rounded-lg border border-warn/25 bg-warn-soft px-3 py-2 text-[11px] leading-relaxed text-warn">
-          VLESS + 无传输安全层按官方要求只用于私网；公网请改用 TLS/REALITY，或启用 VLESS Encryption。
-        </p>
-        <p v-if="createForm.network === 'mkcp'" class="rounded-lg border border-warn/25 bg-warn-soft px-3 py-2 text-[11px] leading-relaxed text-warn">
-          v2rayN 可导入 VLESS + mKCP；Mihomo 无法表示 mKCP，Clash 订阅会跳过该入口。
-        </p>
-        <label v-if="createForm.protocol === 'vless'" class="flex flex-wrap items-center gap-3 rounded-lg border border-line p-3 text-xs text-muted">
-          <span class="flex items-center gap-2"><input v-model="createForm.vless_encryption" type="checkbox" class="accent-accent" />启用 VLESS Encryption</span>
-          <select v-model="createForm.vless_encryption_type" :disabled="!createForm.vless_encryption" class="h-8 rounded-lg border border-line-strong bg-surface px-2 text-xs disabled:opacity-50">
-            <option value="x25519">X25519 (native)</option>
-            <option value="mlkem768">ML-KEM-768</option>
-          </select>
-        </label>
-        <label v-if="visionAllowed" class="flex items-center gap-2 text-xs text-muted"><input v-model="createForm.vision" type="checkbox" class="accent-accent" />启用 xtls-rprx-vision</label>
-        <div v-if="createForm.security === 'tls'" class="grid gap-3 sm:grid-cols-3">
-          <label class="block"><span class="mb-1 block text-[11px] text-faint">域名或 IP（SNI）</span><input v-model="createForm.sni" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="留空使用 localhost" /></label>
-          <label class="block"><span class="mb-1 block text-[11px] text-faint">证书路径</span><input v-model="createForm.cert" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="留空生成自签证书" /></label>
-          <label class="block"><span class="mb-1 block text-[11px] text-faint">私钥路径</span><input v-model="createForm.key" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" /></label>
-        </div>
-        <label v-if="createForm.security === 'reality'" class="block"><span class="mb-1 block text-[11px] text-faint">借用站点（留空使用默认）</span><input v-model="createForm.dest" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="www.tesla.com:443" /></label>
-        <div v-if="createForm.network === 'mkcp'" class="grid gap-3 sm:grid-cols-4">
-          <label class="block"><span class="mb-1 block text-[11px] text-faint">MTU</span><input v-model="createForm.kcp_mtu" inputmode="numeric" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="1350" /></label>
-          <label class="block"><span class="mb-1 block text-[11px] text-faint">TTI</span><input v-model="createForm.kcp_tti" inputmode="numeric" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="50" /></label>
-          <label class="block"><span class="mb-1 block text-[11px] text-faint">上行 MB/s</span><input v-model="createForm.kcp_uplink" inputmode="numeric" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="5" /></label>
-          <label class="block"><span class="mb-1 block text-[11px] text-faint">下行 MB/s</span><input v-model="createForm.kcp_downlink" inputmode="numeric" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="20" /></label>
-        </div>
-        <label v-if="needPath" class="block"><span class="mb-1 block text-[11px] text-faint">{{ createForm.network === "grpc" ? "服务名" : "路径" }}</span><input v-model="createForm.path" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 font-mono text-sm" placeholder="留空自动生成" /></label>
-        <div class="grid gap-3 sm:grid-cols-2">
-          <label class="block"><span class="mb-1 block text-[11px] text-faint">端口（留空随机分配）</span><input v-model="createForm.port" inputmode="numeric" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" /></label>
-          <label class="block"><span class="mb-1 block text-[11px] text-faint">备注</span><input v-model="createForm.remark" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" placeholder="留空自动命名" /></label>
-        </div>
-        <div class="flex justify-end gap-2 pt-1">
-          <UiButton variant="ghost" @click="createOpen = false">取消</UiButton>
-          <UiButton type="submit" variant="primary" :loading="createMutation.isPending.value">创建</UiButton>
-        </div>
-      </form>
-    </DialogShell>
+    <InboundCreateDialog v-model:open="createOpen" :exits="exits" />
 
-    <DialogShell :open="detailOpen" :title="detail ? `${rowName(detail)} · ${detail.protocol.toUpperCase()}:${detail.port}` : '接入入口详情'" description="客户端凭据、绑定出口和入站参数。" variant="drawer" @update:open="detailOpen = $event">
-      <div v-if="detailLoading" class="py-4"><SkeletonBlock :lines="6" /></div>
-      <div v-else-if="!detail" class="text-sm text-muted">入口不存在，可能已被删除。</div>
-      <div v-else class="space-y-5">
-        <dl class="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border border-line bg-surface-2 p-3 text-xs">
-          <div><dt class="text-faint">协议 / 传输</dt><dd class="mt-0.5">{{ detail.protocol }} · {{ detail.network || "tcp" }}</dd></div>
-          <div><dt class="text-faint">安全</dt><dd class="mt-0.5">{{ detail.tls || "none" }}</dd></div>
-          <div><dt class="text-faint">监听</dt><dd class="mt-0.5">{{ detail.listen || "0.0.0.0" }}</dd></div>
-          <div><dt class="text-faint">绑定出口</dt><dd class="mt-0.5">{{ bindLabel(detail) }}</dd></div>
-          <div v-if="detail.vless_encryption"><dt class="text-faint">VLESS Encryption</dt><dd class="mt-0.5">已启用 · {{ detail.vless_encryption_type === "mlkem768" ? "ML-KEM-768" : "X25519" }}</dd></div>
-        </dl>
-
-        <form class="space-y-3" @submit.prevent="detailSaveMutation.mutate()">
-          <div class="grid gap-3 sm:grid-cols-2">
-            <label class="block"><span class="mb-1 block text-[11px] text-faint">名称方式</span><select v-model="detailForm.nameMode" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-2 text-sm"><option value="auto">{{ detail?.host_direct ? "默认名称" : "跟随实际国家" }}</option><option value="custom">自定义名称</option></select></label>
-            <label class="block"><span class="mb-1 block text-[11px] text-faint">端口</span><input v-model.number="detailForm.port" type="number" min="1" max="65535" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" /></label>
-          </div>
-          <label v-if="detailForm.nameMode === 'custom'" class="block"><span class="mb-1 block text-[11px] text-faint">自定义名称</span><input v-model="detailForm.remark" class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm" /></label>
-          <label class="flex items-center gap-2 text-xs text-muted"><input v-model="detailForm.enable" type="checkbox" class="accent-accent" />启用这个入口</label>
-          <UiButton type="submit" size="sm" variant="primary" :loading="detailSaveMutation.isPending.value">保存入口参数</UiButton>
-        </form>
-
-        <section>
-          <div class="mb-2 flex items-center justify-between gap-2">
-            <h3 class="text-xs font-semibold text-ink">客户端 · {{ detail.clients?.length || 0 }}</h3>
-            <UiButton size="sm" :loading="clientAddMutation.isPending.value" @click="clientAddMutation.mutate()"><Plus :size="13" />添加客户端</UiButton>
-          </div>
-          <div v-if="!detail.clients?.length" class="rounded-lg border border-dashed border-line-strong px-3 py-4 text-center text-[11px] text-faint">没有客户端</div>
-          <div v-else class="space-y-2">
-            <div v-for="(client, index) in detail.clients" :key="client.email" class="rounded-lg border border-line p-3">
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="min-w-0 flex-1 truncate text-xs font-medium">{{ client.email }}</span>
-                <span v-if="!client.enable" class="text-[10px] text-faint">已停用</span>
-                <CopyButton v-if="detail.links?.[index]" :text="detail.links[index]" size="sm" variant="ghost" label="复制" />
-                <UiButton size="sm" variant="ghost" @click="resetClient(client.email)">重置</UiButton>
-                <UiButton size="sm" variant="ghost" @click="deleteClient(client.email)"><Trash2 :size="13" /></UiButton>
-              </div>
-              <p v-if="detail.links?.[index]" class="mt-2 break-all rounded bg-surface-2 px-2 py-1 font-mono text-[10px] text-faint">{{ detail.links[index] }}</p>
-            </div>
-          </div>
-        </section>
-
-        <div class="flex flex-wrap items-center gap-2 border-t border-line pt-3">
-          <UiButton size="sm" :loading="cloneMutation.isPending.value" @click="cloneInbound(detail)">复制到所有就绪出口</UiButton>
-          <UiButton v-if="detail.vless_encryption" size="sm" variant="secondary" :loading="rotateEncryptionMutation.isPending.value" @click="rotateEncryptionMutation.mutate()">重新生成加密参数</UiButton>
-          <UiButton v-if="detail.protocol === 'vless' && !detail.vless_encryption" size="sm" variant="secondary" :loading="setEncryptionMutation.isPending.value" @click="setEncryptionMutation.mutate(true)">启用 VLESS Encryption</UiButton>
-          <UiButton v-if="detail.vless_encryption" size="sm" variant="ghost" :loading="setEncryptionMutation.isPending.value" @click="setEncryptionMutation.mutate(false)">停用 VLESS Encryption</UiButton>
-          <UiButton v-if="!detail.managed_slot" variant="danger" size="sm" @click="deleteInbound(detail)"><Trash2 :size="13" />删除这个入口</UiButton>
-        </div>
-        <div
-          v-if="detail.managed_slot && ownerOf(detail)"
-          class="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3"
-        >
-          <p class="text-[11px] text-faint">删除自动出口会把控制台目标数量减少 1；自动入口默认归档保留，可在确认框中同时清理。</p>
-          <UiButton variant="danger" size="sm" @click="deleteManagedExit(detail)"><Trash2 :size="13" />删除出口</UiButton>
-        </div>
-        <div
-          v-else-if="detail.managed_slot"
-          class="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3"
-        >
-          <p class="text-[11px] text-faint">对应出口已不存在，这个自动入口处于归档阻断状态。</p>
-          <UiButton variant="danger" size="sm" @click="deleteArchivedInbound(detail)"><Trash2 :size="13" />清理归档入口</UiButton>
-        </div>
-      </div>
-    </DialogShell>
+    <InboundDetailDrawer
+      v-model:open="detailOpen"
+      :inbound="detailInbound"
+      :exits="exits"
+      @delete-inbound="deleteInbound"
+      @delete-managed="deleteManagedExit"
+      @delete-archived="deleteArchivedInbound"
+    />
 
     <ConfirmDialog
       :open="confirmOpen"
