@@ -4,8 +4,7 @@ import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/vue-que
 import { computed, reactive, ref, watch } from "vue";
 import { api, post } from "@/api/client";
 import { keys, useConsoleQuery } from "@/api/queries";
-import type { AutomationView, CheckResult, EgressProfile, Node, NodesView } from "@/api/types";
-import DialogShell from "@/components/DialogShell.vue";
+import type { CheckResult, EgressProfile, Node, NodesView } from "@/api/types";
 import EmptyState from "@/components/EmptyState.vue";
 import PageHeader from "@/components/PageHeader.vue";
 import Panel from "@/components/Panel.vue";
@@ -14,9 +13,16 @@ import SkeletonBlock from "@/components/SkeletonBlock.vue";
 import StatusBadge from "@/components/StatusBadge.vue";
 import ToggleSwitch from "@/components/ToggleSwitch.vue";
 import UiButton from "@/components/UiButton.vue";
-import { countryName, formatDateTime, formatHitRate, formatLatency, formatMbps, truncate } from "@/lib/format";
-import { postRefreshCheckLabel, scheduleLabel, sourceLabel } from "@/lib/automation";
-import { checkStatusLabel, checkStatusTone, errorLabel, ipTypeLabel, ipTypeLabels, ipTypeTone, sourceResidentialLabel } from "@/lib/status";
+import AutomationDialog from "@/pages/nodes/AutomationDialog.vue";
+import NodeCheckProgress from "@/pages/nodes/NodeCheckProgress.vue";
+import NodeDetailDialog from "@/pages/nodes/NodeDetailDialog.vue";
+import NodeFilterBar from "@/pages/nodes/NodeFilterBar.vue";
+import NodeSidebar from "@/pages/nodes/NodeSidebar.vue";
+import NodeTableBody from "@/pages/nodes/NodeTableBody.vue";
+import SourceSettingsDialog from "@/pages/nodes/SourceSettingsDialog.vue";
+import { countryName } from "@/lib/format";
+import { sourceLabel } from "@/lib/automation";
+import { checkStatusLabel, checkStatusTone } from "@/lib/status";
 import { toast, toastError } from "@/lib/toast";
 
 const PAGE_SIZE = 50;
@@ -51,6 +57,8 @@ const statusFilter = ref("all");
 const typeFilter = ref("all");
 const page = ref(1);
 const selected = ref<Set<string>>(new Set());
+const sourceOpen = ref(false);
+const automationOpen = ref(false);
 const parallelism = ref(2);
 const parallelismDirty = ref(false);
 const ipTypeCheck = ref(false);
@@ -135,6 +143,9 @@ const filtered = computed(() => {
 
 const pageCount = computed(() => Math.max(1, Math.ceil(filtered.value.length / PAGE_SIZE)));
 const pageNodes = computed(() => filtered.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE));
+const pageRows = computed(() =>
+  pageNodes.value.map((node) => ({ node, result: effectiveResult(node), ipType: nodeIPType(node) })),
+);
 
 watch([search, countryFilter, statusFilter, typeFilter], () => {
   page.value = 1;
@@ -240,83 +251,6 @@ function checkNode(node: Node) {
   checkMutation.mutate({ hosts: [node.hostname], priority: true });
 }
 
-// Source settings
-const sourceOpen = ref(false);
-const sourceLoading = ref(false);
-const sourceSaving = ref(false);
-const sourceForm = reactive({ mirror_enabled: true, source_timeout_seconds: 10, mirror_max_age_hours: 24 });
-
-async function openSource() {
-  sourceLoading.value = true;
-  try {
-    const value = await api<typeof sourceForm>("api/console/source-settings");
-    Object.assign(sourceForm, value);
-    sourceOpen.value = true;
-  } catch (error) {
-    toastError(error, "读取来源设置失败");
-  } finally {
-    sourceLoading.value = false;
-  }
-}
-
-async function saveSource() {
-  sourceSaving.value = true;
-  try {
-    await post("api/console/source-settings", {
-      mirror_enabled: sourceForm.mirror_enabled,
-      source_timeout_seconds: Number(sourceForm.source_timeout_seconds),
-      mirror_max_age_hours: Number(sourceForm.mirror_max_age_hours),
-    });
-    sourceOpen.value = false;
-    toast("来源设置已保存，下次刷新生效", { tone: "success" });
-  } catch (error) {
-    toastError(error, "保存来源设置失败");
-  } finally {
-    sourceSaving.value = false;
-  }
-}
-
-// Automation
-const automationOpen = ref(false);
-const automationLoading = ref(false);
-const automationSaving = ref(false);
-const automationForm = reactive({ refresh_enabled: true, refresh_minutes: 60 });
-
-async function openAutomation() {
-  automationLoading.value = true;
-  try {
-    const value = await api<AutomationView>("api/console/automation");
-    Object.assign(automationForm, value.settings);
-    automationOpen.value = true;
-  } catch (error) {
-    toastError(error, "读取周期任务失败");
-  } finally {
-    automationLoading.value = false;
-  }
-}
-
-async function saveAutomation() {
-  const refresh = Number(automationForm.refresh_minutes);
-  if (!Number.isSafeInteger(refresh) || refresh < 30 || refresh > 525600) {
-    toast("自动刷新间隔须为 30–525600 分钟", { tone: "error" });
-    return;
-  }
-  automationSaving.value = true;
-  try {
-    await post("api/console/automation", {
-      refresh_enabled: automationForm.refresh_enabled,
-      refresh_minutes: refresh,
-    });
-    automationOpen.value = false;
-    toast("周期任务已保存", { tone: "success" });
-    void queryClient.invalidateQueries({ queryKey: keys.console });
-  } catch (error) {
-    toastError(error, "保存周期任务失败");
-  } finally {
-    automationSaving.value = false;
-  }
-}
-
 const sourceText = computed(() => sourceLabel(summary.value?.pool_source));
 
 const checkSettings = computed(() => summary.value?.check_settings);
@@ -346,8 +280,8 @@ const detailNode = ref<Node | null>(null);
   <div class="space-y-5">
     <PageHeader title="节点池" description="来源、候选、检测和周期任务集中在一页；候选数量不等于可用出口数。">
       <template #actions>
-        <UiButton :loading="sourceLoading" @click="openSource"><Settings2 :size="15" />来源设置</UiButton>
-        <UiButton :loading="automationLoading" @click="openAutomation"><TimerReset :size="15" />周期任务</UiButton>
+        <UiButton @click="sourceOpen = true"><Settings2 :size="15" />来源设置</UiButton>
+        <UiButton @click="automationOpen = true"><TimerReset :size="15" />周期任务</UiButton>
         <UiButton :loading="refreshMutation.isPending.value || summary?.refresh?.status === 'running'" @click="refreshMutation.mutate()">
           <RefreshCw :size="15" />刷新来源
         </UiButton>
@@ -361,26 +295,13 @@ const detailNode = ref<Node | null>(null);
 
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
       <div class="min-w-0 space-y-4">
-        <div class="flex flex-wrap items-end gap-2">
-          <label class="relative min-w-[220px] flex-1">
-            <Search :size="14" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" />
-            <input v-model="search" name="node-search" type="search" autocomplete="off" placeholder="搜索 IP、主机名、ASN 或国家" class="h-9 w-full rounded-lg border border-line-strong bg-surface pl-8 pr-3 text-xs outline-none focus:border-accent" />
-          </label>
-          <select v-model="countryFilter" name="node-country" class="h-9 min-w-36 rounded-lg border border-line-strong bg-surface px-2.5 text-xs outline-none focus:border-accent" aria-label="筛选来源国家">
-            <option value="">所有来源国家</option>
-            <option v-for="[code, name] in countries" :key="code" :value="code">{{ name }}（{{ code }}）</option>
-          </select>
-          <select v-model="statusFilter" name="node-status" class="h-9 min-w-32 rounded-lg border border-line-strong bg-surface px-2.5 text-xs outline-none focus:border-accent" aria-label="筛选检测状态">
-            <option value="all">所有状态</option>
-            <option value="passed">通过</option>
-            <option value="failed">未通过</option>
-            <option value="not_tested">未检测 / 过期</option>
-          </select>
-          <select v-model="typeFilter" name="node-type" class="h-9 min-w-32 rounded-lg border border-line-strong bg-surface px-2.5 text-xs outline-none focus:border-accent" aria-label="筛选 IP 类型">
-            <option value="all">所有 IP 类型</option>
-            <option v-for="(label, type) in ipTypeLabels" :key="type" :value="type">{{ label }}</option>
-          </select>
-        </div>
+        <NodeFilterBar
+          v-model:search="search"
+          v-model:country-filter="countryFilter"
+          v-model:status-filter="statusFilter"
+          v-model:type-filter="typeFilter"
+          :countries="countries"
+        />
 
         <div class="flex flex-wrap items-center gap-2">
           <UiButton size="sm" :disabled="!selected.size" :loading="checkMutation.isPending.value" @click="checkSelected">
@@ -427,13 +348,7 @@ const detailNode = ref<Node | null>(null);
         </div>
 
         <Panel flush>
-          <div v-if="summary?.check" class="border-b border-line bg-surface-2 px-4 py-3">
-            <div class="flex items-center justify-between gap-2 text-xs">
-              <span class="font-medium">候选检测 · {{ summary.check.done }} / {{ summary.check.total }}</span>
-              <StatusBadge :label="checkStatusLabel(summary.check.status)" :tone="checkStatusTone(summary.check.status)" size="sm" :pulse="summary.check.status === 'running'" />
-            </div>
-            <ProgressBar :value="checkPercent" size="sm" class="mt-2" label="候选检测进度" />
-          </div>
+          <NodeCheckProgress :check="summary?.check" :percent="checkPercent" />
 
           <div v-if="isLoading && !nodePages" class="p-4"><SkeletonBlock :lines="8" /></div>
           <div v-else-if="!filtered.length" class="p-4">
@@ -466,41 +381,14 @@ const detailNode = ref<Node | null>(null);
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="node in pageNodes" :key="node.hostname" class="border-b border-line last:border-b-0 hover:bg-surface-2">
-                  <td class="px-4 py-2.5">
-                    <input type="checkbox" name="select-node" :checked="selected.has(node.hostname)" :aria-label="`选择 ${node.hostname}`" class="accent-accent" @change="toggleNode(node.hostname, ($event.target as HTMLInputElement).checked)" />
-                  </td>
-                  <td class="px-2 py-2.5">
-                    <button type="button" class="min-w-0 text-left" @click="detailNode = node">
-                      <span class="block truncate font-mono text-[11px] font-medium text-ink hover:text-accent">{{ truncate(node.hostname, 30) }}</span>
-                      <span class="block truncate text-[11px] text-faint">{{ node.ip }}<template v-if="node.asn"> · {{ node.asn }}</template><template v-if="node.isp"> · {{ truncate(node.isp, 20) }}</template></span>
-                    </button>
-                  </td>
-                  <td class="px-2 py-2.5 text-xs">
-                    <span class="font-medium">{{ countryName(node.country_code) }}</span>
-                    <span class="ml-1 text-[10px] text-faint">{{ node.country_code }}</span>
-                    <div class="text-[10px] text-faint">{{ sourceResidentialLabel(node.source_residential) }}</div>
-                  </td>
-                  <td class="px-2 py-2.5 text-xs">
-                    <span class="block font-mono text-[11px]">{{ effectiveResult(node).actual_ip || node.expected_exit_ip || "—" }}</span>
-                    <span class="text-[10px] text-faint">{{ effectiveResult(node).country ? countryName(effectiveResult(node).country) : "地区未知" }}</span>
-                  </td>
-                  <td class="px-2 py-2.5">
-                    <StatusBadge :label="ipTypeLabel(nodeIPType(node))" :tone="ipTypeTone(nodeIPType(node))" size="sm" />
-                  </td>
-                  <td class="px-2 py-2.5">
-                    <StatusBadge :label="checkStatusLabel(effectiveResult(node).status)" :tone="checkStatusTone(effectiveResult(node).status)" size="sm" :pulse="effectiveResult(node).status === 'running'" />
-                    <div v-if="effectiveResult(node).code" class="mt-1 text-[10px] text-bad">{{ errorLabel(effectiveResult(node).code) }}</div>
-                  </td>
-                  <td class="tnum px-2 py-2.5 text-xs text-muted">{{ formatLatency(effectiveResult(node).latency_ms) }}</td>
-                  <td class="px-2 py-2.5 text-[11px] text-faint">
-                    {{ formatDateTime(effectiveResult(node).checked_at) }}
-                    <div class="text-[10px]">有效至 {{ formatDateTime(effectiveResult(node).expires_at) }}</div>
-                  </td>
-                  <td class="px-4 py-2.5 text-right">
-                    <UiButton size="sm" variant="ghost" :loading="submitting.has(node.hostname)" @click="checkNode(node)">检测</UiButton>
-                  </td>
-                </tr>
+                <NodeTableBody
+                  :rows="pageRows"
+                  :selected="selected"
+                  :submitting="submitting"
+                  @toggle-node="toggleNode"
+                  @open-detail="detailNode = $event"
+                  @check-node="checkNode"
+                />
               </tbody>
             </table>
           </div>
@@ -518,110 +406,32 @@ const detailNode = ref<Node | null>(null);
         </Panel>
       </div>
 
-      <aside class="min-w-0 space-y-4">
-        <Panel title="来源与任务">
-          <dl class="space-y-3 text-xs">
-            <div><dt class="text-faint">来源</dt><dd class="mt-0.5 leading-relaxed text-ink">{{ sourceText }}</dd></div>
-            <div><dt class="text-faint">来源刷新</dt><dd class="mt-0.5 text-ink">{{ scheduleLabel(summary?.automation, "refresh") }}</dd></div>
-            <div><dt class="text-faint">候选检测</dt><dd class="mt-0.5 text-ink">{{ postRefreshCheckLabel(summary?.automation) }}</dd></div>
-            <div><dt class="text-faint">结果有效</dt><dd class="mt-0.5 text-ink">{{ checkSettings?.check_result_ttl_effective_minutes ? `${checkSettings.check_result_ttl_effective_minutes} 分钟` : "—" }} · 超期显示已过期</dd></div>
-            <div><dt class="text-faint">排序观察有效</dt><dd class="mt-0.5 text-ink">{{ checkSettings?.observation_ttl_effective_minutes ? `${checkSettings.observation_ttl_effective_minutes} 分钟` : "—" }}</dd></div>
-            <div v-if="checkCycleMinutes"><dt class="text-faint">单轮检测约</dt><dd class="mt-0.5 text-ink">{{ checkCycleMinutes }} 分钟</dd></div>
-            <div v-if="ipTypeCache"><dt class="text-faint" title="命中与检测计数为滑动窗口，旧数据自然过期；重启或手动清除归零；有效条目落盘持久化；由出口建连（自动/手动、重连）与节点池候选检测共用">IP 类型缓存（出口 + 节点池）</dt><dd class="mt-0.5 text-ink"><span class="block">缓存命中 {{ ipTypeCache.hits }} 次 · 发起检测 {{ ipTypeCache.queries }} 次 · 命中率 {{ formatHitRate(ipTypeCache.hits, ipTypeCache.queries) }}</span><span class="block">有效条目 {{ ipTypeCache.entries }} 条 · 缓存有效期 {{ checkSettings?.ip_type_ttl_hours ? `${checkSettings.ip_type_ttl_hours} 小时` : "—" }}</span></dd></div>
-            <div><dt class="text-faint">上次获取</dt><dd class="mt-0.5 text-ink">{{ formatDateTime(summary?.pool_generated_at) }}</dd></div>
-          </dl>
-          <UiButton v-if="ipTypeCache?.entries" size="sm" variant="ghost" class="mt-3" :loading="clearIPTypeMutation.isPending.value" @click="clearIPTypeMutation.mutate()">清除 IP 类型缓存</UiButton>
-          <p class="mt-3 rounded-lg border border-line px-3 py-2 text-[11px] leading-relaxed text-faint">
-            结果有效期固定 30 分钟，超期显示“已过期”；每次刷新成功后自动全量检测一次覆盖。
-          </p>
-          <p class="mt-3 border-t border-line pt-3 text-[11px] leading-relaxed text-faint">
-            所有获取、镜像校验和节点检测都由本 VPS 执行；检测通过不等于会永久在线。
-          </p>
-        </Panel>
-
-        <Panel title="筛选结果">
-          <div class="grid grid-cols-2 gap-3 text-xs">
-            <div><div class="text-[11px] text-faint">当前结果</div><div class="tnum mt-0.5 text-lg font-semibold">{{ filtered.length }}</div></div>
-            <div><div class="text-[11px] text-faint">已选择</div><div class="tnum mt-0.5 text-lg font-semibold">{{ selected.size }}</div></div>
-          </div>
-          <UiButton v-if="selected.size" size="sm" variant="ghost" class="mt-3" @click="selected = new Set()">清空选择</UiButton>
-        </Panel>
-      </aside>
+      <NodeSidebar
+        :summary="summary"
+        :filtered-count="filtered.length"
+        :selected-count="selected.size"
+        :source-text="sourceText"
+        :check-settings="checkSettings"
+        :check-cycle-minutes="checkCycleMinutes"
+        :ip-type-cache="ipTypeCache"
+        :clearing-cache="clearIPTypeMutation.isPending.value"
+        @clear-cache="clearIPTypeMutation.mutate()"
+        @clear-selection="selected = new Set()"
+      />
     </div>
 
-    <DialogShell :open="sourceOpen" title="候选来源设置" description="所有清单获取和节点检测都由本 VPS 执行。" size="md" @update:open="sourceOpen = $event">
-      <form class="space-y-4" @submit.prevent="saveSource">
-        <label class="flex items-start justify-between gap-4 rounded-lg border border-line p-3">
-          <span>
-            <span class="block text-sm font-medium text-ink">允许第三方镜像后备</span>
-            <span class="mt-0.5 block text-[11px] leading-relaxed text-muted">仅在当前来源失败时请求镜像原始 CSV；不采用镜像的检测结论。</span>
-          </span>
-          <ToggleSwitch v-model="sourceForm.mirror_enabled" label="允许第三方镜像后备" />
-        </label>
-        <label class="block">
-          <span class="mb-1 block text-xs font-medium">每次来源请求最长等待（秒）</span>
-          <input v-model.number="sourceForm.source_timeout_seconds" name="source-timeout" type="number" min="2" max="20" required class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
-        </label>
-        <label class="block">
-          <span class="mb-1 block text-xs font-medium">镜像声明抓取时间的最大年龄（小时）</span>
-          <input v-model.number="sourceForm.mirror_max_age_hours" name="mirror-max-age" type="number" min="1" max="168" required class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
-          <span class="mt-1 block text-[11px] text-faint">默认 24 小时；超过 3 小时会提示较旧。校验失败时保留旧清单。</span>
-        </label>
-        <div class="flex justify-end gap-2 pt-1">
-          <UiButton variant="ghost" @click="sourceOpen = false">取消</UiButton>
-          <UiButton type="submit" variant="primary" :loading="sourceSaving">保存</UiButton>
-        </div>
-      </form>
-    </DialogShell>
-
-    <DialogShell :open="automationOpen" title="周期任务" description="自动刷新最低 30 分钟；每次刷新成功后自动全量检测一次，检测结果 30 分钟有效。获取和检测由本 VPS 完成。" size="md" @update:open="automationOpen = $event">
-      <form class="space-y-4" @submit.prevent="saveAutomation">
-        <div class="rounded-lg border border-line p-3">
-          <div class="flex items-center justify-between gap-3">
-            <div><div class="text-sm font-medium">自动刷新候选清单</div><div class="text-[11px] text-muted">最低 30 分钟；失败保留旧清单，成功后自动全量检测。</div></div>
-            <ToggleSwitch v-model="automationForm.refresh_enabled" label="自动刷新候选清单" />
-          </div>
-          <label class="mt-3 block">
-            <span class="mb-1 block text-[11px] text-faint">刷新间隔（分钟）</span>
-            <input v-model.number="automationForm.refresh_minutes" name="refresh-minutes" type="number" min="30" max="525600" required class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
-          </label>
-        </div>
-        <div class="flex justify-end gap-2 pt-1">
-          <UiButton variant="ghost" @click="automationOpen = false">取消</UiButton>
-          <UiButton type="submit" variant="primary" :loading="automationSaving">保存</UiButton>
-        </div>
-      </form>
-    </DialogShell>
-
-    <DialogShell :open="Boolean(detailNode)" :title="detailNode?.hostname || '节点详情'" description="来源节点与检测观测" size="md" @update:open="detailNode = $event ? detailNode : null">
-      <div v-if="detailNode" class="space-y-4">
-        <dl class="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg border border-line bg-surface-2 p-3 text-xs">
-          <div><dt class="text-faint">服务器 IP</dt><dd class="mt-0.5 font-mono">{{ detailNode.ip }}</dd></div>
-          <div><dt class="text-faint">来源地区</dt><dd class="mt-0.5">{{ countryName(detailNode.country_code) }}（{{ detailNode.country_code }}）</dd></div>
-          <div><dt class="text-faint">ASN</dt><dd class="mt-0.5">{{ detailNode.asn || "—" }}</dd></div>
-          <div><dt class="text-faint">ISP</dt><dd class="mt-0.5">{{ detailNode.isp || "—" }}</dd></div>
-          <div><dt class="text-faint">来源类型</dt><dd class="mt-0.5">{{ sourceResidentialLabel(detailNode.source_residential) }}</dd></div>
-          <div><dt class="text-faint">IP 类型</dt><dd class="mt-0.5">{{ ipTypeLabel(nodeIPType(detailNode)) }}</dd></div>
-          <div><dt class="text-faint">类型依据</dt><dd class="mt-0.5">{{ nodeEgress(detailNode)?.reason || "—" }}</dd></div>
-          <div><dt class="text-faint">画像状态</dt><dd class="mt-0.5">{{ nodeEgress(detailNode)?.intelligence_status || "—" }}</dd></div>
-          <div><dt class="text-faint">画像来源</dt><dd class="mt-0.5">{{ nodeEgress(detailNode)?.provider || "—" }}</dd></div>
-          <div><dt class="text-faint">画像有效至</dt><dd class="mt-0.5">{{ formatDateTime(nodeEgress(detailNode)?.expires_at) }}</dd></div>
-          <div v-if="nodeEgress(detailNode)?.fraud_score !== undefined && nodeEgress(detailNode)?.fraud_score !== null"><dt class="text-faint">风险分</dt><dd class="tnum mt-0.5">{{ nodeEgress(detailNode)?.fraud_score }}</dd></div>
-          <div><dt class="text-faint">预期出口</dt><dd class="mt-0.5 font-mono">{{ detailNode.expected_exit_ip || "—" }}</dd></div>
-          <div><dt class="text-faint">SSTP 候选</dt><dd class="mt-0.5">{{ detailNode.sstp_candidates?.length || 0 }} 个</dd></div>
-          <div><dt class="text-faint">Ping</dt><dd class="tnum mt-0.5">{{ detailNode.ping ? `${detailNode.ping} ms` : "—" }}</dd></div>
-          <div><dt class="text-faint">速度</dt><dd class="tnum mt-0.5">{{ formatMbps(detailNode.speed_mbps) }}</dd></div>
-        </dl>
-        <div class="rounded-lg border border-line p-3 text-xs">
-          <div class="mb-1 text-faint">当前观测</div>
-          <StatusBadge :label="checkStatusLabel(effectiveResult(detailNode).status)" :tone="checkStatusTone(effectiveResult(detailNode).status)" size="sm" />
-          <p v-if="effectiveResult(detailNode).code" class="mt-2 text-bad">{{ errorLabel(effectiveResult(detailNode).code) }}</p>
-          <p class="mt-2 text-faint">检测时间 {{ formatDateTime(effectiveResult(detailNode).checked_at) }}</p>
-          <p class="mt-1 text-faint">结果有效至 {{ formatDateTime(effectiveResult(detailNode).expires_at) }}</p>
-          <p class="mt-1 text-faint">排序观察有效至 {{ formatDateTime(observationExpiry(detailNode)) }}</p>
-        </div>
-        <UiButton size="sm" :loading="submitting.has(detailNode.hostname)" @click="checkNode(detailNode)">立即检测</UiButton>
-      </div>
-    </DialogShell>
+    <SourceSettingsDialog v-model:open="sourceOpen" />
+    <AutomationDialog v-model:open="automationOpen" />
+    <NodeDetailDialog
+      :open="Boolean(detailNode)"
+      :node="detailNode"
+      :result="detailNode ? effectiveResult(detailNode) : null"
+      :egress="detailNode ? nodeEgress(detailNode) : null"
+      :ip-type="detailNode ? nodeIPType(detailNode) : 'unknown'"
+      :observation-expiry="detailNode ? observationExpiry(detailNode) : ''"
+      :submitting="detailNode ? submitting.has(detailNode.hostname) : false"
+      @update:open="detailNode = $event ? detailNode : null"
+      @check="detailNode && checkNode(detailNode)"
+    />
   </div>
 </template>

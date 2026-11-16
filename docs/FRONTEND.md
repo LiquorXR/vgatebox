@@ -36,6 +36,7 @@ vps/fanout/frontend/
     pages/              总览、出口、节点池、订阅、接入、设置
     pages/access/       接入 tab、入站新增对话框与详情抽屉
     pages/exit/         出口页拆出的目标对话框与详情抽屉
+    pages/nodes/        节点筛选、表格行、检测进度、侧栏与来源/周期/详情对话框
     styles/             设计 token 与基础样式
   vite.config.ts        多入口、base './'、输出到 webdist
   webdist/.gitkeep      保证未构建时 Go 仍可编译

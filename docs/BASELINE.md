@@ -68,7 +68,12 @@ YAML 辅助函数）。
 前端 C3 同步落地：`AdvancedAccessPanel.vue` 从 702 行降到 329 行；
 新增入口对话框 `InboundCreateDialog.vue`（183 行）、详情抽屉
 `InboundDetailDrawer.vue`（292 行），入站命名/绑定/状态判断收敛到
-`lib/inbound.ts`（46 行）。目前仅剩 `NodesPage.vue`（581 行）超过 400 行。
+`lib/inbound.ts`（46 行）。
+
+前端 C4 同步落地：`NodesPage.vue` 从 581 行降到 400 行；筛选栏、节点行、
+检测进度、侧栏、来源设置、周期任务与节点详情分别拆到 `pages/nodes/`。
+至此所有页面/组件均 ≤ 400 行（`ExitsPage` 387、`AdvancedAccessPanel` 329、
+`NodesPage` 400）。
 
 ## 2. staticcheck 基线（v0.8.2，`all` 默认集）
 
