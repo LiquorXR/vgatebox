@@ -93,6 +93,15 @@ YAML 辅助函数）。
 
 生产函数 complexity ≥ 20 的数量从 11 降到 **0**。
 
+### 1.3 工具链与容量（E1/F1，2026-11-16）
+
+- Go 工具链 `1.26.0 → 1.26.11`（`go.mod` 与 6 处 workflow pin 同步）。
+- `GOTOOLCHAIN=go1.26.11 GOOS=linux govulncheck ./...` → `No vulnerabilities found.`
+  （旧 1.26.0 下的 28 个 stdlib symbol findings 与 19 个 package/module OSV 全部消失）。
+- 新增 `capacity.go`：按 fd、`MemAvailable`、端口区间给出保守建议，启动日志输出
+  “容量预检”；不改变 `-max`，不阻止创建。
+- 新增 `TestFreeRandomPortExhausted` 与容量估算表驱动测试。
+
 ## 2. staticcheck 基线（v0.8.2，`all` 默认集）
 
 37 条，4 个码，17 个文件。CI 门禁为默认集减这 3 个豁免（U1000 已清零，见下）：
@@ -116,25 +125,17 @@ provision.go / settings.go / socks5.go / vpngate.go 各 1。
 
 复现：`GOOS=linux staticcheck ./...`（vps/fanout 下，需 `go install honnef.co/go/tools/cmd/staticcheck@v0.8.2`）。
 
-## 3. govulncheck 基线（v1.9.0，Go 1.26.0 工具链，2026-11-08 重采）
+## 3. govulncheck 基线（v1.9.0，Go 1.26.11 工具链，2026-11-16 重采）
 
-- 代码可达（Symbol）：28 个，**全部** `stdlib@go1.26.0`，均为工具链债务（fix 多在 go1.26.x 补丁版，
-  如 `GO-2026-4599/4600/4601/4602 → go1.26.1`、`GO-2026-6617 → go1.26.9`、`GO-2026-6809 → go1.26.10`；
-  修法是跟进 1.26.x 补丁，无需改业务代码）：
-  net/http ×10（GO-2026-6617/6613/6612/6611/6610/6605/6603/6089/5026/4918）、
-  crypto/x509 ×7（GO-2026-6809/5037/4947/4946/4866/4600/4599）、
-  crypto/tls ×4（GO-2026-6607/6090/5856/4870）、
-  net/textproto ×2（GO-2026-6608/5039）、net/url ×2（GO-2026-6218/4601）、
-  encoding/asn1 ×1（GO-2026-5972）、net ×1（GO-2026-4971）、os ×1（GO-2026-4602）。
-  （原 1.24.4 下 38 个；升级到 1.26.0 后旧 GO-2025-* 及部分项已消失，新增 x509 的 4866/4600/4599。）
-- 包/模块级（未达代码）：Package 8 个 + Module 11 个，共 19 个 OSV，全部 stdlib、无代码调用：
-  GO-2026-6609/6604/6600/6599/6091/6088/5942/5038/4986/4982/4981/4980/4977/4976/4970/4869/4865/4864/4603。
-  原唯一的第三方条目 **GO-2026-5024**（`golang.org/x/sys` windows-only，已随 x/sys v0.49.0 消除）
-  确认不再出现，门禁 allowlist 已清空（无条目，有即红灯）。
-- CI 门禁（`scripts/govulncheck_gate.py`）：606 个 stdlib-trace findings 仅统计 → PASS；
-  合成第三方 findings 反测 → FAIL。第三方模块（go-qrcode、x/sys）当前无可达漏洞。
+- 代码可达（Symbol）：**0**。
+- 包/模块级（未达代码）：**0**。
+- 旧 1.26.0 工具链下的 28 个 stdlib symbol findings 与 19 个 package/module OSV
+  已随 1.26.11 补丁全部消失；本次无业务代码改动。
+- 第三方模块（`go-qrcode`、`x/sys`）仍为 0 可达漏洞。
+- CI 门禁（`scripts/govulncheck_gate.py`）逻辑不变：stdlib findings 只统计，
+  任何第三方模块 finding 一律红灯；当前两侧均为空。
 
-复现：`GOTOOLCHAIN=go1.26.0 GOOS=linux govulncheck ./...`
+复现：`GOTOOLCHAIN=go1.26.11 GOOS=linux govulncheck ./...` → `No vulnerabilities found.`
 （`go install golang.org/x/vuln/cmd/govulncheck@v1.9.0`）。
 
 ## 4. npm audit 基线（frontend）
@@ -160,7 +161,7 @@ dev 依赖 8 条（测试工具链，不打包进 `webdist`，修要 breaking �
 
 | 工具 | CI pin | 说明 |
 |---|---|---|
-| Go | 1.26.0（go.mod `go 1.26.0`） | §3 的 stdlib 债务以该工具链重采，见 §6 |
+| Go | 1.26.11（go.mod `go 1.26.11`） | §3 的 stdlib 债务已清零，见 §6 |
 | setup-go / setup-node / setup-python / checkout | 沿用现有 SHA pin | 见各 workflow |
 | staticcheck | v0.8.2 | `go install honnef.co/go/tools/cmd/staticcheck@v0.8.2` |
 | govulncheck | v1.9.0 | `go install golang.org/x/vuln/cmd/govulncheck@v1.9.0` |

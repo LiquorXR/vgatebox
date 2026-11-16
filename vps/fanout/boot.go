@@ -194,6 +194,7 @@ func initControl(cfg bootConfig) (*controlRuntime, error) {
 	// 换节点 worker 必须在状态恢复前就绪：restoreState 会拉起隧道，
 	// 发布成功后可能立刻排队下一次换节点。
 	mgr.startRotationWorker()
+	logCapacityEstimate(cfg.maxSlots)
 	log.Printf("正在拉取节点列表...")
 	if n, err := mgr.RefreshNodes(); err != nil {
 		log.Printf("拉取失败（可在 Web 界面重试）: %v", err)
