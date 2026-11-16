@@ -46,8 +46,10 @@ func estimateCapacityFrom(in capacityInput) capacityEstimate {
 	}
 
 	byFD := 0
-	if in.fdLimit > capacityFDReserve {
-		byFD = int((in.fdLimit - capacityFDReserve) / capacityFDPerSlot)
+	if in.fdLimit > 0 {
+		if in.fdLimit > capacityFDReserve {
+			byFD = int((in.fdLimit - capacityFDReserve) / capacityFDPerSlot)
+		}
 		if byFD < rec {
 			rec, reason = byFD, capacityReasonFD
 		}
