@@ -1,6 +1,6 @@
 # 第三方依赖与参考边界
 
-本项目的 Python 解析器、分类器、HTTP 适配、Xray 会话辅助、测试和工作流为本项目新编写的实现，按 GPL-3.0-only 发布，完整许可见 [LICENSE](LICENSE)。没有复制 gate、CF-vpngate、AimiliVPN 的实现代码。项目整体基于 [hanhaoops/xnvgatebox](https://github.com/hanhaoops/xnvgatebox)（GPL-3.0）修改，上游版权归原作者，许可证全文保留。
+本项目的 Python 解析器、分类器、HTTP 适配、Xray 会话辅助、测试和工作流为本项目新编写的实现，按 GPL-3.0-only 发布，完整许可见 [LICENSE](LICENSE)。项目整体基于 [hanhaoops/xnvgatebox](https://github.com/hanhaoops/xnvgatebox)（GPL-3.0）修改，上游版权归原作者，许可证全文保留。
 
 | 组件 | 本轮使用方式 | 许可 / 来源 |
 | --- | --- | --- |

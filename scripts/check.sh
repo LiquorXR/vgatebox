@@ -6,6 +6,9 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
 
+echo "== docs =="
+python3 scripts/check_docs.py
+
 echo "== go vet (linux/amd64) =="
 (cd vps/fanout && GOOS=linux GOARCH=amd64 go vet ./...)
 
