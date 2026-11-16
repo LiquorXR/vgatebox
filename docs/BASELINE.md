@@ -61,6 +61,11 @@ YAML 辅助函数）。
 策略/倒计时逻辑分别在 `lib/policy.ts` 与 `lib/exit-time.ts`。Vitest 从
 66 增至 73 个用例。
 
+前端 C2 同步落地：`AccessPage.vue` 从 713 行降到 52 行；三个 tab 拆为
+`SocksAccessTab.vue`（211 行）、`SstpAccessTab.vue`（205 行）、
+`ThirdPartyAccessTab.vue`（302 行），错误处理收敛到 `lib/access-error.ts`。
+`AdvancedAccessPanel.vue`（702 行）与 `NodesPage.vue`（581 行）仍待下一轮。
+
 ## 2. staticcheck 基线（v0.8.2，`all` 默认集）
 
 37 条，4 个码，17 个文件。CI 门禁为默认集减这 3 个豁免（U1000 已清零，见下）：
