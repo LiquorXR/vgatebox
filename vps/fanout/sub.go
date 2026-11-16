@@ -256,79 +256,20 @@ func subscriptionInboundIDs(m *Manager, p Panel, opts subLinkOptions) ([]int, er
 func handleSub(m *Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		want, err := subToken()
-		if err != nil {
-			http.Error(w, "订阅口令未就绪", http.StatusInternalServerError)
+		if !authorizeSubscription(w, r, q) {
 			return
 		}
-		// 口令不对就当这个地址不存在，不告诉对方这儿有个订阅服务
-		a := sha256.Sum256([]byte(want))
-		b := sha256.Sum256([]byte(q.Get("token")))
-		if subtle.ConstantTimeCompare(a[:], b[:]) != 1 {
-			http.NotFound(w, r)
-			return
-		}
-
-		target := strings.ToLower(strings.TrimSpace(q.Get("target")))
-		switch target {
-		case "", "base64", "b64", "v2ray":
-			target = "base64"
-		case "links", "plain", "text":
-			target = "links"
-		case "clash", "mihomo":
-			target = "clash"
-		default:
+		target, ok := subscriptionTarget(q.Get("target"))
+		if !ok {
 			http.Error(w, "target 只支持 base64、links 或 clash", http.StatusBadRequest)
 			return
 		}
-
-		host := q.Get("host")
-		if host == "" {
-			host = publicHost(r)
-		}
-		selected, selectErr := subscriptionSlots(q.Get("slots"))
-		if selectErr != nil || (selected != nil && q.Get("bound") == "0") {
-			http.Error(w, "出口选择无效", 400)
+		opts, message, ok := parseSubscriptionOptions(q, r)
+		if !ok {
+			http.Error(w, message, http.StatusBadRequest)
 			return
 		}
-		includeDirect := selected == nil
-		if v := q.Get("direct"); v != "" {
-			if v != "0" && v != "1" {
-				http.Error(w, "直出选择无效", 400)
-				return
-			}
-			includeDirect = v == "1"
-		}
-		if q.Get("vpn") == "0" {
-			selected = map[int]bool{}
-		} else if v := q.Get("vpn"); v != "" && v != "1" {
-			http.Error(w, "出口选择无效", 400)
-			return
-		}
-		proxies, proxyErr := subscriptionProxyIDs(q.Get("proxies"))
-		includeThird := q.Get("slots") == "" && q.Get("vpn") != "0"
-		if v := q.Get("third"); v != "" {
-			if v != "0" && v != "1" {
-				http.Error(w, "第三方选择无效", 400)
-				return
-			}
-			includeThird = v == "1"
-		}
-		if proxies != nil {
-			includeThird = true
-		}
-		if proxyErr != nil || (proxies != nil && q.Get("third") == "0") {
-			http.Error(w, "第三方选择无效", 400)
-			return
-		}
-		links, err := subLinksSources(m, subLinkOptions{
-			host:          host,
-			boundOnly:     q.Get("bound") != "0",
-			selected:      selected,
-			includeDirect: includeDirect,
-			includeThird:  includeThird,
-			proxies:       proxies,
-		})
+		links, err := subLinksSources(m, opts)
 		if err != nil {
 			// 内置 Xray 无法生成链接时直接返回错误，不回退到空订阅。
 			http.Error(w, "生成订阅失败: "+firstLine(err.Error()), http.StatusBadGateway)
@@ -340,32 +281,110 @@ func handleSub(m *Manager) http.HandlerFunc {
 			http.Error(w, "还没有可订阅的节点，先开出口并建节点链接", http.StatusNotFound)
 			return
 		}
-
-		body := []byte(encodeSub(links, target))
-		if target == "clash" {
-			var omitted []string
-			body, omitted, err = renderClash(links)
-			if err != nil {
-				http.Error(w, err.Error(), 400)
-				return
-			}
-			if len(omitted) > 0 {
-				w.Header().Set("X-Vgatebox-Omitted", strconv.Itoa(len(omitted)))
-				w.Header().Set("X-Vgatebox-Warning", "some entries were omitted because Mihomo cannot represent their transport")
-			}
-			w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
-		} else {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		}
-		w.Header().Set("Cache-Control", "no-store")
-		// 客户端据此决定多久自动拉一次；出口增删之外的变化不影响链接，12 小时够
-		w.Header().Set("Profile-Update-Interval", "12")
-		w.Header().Set("Content-Disposition", "inline; filename=fanout")
-		if target == "clash" {
-			w.Header().Set("Content-Disposition", "inline; filename=vgatebox-clash.yaml")
-		}
-		_, _ = w.Write(body)
+		writeSubscription(w, links, target)
 	}
+}
+
+func authorizeSubscription(w http.ResponseWriter, r *http.Request, q url.Values) bool {
+	want, err := subToken()
+	if err != nil {
+		http.Error(w, "订阅口令未就绪", http.StatusInternalServerError)
+		return false
+	}
+	// 口令不对就当这个地址不存在，不告诉对方这儿有个订阅服务
+	a := sha256.Sum256([]byte(want))
+	b := sha256.Sum256([]byte(q.Get("token")))
+	if subtle.ConstantTimeCompare(a[:], b[:]) != 1 {
+		http.NotFound(w, r)
+		return false
+	}
+	return true
+}
+
+func subscriptionTarget(raw string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "base64", "b64", "v2ray":
+		return "base64", true
+	case "links", "plain", "text":
+		return "links", true
+	case "clash", "mihomo":
+		return "clash", true
+	default:
+		return "", false
+	}
+}
+
+func parseSubscriptionOptions(q url.Values, r *http.Request) (subLinkOptions, string, bool) {
+	host := q.Get("host")
+	if host == "" {
+		host = publicHost(r)
+	}
+	selected, err := subscriptionSlots(q.Get("slots"))
+	if err != nil || (selected != nil && q.Get("bound") == "0") {
+		return subLinkOptions{}, "出口选择无效", false
+	}
+	includeDirect := selected == nil
+	if v := q.Get("direct"); v != "" {
+		if v != "0" && v != "1" {
+			return subLinkOptions{}, "直出选择无效", false
+		}
+		includeDirect = v == "1"
+	}
+	if q.Get("vpn") == "0" {
+		selected = map[int]bool{}
+	} else if v := q.Get("vpn"); v != "" && v != "1" {
+		return subLinkOptions{}, "出口选择无效", false
+	}
+	proxies, proxyErr := subscriptionProxyIDs(q.Get("proxies"))
+	includeThird := q.Get("slots") == "" && q.Get("vpn") != "0"
+	if v := q.Get("third"); v != "" {
+		if v != "0" && v != "1" {
+			return subLinkOptions{}, "第三方选择无效", false
+		}
+		includeThird = v == "1"
+	}
+	if proxies != nil {
+		includeThird = true
+	}
+	if proxyErr != nil || (proxies != nil && q.Get("third") == "0") {
+		return subLinkOptions{}, "第三方选择无效", false
+	}
+	return subLinkOptions{
+		host:          host,
+		boundOnly:     q.Get("bound") != "0",
+		selected:      selected,
+		includeDirect: includeDirect,
+		includeThird:  includeThird,
+		proxies:       proxies,
+	}, "", true
+}
+
+func writeSubscription(w http.ResponseWriter, links []string, target string) {
+	body := []byte(encodeSub(links, target))
+	if target == "clash" {
+		var omitted []string
+		var err error
+		body, omitted, err = renderClash(links)
+		if err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		if len(omitted) > 0 {
+			w.Header().Set("X-Vgatebox-Omitted", strconv.Itoa(len(omitted)))
+			w.Header().Set("X-Vgatebox-Warning", "some entries were omitted because Mihomo cannot represent their transport")
+		}
+		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+	} else {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	// 客户端据此决定多久自动拉一次；出口增删之外的变化不影响链接，12 小时够
+	w.Header().Set("Profile-Update-Interval", "12")
+	w.Header().Set("Content-Disposition", "inline; filename=fanout")
+	if target == "clash" {
+		w.Header().Set("Content-Disposition", "inline; filename=vgatebox-clash.yaml")
+	}
+	_, _ = w.Write(body)
 }
 
 func subscriptionProxyIDs(text string) (map[int]bool, error) {

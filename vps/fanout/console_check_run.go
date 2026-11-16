@@ -169,63 +169,18 @@ func dispatchCheckRun(ctx context.Context, j *CheckRun, ownerMu *sync.Mutex, run
 	cancelSignal := ctx.Done()
 	for {
 		j.mu.Lock()
-		for len(active) < j.Parallelism && ctx.Err() == nil {
-			next := -1
-			for i, item := range j.Items {
-				if item.Status == "queued" && (next < 0 || item.Priority && !j.Items[next].Priority) {
-					next = i
-				}
-			}
-			if next < 0 {
-				break
-			}
-			slot := diagnosticFirstSlot
-			for active[slot] {
-				slot--
-			}
-			active[slot] = true
-			j.Items[next].Status = "running"
-			j.Items[next].StartedAt = time.Now().UTC()
-			item := j.Items[next]
-			node := j.nodes[item.Host]
-			go func(index, slot int, item CheckResult, node Node) {
-				runItem(index, slot, item, node)
-				finished <- slot
-			}(next, slot, item, node)
-		}
+		startQueuedChecks(ctx, j, active, runItem, finished)
 		if ctx.Err() != nil {
-			for i := range j.Items {
-				if j.Items[i].Status == "queued" {
-					j.Items[i].Status = "cancelled"
-					j.Done++
-				}
-			}
+			cancelQueuedItems(j)
 		}
 		idle := len(active) == 0
 		j.mu.Unlock()
 		if idle {
 			// Serialize completion with startCheck's append, so no late manual item
 			// can be accepted after the last worker has gone away.
-			ownerMu.Lock()
-			j.mu.Lock()
-			queued := false
-			for _, i := range j.Items {
-				if i.Status == "queued" {
-					queued = true
-					break
-				}
-			}
-			if !queued {
-				j.Status = "done"
-				if ctx.Err() != nil {
-					j.Status = "cancelled"
-				}
-				j.mu.Unlock()
-				ownerMu.Unlock()
+			if finishCheckRunIfIdle(j, ownerMu, ctx.Err() != nil) {
 				return
 			}
-			j.mu.Unlock()
-			ownerMu.Unlock()
 			continue
 		}
 		select {
@@ -236,6 +191,76 @@ func dispatchCheckRun(ctx context.Context, j *CheckRun, ownerMu *sync.Mutex, run
 			cancelSignal = nil
 		}
 	}
+}
+
+func startQueuedChecks(ctx context.Context, j *CheckRun, active map[int]bool, runItem func(int, int, CheckResult, Node), finished chan<- int) {
+	for len(active) < j.Parallelism && ctx.Err() == nil {
+		next := nextQueuedItem(j)
+		if next < 0 {
+			return
+		}
+		slot := claimDiagnosticSlot(active)
+		active[slot] = true
+		j.Items[next].Status = "running"
+		j.Items[next].StartedAt = time.Now().UTC()
+		item := j.Items[next]
+		node := j.nodes[item.Host]
+		go func(index, slot int, item CheckResult, node Node) {
+			runItem(index, slot, item, node)
+			finished <- slot
+		}(next, slot, item, node)
+	}
+}
+
+func nextQueuedItem(j *CheckRun) int {
+	next := -1
+	for i, item := range j.Items {
+		if item.Status == "queued" && (next < 0 || item.Priority && !j.Items[next].Priority) {
+			next = i
+		}
+	}
+	return next
+}
+
+func claimDiagnosticSlot(active map[int]bool) int {
+	slot := diagnosticFirstSlot
+	for active[slot] {
+		slot--
+	}
+	return slot
+}
+
+func cancelQueuedItems(j *CheckRun) {
+	for i := range j.Items {
+		if j.Items[i].Status == "queued" {
+			j.Items[i].Status = "cancelled"
+			j.Done++
+		}
+	}
+}
+
+func finishCheckRunIfIdle(j *CheckRun, ownerMu *sync.Mutex, cancelled bool) bool {
+	ownerMu.Lock()
+	defer ownerMu.Unlock()
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if hasQueuedItems(j) {
+		return false
+	}
+	j.Status = "done"
+	if cancelled {
+		j.Status = "cancelled"
+	}
+	return true
+}
+
+func hasQueuedItems(j *CheckRun) bool {
+	for _, item := range j.Items {
+		if item.Status == "queued" {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Console) runCheckItem(ctx context.Context, j *CheckRun, index int, item CheckResult, node Node, slot int) {

@@ -85,10 +85,12 @@ YAML 辅助函数）。
 | `checkMigrationState` | 30 → 4 | 期刊、计划、SSTP、设置、密码、basepath、state、native 分项检查 |
 | `normalizeInboundSpec` | 25 → 4 | 名称/端口/路径/备注/加密/Vision/KCP 分段 |
 | `shareLink` | 24 → 1 | 传输、TLS、REALITY、加密参数分段 |
+| `handleSub` | 23 → 5 | 鉴权、target、订阅选项、响应写出分段 |
+| `dispatchCheckRun` | 23 → 12 | 入队、取消、空闲完成、诊断槽位分段 |
 
-生产函数 complexity ≥ 20 的数量从 11 降到 5；剩余为 `handleSub`（23）、
-`dispatchCheckRun`（23）、`mirror_source.fetch_mirror`（22）、
-`normalizePolicy`（21）、`buildXrayConfig`（20）。
+生产函数 complexity ≥ 20 的数量从 11 降到 3；剩余为
+`mirror_source.fetch_mirror`（22）、`normalizePolicy`（21）、
+`buildXrayConfig`（20）。
 
 ## 2. staticcheck 基线（v0.8.2，`all` 默认集）
 
