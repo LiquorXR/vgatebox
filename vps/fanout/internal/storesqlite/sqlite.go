@@ -218,12 +218,3 @@ func stringJoin(parts []string, sep string) string {
 	}
 	return string(buf)
 }
-
-// Upsert 单键增量写入，供未来高频单点更新使用，避免整表 SaveAll。
-func (s mapStore) Upsert(key string, e store.Entry) error {
-	_, err := s.db.Exec(`INSERT INTO entries(store, key, data, checked_at, expires_at)
-		VALUES(?, ?, ?, ?, ?)
-		ON CONFLICT(store, key) DO UPDATE SET data=excluded.data, checked_at=excluded.checked_at, expires_at=excluded.expires_at`,
-		s.name, key, string(e.Data), formatTime(e.CheckedAt), formatTime(e.ExpiresAt))
-	return err
-}

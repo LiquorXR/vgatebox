@@ -11,14 +11,8 @@ import (
 	"time"
 )
 
-// loadPoolMeta 读取 node_pool.json 的生成时间与来源元数据，供 /api/console
-// 直接使用内存快照，避免每次请求重复读盘与解析整份候选池。
-func loadPoolMeta() (string, poolSourceMetadata) {
-	generated, source, _, _ := loadPoolMetaWithStat()
-	return generated, source
-}
-
-// loadPoolMetaWithStat 同时返回文件 mtime/size，供 PoolMeta 做失效校验。
+// loadPoolMetaWithStat 读取 node_pool.json 的生成时间与来源元数据，
+// 同时返回文件 mtime/size，供 PoolMeta 做失效校验，避免每次请求重复读盘。
 func loadPoolMetaWithStat() (string, poolSourceMetadata, time.Time, int64) {
 	path := paths.PoolFile()
 	st, err := os.Stat(path)
