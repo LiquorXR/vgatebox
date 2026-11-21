@@ -10,7 +10,7 @@ import (
 )
 
 // fakePanel 是个只会列入站、给链接的假后端。
-// openPanel 缓存在 panelState.current 里，测试直接塞一个进去就能绕开真面板。
+// openPanel 结果缓存在默认面板注册表里，测试直接塞一个进去就能绕开真面板。
 type fakePanel struct {
 	inbounds []Inbound
 	linkErr  error
@@ -54,14 +54,14 @@ func (f *fakePanel) Close()                                           {}
 // usePanel 临时把后端换成假的，测完还原。
 func usePanel(t *testing.T, p Panel) {
 	t.Helper()
-	panelState.mu.Lock()
-	prev := panelState.current
-	panelState.current = p
-	panelState.mu.Unlock()
+	defaultPanels.mu.Lock()
+	prev := defaultPanels.current
+	defaultPanels.current = p
+	defaultPanels.mu.Unlock()
 	t.Cleanup(func() {
-		panelState.mu.Lock()
-		panelState.current = prev
-		panelState.mu.Unlock()
+		defaultPanels.mu.Lock()
+		defaultPanels.current = prev
+		defaultPanels.mu.Unlock()
 	})
 	invalidateInbounds()
 	t.Cleanup(invalidateInbounds)

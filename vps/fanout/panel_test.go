@@ -9,10 +9,10 @@ import (
 func TestConfigurePanelOnlyAcceptsNative(t *testing.T) {
 	dir := t.TempDir()
 	t.Cleanup(func() {
-		panelState.mu.Lock()
-		panelState.current = nil
-		panelState.workDir = ""
-		panelState.mu.Unlock()
+		defaultPanels.mu.Lock()
+		defaultPanels.current = nil
+		defaultPanels.workDir = ""
+		defaultPanels.mu.Unlock()
 	})
 
 	if err := configurePanel(dir, "native"); err != nil {

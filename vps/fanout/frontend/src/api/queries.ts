@@ -74,6 +74,12 @@ export function useConsoleQuery() {
       if (v !== lastFullVersion.value) {
         lastFullVersion.value = v;
         void consoleQuery.refetch();
+        // 版本驱动联动刷新：exits/socks/third/inbounds 不再各自 5s 轮询，
+        // 由 console 版本变化按需拉取，空闲期仅靠 30s 兜底。
+        void queryClient.invalidateQueries({ queryKey: keys.exits });
+        void queryClient.invalidateQueries({ queryKey: keys.socks });
+        void queryClient.invalidateQueries({ queryKey: keys.thirdParty });
+        void queryClient.invalidateQueries({ queryKey: keys.inbounds });
       }
     },
   );
@@ -81,13 +87,22 @@ export function useConsoleQuery() {
 }
 
 export function useExitsQuery(enabled: MaybeRefOrGetter<boolean> = true) {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: keys.exits,
     queryFn: () => api<ExitsView>("api/exits"),
     enabled: enabledRef(enabled),
-    refetchInterval: 5000,
+    // 建链期动态加速：存在 starting / pending_swap 时按 2s 刷新阶段与耗时，
+    // 全部稳态后退回 30s 兜底 + consoleVersion 驱动。
+    refetchInterval: () => {
+      const view = queryClient.getQueryData<ExitsView>(keys.exits);
+      const busy = (view?.exits ?? []).some(
+        (e) => e.status === "starting" || e.pending_swap,
+      );
+      return busy ? 2000 : 30000;
+    },
     refetchIntervalInBackground: false,
-    staleTime: 1500,
+    staleTime: 5000,
   });
 }
 
@@ -131,11 +146,17 @@ export function useUpdateStatusQuery(enabled: MaybeRefOrGetter<boolean> = true) 
 }
 
 export function useThirdPartyQuery(enabled: MaybeRefOrGetter<boolean> = true) {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: keys.thirdParty,
     queryFn: () => api<ThirdPartyView>("api/resources/third-party"),
     enabled: enabledRef(enabled),
-    refetchInterval: 5000,
+    // 检测运行期动态加速：存在 running 检测时按 2s 刷新，完成后退回 30s 兜底。
+    refetchInterval: () => {
+      const view = queryClient.getQueryData<ThirdPartyView>(keys.thirdParty);
+      const busy = (view?.proxies ?? []).some((p) => p.check?.status === "running");
+      return busy ? 2000 : 30000;
+    },
     refetchIntervalInBackground: false,
   });
 }
@@ -145,7 +166,8 @@ export function useSocksLinksQuery(enabled: MaybeRefOrGetter<boolean> = true) {
     queryKey: keys.socks,
     queryFn: () => api<SocksLinksView>("api/console/socks"),
     enabled: enabledRef(enabled),
-    refetchInterval: 5000,
+    // consoleVersion 联动刷新为主，这里仅 30s 兜底。
+    refetchInterval: 30000,
     refetchIntervalInBackground: false,
   });
 }
@@ -155,7 +177,8 @@ export function useInboundsQuery(enabled: MaybeRefOrGetter<boolean> = true) {
     queryKey: keys.inbounds,
     queryFn: () => api<Inbound[]>("api/xui/inbounds"),
     enabled: enabledRef(enabled),
-    refetchInterval: 5000,
+    // consoleVersion 联动刷新为主，这里仅 30s 兜底。
+    refetchInterval: 30000,
     refetchIntervalInBackground: false,
   });
 }

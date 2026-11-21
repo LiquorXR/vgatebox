@@ -6,9 +6,11 @@ import (
 	"fanout/internal/paths"
 	"fanout/internal/store"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -268,19 +270,63 @@ func ipTypeCacheable(raw ippureResponse, image EgressProfile, expectedIP string)
 	return err == nil && expiry.After(time.Now())
 }
 
+func (t *Tunnel) netnsHTTPClient(timeout time.Duration) *http.Client {
+	// 复用本地 SOCKS5 验证通道（与 thirdPartyHTTPClient 同构）：
+	// 经 127.0.0.1:<slot_port> + validationCred 进入目标 Slot netns，
+	// 凭据仅存于进程内存，不再经过外部 curl 命令行。
+	// socks5h 由 Go 侧在远端解析，避免母机 DNS 泄漏出口意图。
+	cred := t.probeCredential()
+	proxyURL := &url.URL{
+		Scheme: "socks5h",
+		Host:   net.JoinHostPort("127.0.0.1", strconv.Itoa(t.Port)),
+		User:   url.UserPassword(cred.User, cred.Pass),
+	}
+	tr := &http.Transport{
+		Proxy:                 http.ProxyURL(proxyURL),
+		DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,
+		TLSHandshakeTimeout:   timeout,
+		ResponseHeaderTimeout: timeout,
+		ExpectContinueTimeout: 1 * time.Second,
+		DisableKeepAlives:     true,
+		MaxIdleConns:          0,
+	}
+	return &http.Client{
+		Transport: tr,
+		Timeout:   timeout + 5*time.Second,
+		// 原 curl 不带 -L：禁止 3xx 跳转，避免画像请求被劫持到第三方。
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
+
 func (t *Tunnel) probeIPPure(parent context.Context, expectedIP string, ttl time.Duration) (EgressProfile, ippureResponse, bool) {
 	profile := unknownOpenVPNEgress(expectedIP, "ippure_unavailable")
 	profile.Protocol = "openvpn"
-	cred := t.probeCredential()
 	timeout := ippureTimeout()
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
-	out, err := cmdOutput(exec.CommandContext(ctx, "curl",
-		"--disable", "-4fsS", "--noproxy", "", "--max-time", strconv.Itoa(int(timeout.Seconds())),
-		"--socks5-hostname", fmt.Sprintf("127.0.0.1:%d", t.Port),
-		"--proxy-user", cred.User+":"+cred.Pass,
-		ippureURL(),
-	))
+	// 进程内 HTTPS 经本地 SOCKS5 验证通道进入目标 Slot netns，不再 fork 外部 curl。
+	// 旧路径把 --proxy-user 凭据暴露在 /proc/<pid>/cmdline；新路径凭据只存在
+	// 于进程内存，从根上消除命令行泄露面。
+	client := t.netnsHTTPClient(timeout)
+	defer client.CloseIdleConnections()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ippureURL(), nil)
+	if err != nil {
+		profile.IntelligenceError = "ippure_http_failed"
+		return profile, ippureResponse{}, false
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Close = true
+	resp, err := client.Do(req)
+	if err != nil {
+		profile.IntelligenceError = "ippure_http_failed"
+		return profile, ippureResponse{}, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		profile.IntelligenceError = "ippure_http_failed"
+		return profile, ippureResponse{}, false
+	}
+	out, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 	if err != nil {
 		profile.IntelligenceError = "ippure_http_failed"
 		return profile, ippureResponse{}, false

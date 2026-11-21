@@ -18,7 +18,9 @@ import (
 )
 
 type validatedPoolFile struct {
-	Nodes []validatedPoolNode `json:"nodes"`
+	GeneratedAt string             `json:"generated_at"`
+	Source      poolSourceMetadata `json:"source"`
+	Nodes       []validatedPoolNode `json:"nodes"`
 }
 
 type validatedPoolNode struct {
@@ -72,12 +74,12 @@ func fetchNodesFromValidatedPool(poolPath string) ([]Node, error) {
 			continue
 		}
 		hash := sha256.Sum256(config)
+		digest := hex.EncodeToString(hash[:])
 		// A changed or unbound profile is not silently accepted.  The pool
 		// builder stores the same digest next to the profile reference.
 		want := strings.TrimSuffix(filepath.Base(profile), filepath.Ext(profile))
 		if len(want) == 64 {
-			got := hex.EncodeToString(hash[:])
-			if !strings.EqualFold(got, want) {
+			if !strings.EqualFold(digest, want) {
 				continue
 			}
 		}
@@ -118,6 +120,7 @@ func fetchNodesFromValidatedPool(poolPath string) ([]Node, error) {
 			SourceResidential: isResidential(item.Hostname, item.ServerIP),
 			Residential:       residential,
 			Config:            string(config),
+			ProfileSHA:        digest,
 			PoolNodeID:        item.NodeID,
 			IPType:            ipType,
 			ISP:               isp,

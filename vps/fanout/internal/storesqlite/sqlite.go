@@ -161,15 +161,69 @@ func (s mapStore) SaveAll(m map[string]store.Entry) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`DELETE FROM entries WHERE store = ?`, s.name); err != nil {
+	// 空表与超大表（>2000）走全量替换：先清空再插入，避免超长 NOT IN。
+	// 常规批量（1..2000）走 UPSERT + 孤儿键清理，减少 WAL 膨胀与索引抖动，
+	// 同时保持与旧语义一致的整表替换效果。
+	if len(m) == 0 || len(m) > 2000 {
+		if _, err := tx.Exec(`DELETE FROM entries WHERE store = ?`, s.name); err != nil {
+			return err
+		}
+	}
+	// 预编译复用：批量检测每 2s 全量落盘时，避免每次循环重复 Prepare。
+	stmt, err := tx.Prepare(`INSERT INTO entries(store, key, data, checked_at, expires_at)
+		VALUES(?, ?, ?, ?, ?)
+		ON CONFLICT(store, key) DO UPDATE SET data=excluded.data, checked_at=excluded.checked_at, expires_at=excluded.expires_at`)
+	if err != nil {
 		return err
 	}
+	defer stmt.Close()
 	for key, e := range m {
-		if _, err := tx.Exec(`INSERT INTO entries(store, key, data, checked_at, expires_at)
-			VALUES(?, ?, ?, ?, ?)`,
-			s.name, key, string(e.Data), formatTime(e.CheckedAt), formatTime(e.ExpiresAt)); err != nil {
+		if _, err := stmt.Exec(s.name, key, string(e.Data), formatTime(e.CheckedAt), formatTime(e.ExpiresAt)); err != nil {
+			return err
+		}
+	}
+	if len(m) > 0 && len(m) <= 2000 {
+		// 构造 NOT IN 清理语句：keys 数量受 maxStoredCheckResults(1000) 约束，
+		// 占位符数量安全可控。
+		args := make([]any, 0, len(m)+1)
+		args = append(args, s.name)
+		placeholders := make([]string, 0, len(m))
+		for key := range m {
+			args = append(args, key)
+			placeholders = append(placeholders, "?")
+		}
+		// strings/strings.Builder 避免 fmt 拼接 SQL 模板。
+		query := `DELETE FROM entries WHERE store = ? AND key NOT IN (` + stringJoin(placeholders, ",") + `)`
+		if _, err := tx.Exec(query, args...); err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
+}
+
+func stringJoin(parts []string, sep string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	n := len(sep) * (len(parts) - 1)
+	for _, p := range parts {
+		n += len(p)
+	}
+	buf := make([]byte, 0, n)
+	for i, p := range parts {
+		if i > 0 {
+			buf = append(buf, sep...)
+		}
+		buf = append(buf, p...)
+	}
+	return string(buf)
+}
+
+// Upsert 单键增量写入，供未来高频单点更新使用，避免整表 SaveAll。
+func (s mapStore) Upsert(key string, e store.Entry) error {
+	_, err := s.db.Exec(`INSERT INTO entries(store, key, data, checked_at, expires_at)
+		VALUES(?, ?, ?, ?, ?)
+		ON CONFLICT(store, key) DO UPDATE SET data=excluded.data, checked_at=excluded.checked_at, expires_at=excluded.expires_at`,
+		s.name, key, string(e.Data), formatTime(e.CheckedAt), formatTime(e.ExpiresAt))
+	return err
 }

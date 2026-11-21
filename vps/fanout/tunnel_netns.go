@@ -2,13 +2,18 @@ package main
 
 // tunnel_netns.go：netns/iptables/OpenVPN 进程启停。
 import (
+	"bytes"
 	"fanout/internal/paths"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // run 执行一条网络配置命令。
@@ -29,6 +34,111 @@ func runQuiet(name string, args ...string) {
 	_ = cmdRun(exec.Command(name, args...))
 }
 
+// runBatchIP 把多条 iproute2 命令一次性交给 `ip -batch -` 执行，
+// 将 setupNetns 主机侧的多次 fork 合并为一次子进程调用。
+// 脚本中每行一条完整 ip 命令（不含前导 `ip`），失败时返回合并输出。
+func runBatchIP(script string) error {
+	var out []byte
+	err := inMainNetns(func() error {
+		cmd := exec.Command("ip", "-batch", "-")
+		cmd.Stdin = strings.NewReader(script)
+		var buf bytes.Buffer
+		cmd.Stdout = &buf
+		cmd.Stderr = &buf
+		e := cmd.Run()
+		out = buf.Bytes()
+		return e
+	})
+	if err != nil {
+		return fmt.Errorf("ip -batch: %v: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// runNetnsBatch 在指定 netns 内批量执行 iproute2 命令，将
+// `ip netns exec <ns> ip ...` 的多次外部 fork 合并为一次。
+func runNetnsBatch(ns, script string) error {
+	var out []byte
+	err := inMainNetns(func() error {
+		cmd := exec.Command("ip", "netns", "exec", ns, "ip", "-batch", "-")
+		cmd.Stdin = strings.NewReader(script)
+		var buf bytes.Buffer
+		cmd.Stdout = &buf
+		cmd.Stderr = &buf
+		e := cmd.Run()
+		out = buf.Bytes()
+		return e
+	})
+	if err != nil {
+		return fmt.Errorf("ip netns exec %s ip -batch: %v: %s", ns, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// tun0Ready 进程内检查指定 netns 的 tun0 是否已拿到 IPv4 地址，
+// 替代轮询 `ip netns exec <ns> ip -4 addr show tun0` 的每秒 fork。
+// 在独立锁定线程中短暂切入目标 ns 检查，完成后立即切回母机 ns。
+func tun0Ready(ns string) bool {
+	ready := make(chan bool, 1)
+	go func() {
+		runtime.LockOSThread()
+		// 注意：进入隧道 netns 后，只有成功切回母机 netns 才可 UnlockOSThread；
+		// 切回失败时不解锁直接退出，让 Go runtime 回收该线程（见 netnsguard.go）。
+		origin, err := os.Open("/proc/self/ns/net")
+		if err != nil {
+			runtime.UnlockOSThread()
+			ready <- false
+			return
+		}
+		defer origin.Close()
+		target, err := os.Open("/var/run/netns/" + ns)
+		if err != nil {
+			runtime.UnlockOSThread()
+			ready <- false
+			return
+		}
+		defer target.Close()
+		if err := unix.Setns(int(target.Fd()), unix.CLONE_NEWNET); err != nil {
+			runtime.UnlockOSThread()
+			ready <- false
+			return
+		}
+		hasAddr := false
+		iface, err := net.InterfaceByName("tun0")
+		if err == nil {
+			addrs, aerr := iface.Addrs()
+			if aerr == nil {
+				for _, a := range addrs {
+					var ip net.IP
+					switch v := a.(type) {
+					case *net.IPNet:
+						ip = v.IP
+					case *net.IPAddr:
+						ip = v.IP
+					}
+					if ip != nil && ip.To4() != nil && !ip.IsLoopback() {
+						hasAddr = true
+						break
+					}
+				}
+			}
+		}
+		// 切回母机 ns：优先使用启动时记录的 mainNetns，与 inMainNetns 一致；
+		// 仅在切回成功后才解锁线程，否则不解锁直接退出以销毁被污染线程。
+		restoreFD := int(origin.Fd())
+		if mainNetns != nil {
+			restoreFD = int(mainNetns.Fd())
+		}
+		if err := unix.Setns(restoreFD, unix.CLONE_NEWNET); err != nil {
+			ready <- false
+			return
+		}
+		runtime.UnlockOSThread()
+		ready <- hasAddr
+	}()
+	return <-ready
+}
+
 // setupNetns 建立 netns 与 veth 链路，并配好 NAT 与转发放行。
 func (t *Tunnel) setupNetns() error {
 	if t.linkIndex() < 0 || t.linkIndex() >= networkLinkCount {
@@ -42,32 +152,30 @@ func (t *Tunnel) setupNetns() error {
 	if err := run("ip", "netns", "add", ns); err != nil {
 		return err
 	}
-	if err := run("ip", "netns", "exec", ns, "ip", "link", "set", "lo", "up"); err != nil {
+	// 主机侧 veth 创建/移交/配地址/启用：一次 ip -batch 合并 4 次 fork。
+	// 注意 `link set <peer> netns <ns>` 必须在同一批次内紧随 add，顺序不可调换。
+	hostBatch := strings.Join([]string{
+		"link add " + veth + " type veth peer name " + peer,
+		"link set " + peer + " netns " + ns,
+		"addr add " + t.linkAddress(1) + "/30 dev " + veth,
+		"link set " + veth + " up",
+	}, "\n") + "\n"
+	if err := runBatchIP(hostBatch); err != nil {
 		return err
 	}
-	if err := run("ip", "link", "add", veth, "type", "veth", "peer", "name", peer); err != nil {
-		return err
-	}
-	if err := run("ip", "link", "set", peer, "netns", ns); err != nil {
-		return err
-	}
-	if err := run("ip", "addr", "add", t.linkAddress(1)+"/30", "dev", veth); err != nil {
-		return err
-	}
-	if err := run("ip", "link", "set", veth, "up"); err != nil {
-		return err
-	}
-	if err := run("ip", "netns", "exec", ns, "ip", "addr", "add", t.linkAddress(2)+"/30", "dev", peer); err != nil {
-		return err
-	}
-	if err := run("ip", "netns", "exec", ns, "ip", "link", "set", peer, "up"); err != nil {
-		return err
-	}
-	if err := run("ip", "netns", "exec", ns, "ip", "route", "add", "default", "via", t.linkAddress(1)); err != nil {
+	// netns 内 lo/地址/链路/路由：一次 `ip netns exec <ns> ip -batch` 合并
+	// 原先 3 次外部 fork + 3 次内部 ip 调用。
+	nsBatch := strings.Join([]string{
+		"link set lo up",
+		"addr add " + t.linkAddress(2) + "/30 dev " + peer,
+		"link set " + peer + " up",
+		"route add default via " + t.linkAddress(1),
+	}, "\n") + "\n"
+	if err := runNetnsBatch(ns, nsBatch); err != nil {
 		return err
 	}
 
-	// netns 内的 DNS：ip netns exec 会把这个文件挂进命名空间，openvpn/curl
+	// netns 内的 DNS：ip netns exec 会把这个文件挂进命名空间，openvpn
 	// 等子进程用它解析；进程内解析（netns_dns.go）也用同一组服务器。
 	nsDir := filepath.Join("/etc/netns", ns)
 	if err := os.MkdirAll(nsDir, 0755); err != nil {
@@ -165,16 +273,15 @@ func (t *Tunnel) startOpenVPN(dir string) error {
 	exited := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(exited) }()
 
-	// openvpn 建好 tun0 前 SOCKS5 无法正常出网，这里等它就绪
+	// openvpn 建好 tun0 前 SOCKS5 无法正常出网，这里等它就绪。
+	// 进程内检查 tun0 是否拿到 IPv4，避免每秒 fork `ip netns exec`。
 	deadline := time.Now().Add(40 * time.Second)
 	for time.Now().Before(deadline) {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if out, err := cmdOutput(exec.CommandContext(ctx, "ip", "netns", "exec", ns, "ip", "-4", "addr", "show", "tun0")); err == nil {
-			if strings.Contains(string(out), "inet ") {
-				return nil
-			}
+		if tun0Ready(ns) {
+			return nil
 		}
 		select {
 		case <-exited:

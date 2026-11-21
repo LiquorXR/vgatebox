@@ -14,6 +14,10 @@ type Manager struct {
 	tunnels         map[int]*Tunnel
 	nodes           []Node
 	fetched         time.Time
+	poolGeneratedAt string
+	poolSource      poolSourceMetadata
+	poolMetaMod     time.Time
+	poolMetaSize    int64
 	workDir         string
 	evidenceDir     string
 	maxSlots        int

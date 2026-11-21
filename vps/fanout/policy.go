@@ -287,7 +287,7 @@ func (m *Manager) policyCandidates(p SlotPolicy, avoid map[string]bool, exceptSl
 			node:      n,
 			rank:      rank,
 			latency:   latency,
-			failRate:  m.observationFailRateLocked(n.HostName, profileDigest(n.Config)),
+			failRate:  m.observationFailRateLocked(n.HostName, nodeProfileSHA(n)),
 			preferred: image != nil && containsFold(p.PreferredISP, stringValue(image.ISP)),
 			speed:     n.SpeedMbps,
 		})

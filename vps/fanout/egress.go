@@ -130,7 +130,7 @@ func (t *Tunnel) acceptExitEvidence(expected, actual string, image EgressProfile
 	t.egress = &image
 	t.egressExpectedIP, t.egressActualIP = expected, actual
 	t.egressVerifiedAt = time.Now().UTC().Format(time.RFC3339Nano)
-	t.egressNodeHost, t.egressProfileDigest = t.Node.HostName, profileDigest(t.Node.Config)
+	t.egressNodeHost, t.egressProfileDigest = t.Node.HostName, nodeProfileSHA(t.Node)
 	t.mu.Unlock()
 	return nil
 }
@@ -146,7 +146,7 @@ func (t *Tunnel) egressSnapshotLocked(private bool) *EgressProfile {
 		return nil
 	}
 	image := *t.egress
-	if image.IP != t.ExitIP || t.egressNodeHost != t.Node.HostName || t.egressProfileDigest != profileDigest(t.Node.Config) {
+	if image.IP != t.ExitIP || t.egressNodeHost != t.Node.HostName || t.egressProfileDigest != nodeProfileSHA(t.Node) {
 		return nil
 	}
 	if image.IntelligenceStatus == "passed" {
@@ -204,7 +204,7 @@ func (m *Manager) saveSlotHealth() error {
 		image := t.egressSnapshotLocked(true)
 		entry := slotHealthEvidence{SlotID: fmt.Sprintf("slot-%02d", t.Slot),
 			Hostname: t.Node.HostName, PoolNodeID: t.Node.PoolNodeID,
-			ProfileSHA256: profileDigest(t.Node.Config), SocksPort: t.Port, Status: t.Status, Egress: image, LatencyMS: t.LatencyMS, Policy: t.Policy}
+			ProfileSHA256: nodeProfileSHA(t.Node), SocksPort: t.Port, Status: t.Status, Egress: image, LatencyMS: t.LatencyMS, Policy: t.Policy}
 		// An IP left from a failed probe is not a successful SOCKS observation.
 		if servingStatus(t.Status) && image != nil {
 			entry.ExpectedExitIP = t.egressExpectedIP
@@ -235,4 +235,13 @@ func (m *Manager) saveSlotHealth() error {
 func profileDigest(config string) string {
 	hash := sha256.Sum256([]byte(config))
 	return hex.EncodeToString(hash[:])
+}
+
+// nodeProfileSHA 返回候选节点的配置摘要：优先使用加载时预计算的
+// ProfileSHA，兼容测试中直接构造的 Node（回退为现场计算）。
+func nodeProfileSHA(n Node) string {
+	if n.ProfileSHA != "" {
+		return n.ProfileSHA
+	}
+	return profileDigest(n.Config)
 }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Database, RefreshCw, Search, Settings2, ShieldCheck, TimerReset, X } from "@lucide/vue";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/vue-query";
-import { computed, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { api, post } from "@/api/client";
 import { keys, useConsoleQuery } from "@/api/queries";
 import type { CheckResult, EgressProfile, Node, NodesView } from "@/api/types";
@@ -52,6 +52,17 @@ const {
 const nodes = computed(() => (nodePages.value?.pages ?? []).flatMap((page) => page.nodes));
 const serverTotal = computed(() => nodePages.value?.pages[0]?.total ?? 0);
 const search = ref("");
+const searchDebounced = ref("");
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
+watch(search, (value) => {
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    searchDebounced.value = value;
+  }, 150);
+});
+onBeforeUnmount(() => {
+  if (searchTimer) clearTimeout(searchTimer);
+});
 const countryFilter = ref("");
 const statusFilter = ref("all");
 const typeFilter = ref("all");
@@ -91,11 +102,23 @@ watch(
   { immediate: true },
 );
 
+// 批量检测期 check.items 可达数百项：预构建 host→item 索引，
+// 将 effectiveResult 的 O(N×M) find 降为 O(1) 查表。
+const pendingCheckByHost = computed(() => {
+  const map = new Map<string, CheckResult>();
+  const items = summary.value?.check?.items;
+  if (!items) return map;
+  for (const item of items) {
+    if (item.host && ["running", "queued", "priority_queued"].includes(item.status)) {
+      map.set(item.host, item);
+    }
+  }
+  return map;
+});
+
 function effectiveResult(node: Node): CheckResult {
   if (submitting.has(node.hostname)) return { host: node.hostname, status: "submitting" };
-  const pending = summary.value?.check?.items?.find(
-    (item) => item.host === node.hostname && ["running", "queued", "priority_queued"].includes(item.status),
-  );
+  const pending = pendingCheckByHost.value.get(node.hostname);
   if (pending) return pending;
   const result = summary.value?.results?.[node.hostname];
   if (!result) return { host: node.hostname, status: "not_tested" };
@@ -123,7 +146,7 @@ const countries = computed(() => {
 });
 
 const filtered = computed(() => {
-  const term = search.value.trim().toLowerCase();
+  const term = searchDebounced.value.trim().toLowerCase();
   return nodes.value.filter((node) => {
     if (countryFilter.value && node.country_code !== countryFilter.value) return false;
     if (typeFilter.value !== "all" && nodeIPType(node) !== typeFilter.value) return false;
@@ -147,7 +170,7 @@ const pageRows = computed(() =>
   pageNodes.value.map((node) => ({ node, result: effectiveResult(node), ipType: nodeIPType(node) })),
 );
 
-watch([search, countryFilter, statusFilter, typeFilter], () => {
+watch([searchDebounced, countryFilter, statusFilter, typeFilter], () => {
   page.value = 1;
 });
 

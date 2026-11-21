@@ -80,7 +80,7 @@ func (m *Manager) observationPerfTTLValueLocked() time.Duration {
 
 func (m *Manager) connectivityRankLocked(n Node, now time.Time) (int, float64) {
 	r, ok := m.observations[n.HostName]
-	if !ok || r.ProfileSHA != profileDigest(n.Config) || r.CheckedAt.IsZero() || now.Sub(r.CheckedAt) < 0 || now.Sub(r.CheckedAt) > m.observationTTLValueLocked() {
+	if !ok || r.ProfileSHA != nodeProfileSHA(n) || r.CheckedAt.IsZero() || now.Sub(r.CheckedAt) < 0 || now.Sub(r.CheckedAt) > m.observationTTLValueLocked() {
 		return 1, 0
 	}
 	if r.Status == "passed" {

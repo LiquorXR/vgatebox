@@ -267,7 +267,7 @@ func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {
 			if v.ExpiresAt.IsZero() && !expiry.IsZero() {
 				v.ExpiresAt = expiry
 			}
-			if v.CheckedAt.IsZero() || v.ProfileSHA != profileDigest(n.Config) || (!expiry.IsZero() && !now.Before(expiry)) {
+			if v.CheckedAt.IsZero() || v.ProfileSHA != nodeProfileSHA(n) || (!expiry.IsZero() && !now.Before(expiry)) {
 				v.Stale = true
 			}
 			results[n.HostName] = v
@@ -283,14 +283,7 @@ func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	generated := ""
-	var pool struct {
-		GeneratedAt string             `json:"generated_at"`
-		Source      poolSourceMetadata `json:"source"`
-	}
-	if blob, err := os.ReadFile(paths.PoolFile()); err == nil && json.Unmarshal(blob, &pool) == nil {
-		generated = pool.GeneratedAt
-	}
+	generated, poolSource := c.m.PoolMeta()
 	serverName := "www.tesla.com"
 	if panel, err := openPanel(); err == nil {
 		if n, ok := panel.(*Native); ok {
@@ -305,7 +298,7 @@ func (c *Console) apiConsole(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 200, map[string]any{"version": version, "console_version": c.consoleVersion(), "capacity": c.m.maxSlots, "target": target, "target_configured": plan != nil, "suggested_target": suggestedTarget, "allocated": len(view.Exits), "ready": ready, "stopped": stopped, "waiting": max(0, target-ready-stopped), "candidates": len(nodes), "pool_read_at": fetched, "pool_generated_at": generated, "pool_source": publicPoolSource(pool.Source), "automation": c.automationView(time.Now().UTC()), "default_server_name": serverName, "plan": plan, "plan_error": planErr, "refresh": refresh, "check": checkView, "check_settings": c.checkSettingsView(time.Now().UTC()), "results": results, "regions": c.m.Regions(), "memory": memory})
+	writeJSON(w, 200, map[string]any{"version": version, "console_version": c.consoleVersion(), "capacity": c.m.maxSlots, "target": target, "target_configured": plan != nil, "suggested_target": suggestedTarget, "allocated": len(view.Exits), "ready": ready, "stopped": stopped, "waiting": max(0, target-ready-stopped), "candidates": len(nodes), "pool_read_at": fetched, "pool_generated_at": generated, "pool_source": publicPoolSource(poolSource), "automation": c.automationView(time.Now().UTC()), "default_server_name": serverName, "plan": plan, "plan_error": planErr, "refresh": refresh, "check": checkView, "check_settings": c.checkSettingsView(time.Now().UTC()), "results": results, "regions": c.m.Regions(), "memory": memory})
 }
 
 func (c *Console) apiPoolRefresh(w http.ResponseWriter, r *http.Request) {

@@ -15,6 +15,11 @@ func slotOutbounds(tunnels []*Tunnel) []any {
 			continue
 		}
 		out := map[string]any{"tag": slotOutboundTag(t.Slot), "protocol": "blackhole"}
+		// 仅 serving 状态（up/degraded）在 Xray 层保持 socks 出站；
+		// starting/failed/stopped/waiting 等在 Xray 层即阻断为 blackhole，
+		// 与 Go 侧 acceptsSocksLocked() + Kill Switch 形成纵深 Fail-Closed。
+		// 健康抖动等无变 apply 经 native_transaction.go sameConfig 快路径
+		// 收敛为 no-op，不触发全局重启（见 ADR-0006）。
 		if servingStatus(t.snapshot().Status) {
 			out["protocol"] = "socks"
 			out["settings"] = map[string]any{"servers": []any{socksServerJSON(t)}}

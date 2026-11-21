@@ -90,6 +90,7 @@ func (s *ThirdPartyManager) start(n *Native, id int) error {
 	ctx, cancel := context.WithTimeout(s.c.ctx, 100*time.Second)
 	j := &thirdPartyJob{cancel: cancel, digest: thirdPartyDigest(p)}
 	s.jobs[id] = j
+	s.c.bumpConsoleVersion()
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
@@ -107,6 +108,7 @@ func (s *ThirdPartyManager) start(n *Native, id int) error {
 		delete(s.jobs, id)
 		current, err := n.thirdPartySnapshot(id)
 		if err != nil || thirdPartyDigest(*current.ThirdParty) != j.digest || s.closing {
+			s.c.bumpConsoleVersion()
 			return
 		}
 		s.records[id] = r
@@ -118,6 +120,7 @@ func (s *ThirdPartyManager) start(n *Native, id int) error {
 			r.Status, r.Code = "failed", "result_save_failed"
 			s.records[id] = r
 		}
+		s.c.bumpConsoleVersion()
 	}()
 	return nil
 }

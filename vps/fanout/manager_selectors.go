@@ -2,11 +2,42 @@ package main
 
 // manager_selectors.go：Manager 的只读选择器（节点/隧道快照、槽位分配、候选过滤）。
 import (
+	"encoding/json"
+	"fanout/internal/paths"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
 )
+
+// loadPoolMeta 读取 node_pool.json 的生成时间与来源元数据，供 /api/console
+// 直接使用内存快照，避免每次请求重复读盘与解析整份候选池。
+func loadPoolMeta() (string, poolSourceMetadata) {
+	generated, source, _, _ := loadPoolMetaWithStat()
+	return generated, source
+}
+
+// loadPoolMetaWithStat 同时返回文件 mtime/size，供 PoolMeta 做失效校验。
+func loadPoolMetaWithStat() (string, poolSourceMetadata, time.Time, int64) {
+	path := paths.PoolFile()
+	st, err := os.Stat(path)
+	if err != nil {
+		return "", poolSourceMetadata{}, time.Time{}, -1
+	}
+	var pool struct {
+		GeneratedAt string             `json:"generated_at"`
+		Source      poolSourceMetadata `json:"source"`
+	}
+	blob, err := os.ReadFile(path)
+	if err != nil {
+		return "", poolSourceMetadata{}, time.Time{}, -1
+	}
+	if json.Unmarshal(blob, &pool) != nil {
+		return "", poolSourceMetadata{}, time.Time{}, -1
+	}
+	return pool.GeneratedAt, pool.Source, st.ModTime(), st.Size()
+}
 
 // RefreshNodes 重新拉取节点列表。
 func (m *Manager) RefreshNodes() (int, error) {
@@ -14,9 +45,14 @@ func (m *Manager) RefreshNodes() (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	generated, source, mod, size := loadPoolMetaWithStat()
 	m.mu.Lock()
 	m.nodes = nodes
 	m.fetched = time.Now()
+	m.poolGeneratedAt = generated
+	m.poolSource = source
+	m.poolMetaMod = mod
+	m.poolMetaSize = size
 	m.mu.Unlock()
 	// 候选池内容变化是 apiConsole 可见变更（candidates/regions），递增版本号。
 	// 只有池文件 mtime 变化（WatchNodePool）或显式刷新才会走到这里，无空转递增。
@@ -42,6 +78,10 @@ func (m *Manager) Nodes() ([]Node, time.Time) {
 	for i, n := range out {
 		if local, ok := m.localEvidence[n.HostName]; ok && local.Config == n.Config && freshCandidateImage(local) != nil {
 			out[i] = local
+			// 本地画像合并时保留预计算摘要，避免回退为现场哈希。
+			if out[i].ProfileSHA == "" {
+				out[i].ProfileSHA = n.ProfileSHA
+			}
 		}
 		if out[i].OpenVPNEgress != nil && freshCandidateImage(out[i]) == nil {
 			out[i].IPType, out[i].ISP, out[i].ASN, out[i].ExpectedExitIP = "unknown", "", "", ""
@@ -51,6 +91,36 @@ func (m *Manager) Nodes() ([]Node, time.Time) {
 		}
 	}
 	return out, m.fetched
+}
+
+// PoolMeta 返回候选池生成时间与来源的内存快照，供 /api/console 使用。
+// 基于文件 (mtime,size) 校验缓存：首装缺文件时直接返回零值不加写锁；
+// 外部直接改写池文件未调 RefreshNodes 时也能自动刷新。
+func (m *Manager) PoolMeta() (string, poolSourceMetadata) {
+	path := paths.PoolFile()
+	st, statErr := os.Stat(path)
+	m.mu.RLock()
+	generated, source := m.poolGeneratedAt, m.poolSource
+	cachedMod, cachedSize := m.poolMetaMod, m.poolMetaSize
+	m.mu.RUnlock()
+	if statErr != nil {
+		return "", poolSourceMetadata{}
+	}
+	if !cachedMod.IsZero() && cachedMod.Equal(st.ModTime()) && cachedSize == st.Size() {
+		return generated, source
+	}
+	// 首次有文件但缓存为空，或文件已变化：重读并更新缓存。
+	generated, source, mod, size := loadPoolMetaWithStat()
+	m.mu.Lock()
+	// 仅在仍为旧版本时写入，避免覆盖并发 RefreshNodes 的新鲜值。
+	if m.poolMetaMod.Equal(cachedMod) && m.poolMetaSize == cachedSize {
+		m.poolGeneratedAt, m.poolSource = generated, source
+		m.poolMetaMod, m.poolMetaSize = mod, size
+	} else {
+		generated, source = m.poolGeneratedAt, m.poolSource
+	}
+	m.mu.Unlock()
+	return generated, source
 }
 
 // NodeCount avoids the full copy and evidence merge when only pool size matters

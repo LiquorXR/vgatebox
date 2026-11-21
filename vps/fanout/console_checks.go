@@ -114,7 +114,7 @@ func checkIPTypeFromContext(ctx context.Context) bool {
 // Each worker reserves a distinct diagnostic Slot outside user capacity. The
 // job uses the saved operator limit and shares its dial budget with production recovery.
 func (c *Console) probeCandidate(parent context.Context, node Node, slot int, progress func(string)) CheckResult {
-	result := CheckResult{Protocol: "openvpn", Host: node.HostName, Status: "failed", IPType: "unknown", ProfileSHA: profileDigest(node.Config)}
+	result := CheckResult{Protocol: "openvpn", Host: node.HostName, Status: "failed", IPType: "unknown", ProfileSHA: nodeProfileSHA(node)}
 	checkIPType := checkIPTypeFromContext(parent)
 	if slot > diagnosticFirstSlot || slot < -networkLinkCount {
 		result.Code = "probe_environment_failed"
@@ -233,7 +233,7 @@ func (c *Console) checkExit(ctx context.Context, slot int, expectedHost string, 
 	defer t.opMu.Unlock()
 	v := t.snapshot()
 	result.Host = v.Node.HostName
-	result.ProfileSHA = profileDigest(v.Node.Config)
+	result.ProfileSHA = nodeProfileSHA(v.Node)
 	if expectedHost != "" && v.Node.HostName != expectedHost {
 		result.Host, result.Status, result.Code = expectedHost, "deferred", "candidate_changed"
 		return result

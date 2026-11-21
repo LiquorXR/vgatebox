@@ -238,6 +238,10 @@ func prepareRestoredTunnels(st *persistedState, nodes []Node) ([]*Tunnel, error)
 		if node.Config == "" {
 			node.Config = p.Config
 		}
+		// 存盘状态不含预计算摘要：恢复时补算一次，后续运行期直接复用。
+		if node.ProfileSHA == "" && node.Config != "" {
+			node.ProfileSHA = profileDigest(node.Config)
+		}
 		// 从旧版本升上来的状态文件没有凭据字段，补一套新的
 		cred := SocksCred{User: p.SocksUser, Pass: p.SocksPass}
 		if cred.User == "" && cred.Pass == "" {

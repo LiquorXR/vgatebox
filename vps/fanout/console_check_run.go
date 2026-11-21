@@ -58,7 +58,7 @@ func (c *Console) startCheck(in CheckRequest) (*CheckRun, error) {
 		if !ok {
 			return nil, fmt.Errorf("候选已从当前池消失，请刷新列表")
 		}
-		add(CheckResult{Host: host, ProfileSHA: profileDigest(n.Config)})
+		add(CheckResult{Host: host, ProfileSHA: nodeProfileSHA(n)})
 	}
 	for _, slot := range in.Slots {
 		c.m.mu.RLock()
@@ -68,7 +68,7 @@ func (c *Console) startCheck(in CheckRequest) (*CheckRun, error) {
 			return nil, fmt.Errorf("出口不存在")
 		}
 		v := t.snapshot()
-		add(CheckResult{Slot: slot, Host: v.Node.HostName, ProfileSHA: profileDigest(v.Node.Config)})
+		add(CheckResult{Slot: slot, Host: v.Node.HostName, ProfileSHA: nodeProfileSHA(v.Node)})
 	}
 	if len(items) == 0 {
 		return nil, fmt.Errorf("请选择要检测的节点")

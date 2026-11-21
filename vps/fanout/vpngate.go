@@ -34,6 +34,9 @@ type Node struct {
 	// Deprecated: only filled by legacy CSV (NumVpnSessions); Pool Builder pool leaves it zero.
 	Sessions          int            `json:"sessions"`
 	Config            string         `json:"-"` // 解码后的 .ovpn 内容
+	// ProfileSHA 是 Config 的 SHA-256（加载候选池时预计算），用于检测结果
+	// 新鲜度比对，避免每次 /api/console 遍历时重复哈希几十 KB 文本。
+	ProfileSHA string `json:"-"`
 	// SourceResidential 是来源标签：志愿者节点，而不是 VPN Gate 自营机房。
 	// 它来自 isResidential(hostname, ip)，不代表出口 IP 已被画像确认为住宅。
 	SourceResidential bool `json:"source_residential"`
