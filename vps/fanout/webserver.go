@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -60,6 +62,66 @@ func (s *webServer) reload(cfg WebSettings) error {
 	return nil
 }
 
+// swapListenerSamePort switches the listen address without changing the port
+// (e.g. :8899 -> 127.0.0.1:8899). Pre-binding the new address while the old
+// listener is still alive always hits EADDRINUSE when the two overlap, so the
+// old socket is closed first and the new address bound immediately.
+//
+// It returns the new listener/address plus a rollback that restores the old
+// listener if a later commit step (config write) fails. The caller starts
+// serving via activateListener and must drop the rollback after activation.
+func (s *webServer) swapListenerSamePort(next WebSettings) (net.Listener, string, func() error, error) {
+	s.mu.Lock()
+	oldLn, oldAddr := s.ln, s.addr
+	s.mu.Unlock()
+
+	addr := next.listenAddrString()
+	if oldLn == nil {
+		// No active listener (e.g. fresh test server): plain bind. Rollback
+		// must still release it, otherwise a failed config write leaks the
+		// port with nobody serving it.
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			return nil, "", nil, fmt.Errorf("无法监听 %s: %w", addr, err)
+		}
+		return ln, addr, func() error { return ln.Close() }, nil
+	}
+
+	// Stop accepting on the old socket so the port is free for the new bind.
+	// Established connections (including the settings request in flight) are
+	// unaffected; they drain via the old server's graceful shutdown after the
+	// swap, same as the regular reload path.
+	_ = oldLn.Close()
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		// New address unusable: bring the old listener back so the panel
+		// stays reachable and matches the still-uncommitted on-disk config.
+		rln, rerr := net.Listen("tcp", oldAddr)
+		if rerr != nil {
+			return nil, "", nil, fmt.Errorf("无法监听 %s: %w；恢复旧监听 %s 也失败: %v", addr, err, oldAddr, rerr)
+		}
+		s.activateListener(rln, oldAddr)
+		return nil, "", nil, fmt.Errorf("无法监听 %s: %w", addr, err)
+	}
+	rollback := func() error {
+		_ = ln.Close()
+		rln, rerr := net.Listen("tcp", oldAddr)
+		if rerr != nil {
+			return fmt.Errorf("回滚监听 %s 失败: %w", oldAddr, rerr)
+		}
+		s.activateListener(rln, oldAddr)
+		return nil
+	}
+	return ln, addr, rollback, nil
+}
+
+// isListenerClosedError reports the benign Accept error from a listener that
+// was closed for a same-port address switch. The swap path closes the old
+// socket before binding the new one, so this is expected, not a failure.
+func isListenerClosedError(err error) bool {
+	return errors.Is(err, net.ErrClosed)
+}
+
 func (s *webServer) activateListener(ln net.Listener, addr string) {
 
 	s.mu.Lock()
@@ -72,7 +134,7 @@ func (s *webServer) activateListener(ln net.Listener, addr string) {
 	s.mu.Unlock()
 
 	go func() {
-		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed && !isListenerClosedError(err) {
 			log.Printf("HTTP 监听 %s 退出: %v", addr, err)
 		}
 	}()
@@ -91,4 +153,3 @@ func (s *webServer) activateListener(ln net.Listener, addr string) {
 
 	log.Printf("管理界面监听已切换到 %s", addr)
 }
-

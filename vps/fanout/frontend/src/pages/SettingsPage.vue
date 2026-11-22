@@ -54,6 +54,10 @@ const newAddress = computed(() => {
   return `${scheme}//${host}:${port}${path}/${suffix}`;
 });
 
+const listenAddrChanged = computed(
+  () => form.listen_addr.trim() !== (settings.value?.listen_addr || "0.0.0.0"),
+);
+
 const saveMutation = useMutation({
   mutationFn: async () => {
     const port = Number(form.port);
@@ -208,7 +212,7 @@ const themeOptions: { value: ThemeChoice; label: string }[] = [
               <label class="block">
                 <span class="mb-1 block text-xs font-medium">监听地址</span>
                 <input v-model="form.listen_addr" name="management-listen" required class="h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm outline-none focus:border-accent" />
-                <span class="mt-1 block text-[11px] text-faint">0.0.0.0 表示所有网卡；127.0.0.1 仅本机。</span>
+                <span class="mt-1 block text-[11px] text-faint">0.0.0.0 表示所有网卡；127.0.0.1 仅本机；Docker 反代可填 docker 网关（如 172.17.0.1）。</span>
               </label>
             </div>
             <label class="block">
@@ -235,6 +239,9 @@ const themeOptions: { value: ThemeChoice; label: string }[] = [
 
             <div v-if="form.port !== settings?.port || form.base_path !== (settings?.base_path || '')" class="rounded-lg border border-warn/25 bg-warn-soft px-3 py-2 text-[11px] leading-relaxed text-warn">
               新管理地址为 <span class="break-all font-mono">{{ newAddress }}</span>。保存后请使用新地址访问。
+            </div>
+            <div v-if="listenAddrChanged" class="rounded-lg border border-warn/25 bg-warn-soft px-3 py-2 text-[11px] leading-relaxed text-warn">
+              管理服务将只监听 <span class="font-mono">{{ form.listen_addr.trim() }}</span>。若你当前不是通过这个地址访问面板，保存后将无法再打开；请先确认反向代理或 SSH 转发可达。
             </div>
 
             <UiButton type="submit" variant="primary" :loading="saveMutation.isPending.value">保存设置</UiButton>

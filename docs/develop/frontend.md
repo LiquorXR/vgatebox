@@ -121,7 +121,7 @@ Vite 默认把 `/api`、`/sub`、`/login` 代理到 `http://127.0.0.1:8899`。�
 - 管理页 HTML：`Cache-Control: no-store`，严格 CSP（`script-src 'self'`）。
 - 管理 API JSON：`no-store`，避免凭据/订阅 token 进入浏览器缓存。
 - 状态变更只接受 POST；`Auth.Wrap` 拒绝浏览器标记为 `Sec-Fetch-Site: cross-site` 的写请求。
-- 通过 HTTPS 访问时 Cookie 带 `Secure`，响应带 HSTS。
+- 通过 HTTPS 访问时 Cookie 带 `Secure`；HSTS 默认由反向代理层发（后端 `FANOUT_HSTS=1` 才发）。
 - `/assets/`、`/next/assets/` 和 favicon 在登录前可读；它们不含管理数据。
 - 登录页支持无 JS 原生表单提交；成功 303 回来源页面，XHR/fetch 仍返回 JSON。
 

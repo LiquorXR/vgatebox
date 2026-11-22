@@ -151,7 +151,31 @@ func TestLoginCookieSecureOnlyOnHTTPS(t *testing.T) {
 	}
 }
 
-func TestHSTSOnlyOnHTTPS(t *testing.T) {
+func TestHSTSDefaultOffUnlessExplicitlyEnabled(t *testing.T) {
+	// 默认由反代层发 HSTS，后端保持沉默，避免和反代发两遍导致浏览器丢弃。
+	t.Setenv("FANOUT_HSTS", "")
+	for _, tc := range []struct {
+		name   string
+		secure bool
+	}{
+		{"https", true},
+		{"http", false},
+	} {
+		t.Run("default-"+tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "http://panel.example.com/", nil)
+			if tc.secure {
+				r.TLS = &tls.ConnectionState{}
+			}
+			rec := httptest.NewRecorder()
+			withSecurityHeaders(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).ServeHTTP(rec, r)
+			if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
+				t.Fatalf("Strict-Transport-Security = %q, want empty by default", got)
+			}
+		})
+	}
+
+	// 裸公网直连（无反代）时用 FANOUT_HSTS=1 让后端自己发，仍只在 HTTPS 下发。
+	t.Setenv("FANOUT_HSTS", "1")
 	for _, tc := range []struct {
 		name   string
 		secure bool
@@ -160,7 +184,7 @@ func TestHSTSOnlyOnHTTPS(t *testing.T) {
 		{"https", true, "max-age=31536000"},
 		{"http", false, ""},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run("optin-"+tc.name, func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, "http://panel.example.com/", nil)
 			if tc.secure {
 				r.TLS = &tls.ConnectionState{}

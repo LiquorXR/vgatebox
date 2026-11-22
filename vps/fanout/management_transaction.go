@@ -65,6 +65,10 @@ func applyManagementSettings(auth *Auth, srv *webServer, in managementSettingsRe
 // Bind the replacement port before touching any credential/file; start serving
 // only after the entire durable transaction commits. Old listener stays live
 // when validation, bind or any write fails.
+//
+// Exception: a same-port listen-address switch cannot pre-bind (the old socket
+// covers the new address), so it closes first and restores the old listener if
+// the transaction fails; see commitListenAddrChange.
 func commitManagementSettings(auth *Auth, srv *webServer, next WebSettings, password, base *string) error {
 	next, password, base, err := normalizeManagementSettings(next, password, base)
 	if err != nil {
@@ -74,7 +78,13 @@ func commitManagementSettings(auth *Auth, srv *webServer, next WebSettings, pass
 	if err != nil {
 		return err
 	}
-	prepared, err := prepareManagementListenerChange(srv, next, getWebSettings())
+	current := getWebSettings()
+	if next.Port == current.Port && next.ListenAddr != current.ListenAddr {
+		// This branch bypasses the srv.prepareListener test seam on purpose:
+		// pre-binding is exactly what cannot work here.
+		return commitListenAddrChange(auth, srv, dir, next, password, base)
+	}
+	prepared, err := prepareManagementListenerChange(srv, next, current)
 	if err != nil {
 		return err
 	}
@@ -135,6 +145,31 @@ func prepareManagementListenerChange(srv *webServer, next, current WebSettings) 
 		return nil, nil
 	}
 	return srv.prepareManagementListener(next)
+}
+
+// commitListenAddrChange handles same-port listen-address switches
+// (e.g. :8899 -> 172.17.0.1:8899 for a Docker-bridged reverse proxy).
+// Pre-binding the new address while the old listener is alive always fails
+// when the two overlap, so the old socket is closed first and the new address
+// bound before the config is written; any later failure rolls the listener
+// back so disk config and live listener never diverge.
+func commitListenAddrChange(auth *Auth, srv *webServer, dir string, next WebSettings, password, base *string) error {
+	if srv == nil {
+		return fmt.Errorf("管理监听未就绪，无法切换监听地址")
+	}
+	ln, addr, rollback, err := srv.swapListenerSamePort(next)
+	if err != nil {
+		return err
+	}
+	if err := writeManagementConfig(auth, dir, next, password, base, srv); err != nil {
+		if rerr := rollback(); rerr != nil {
+			return fmt.Errorf("%v；回滚监听失败: %v", err, rerr)
+		}
+		return err
+	}
+	applyManagementRuntime(auth, next, password, base, dir)
+	srv.activateListener(ln, addr)
+	return nil
 }
 
 func writeManagementConfig(auth *Auth, dir string, next WebSettings, password, base *string, srv *webServer) error {

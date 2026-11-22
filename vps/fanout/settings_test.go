@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fanout/internal/paths"
 	"net"
 	"net/http"
@@ -178,11 +179,20 @@ func TestWebServerReloadSwitchesPort(t *testing.T) {
 	waitServe(t, p2)
 }
 
+// serverAddr 返回当前监听地址，用于断言监听真的搬到了新地址；
+// 只探测 127.0.0.1 无法区分通配和回环。
+func serverAddr(srv *webServer) string {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	return srv.addr
+}
+
 func waitServe(t *testing.T, port int) {
 	t.Helper()
 	url := "http://127.0.0.1:" + strconv.Itoa(port) + "/"
+	client := &http.Client{Timeout: 2 * time.Second}
 	for i := 0; i < 40; i++ {
-		resp, err := http.Get(url)
+		resp, err := client.Get(url)
 		if err == nil {
 			resp.Body.Close()
 			return
@@ -238,5 +248,148 @@ func TestLoadWebSettingsExplicitFlagWins(t *testing.T) {
 	}
 	if s.Port != 80 {
 		t.Fatalf("显式指定的端口应已写回，实际 %d", s.Port)
+	}
+}
+
+// 同端口只换监听地址（:port -> 127.0.0.1:port）必须能在面板直接改：
+// 旧实现先绑新、再关旧，通配和具体地址同端口必然 EADDRINUSE。
+func TestWebServerReloadSamePortSwitchesAddr(t *testing.T) {
+	preserveManagementGlobals(t)
+	dir := t.TempDir()
+	if _, err := loadWebSettings(dir, 0, false); err != nil {
+		t.Fatalf("loadWebSettings: %v", err)
+	}
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
+	srv := newWebServer(h)
+
+	p := freePort(t)
+	cur := getWebSettings()
+	cur.Port, cur.ListenAddr = p, ""
+	if err := srv.reload(cur); err != nil {
+		t.Fatalf("reload wildcard: %v", err)
+	}
+	// reload 不写全局，这里对齐，让后续 commit 拿到一致的 current。
+	webSettingsMu.Lock()
+	webSettingsCur = cur
+	webSettingsMu.Unlock()
+	waitServe(t, p)
+	if got, want := serverAddr(srv), net.JoinHostPort("", strconv.Itoa(p)); got != want {
+		t.Fatalf("initial listener addr = %q, want %q", got, want)
+	}
+
+	// 通配 -> 回环，同端口
+	next := getWebSettings()
+	next.ListenAddr = "127.0.0.1"
+	if err := commitManagementSettings(nil, srv, next, nil, nil); err != nil {
+		t.Fatalf("wildcard -> loopback: %v", err)
+	}
+	waitServe(t, p)
+	if got := getWebSettings().ListenAddr; got != "127.0.0.1" {
+		t.Fatalf("ListenAddr = %q, want 127.0.0.1", got)
+	}
+	if got, want := serverAddr(srv), net.JoinHostPort("127.0.0.1", strconv.Itoa(p)); got != want {
+		t.Fatalf("listener addr = %q, want %q", got, want)
+	}
+
+	// 回环 -> 通配，同端口（反方向同样会重叠）
+	back := getWebSettings()
+	back.ListenAddr = ""
+	if err := commitManagementSettings(nil, srv, back, nil, nil); err != nil {
+		t.Fatalf("loopback -> wildcard: %v", err)
+	}
+	waitServe(t, p)
+	if got := getWebSettings().ListenAddr; got != "" {
+		t.Fatalf("ListenAddr = %q, want empty", got)
+	}
+	if got, want := serverAddr(srv), net.JoinHostPort("", strconv.Itoa(p)); got != want {
+		t.Fatalf("listener addr = %q, want %q", got, want)
+	}
+}
+
+// 同端口换地址时若后续写盘失败，监听必须回滚到旧地址，面板保持可达，
+// 且内存/磁盘配置都不变。
+func TestSamePortAddrSwitchWriteFailureKeepsOldListener(t *testing.T) {
+	preserveManagementGlobals(t)
+	dir := t.TempDir()
+	if _, err := loadWebSettings(dir, 0, false); err != nil {
+		t.Fatalf("loadWebSettings: %v", err)
+	}
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
+	srv := newWebServer(h)
+
+	p := freePort(t)
+	cur := getWebSettings()
+	cur.Port, cur.ListenAddr = p, ""
+	if err := srv.reload(cur); err != nil {
+		t.Fatalf("reload wildcard: %v", err)
+	}
+	webSettingsMu.Lock()
+	webSettingsCur = cur
+	webSettingsMu.Unlock()
+	waitServe(t, p)
+	if got, want := serverAddr(srv), net.JoinHostPort("", strconv.Itoa(p)); got != want {
+		t.Fatalf("initial listener addr = %q, want %q", got, want)
+	}
+
+	srv.managementHook = func(at string) error {
+		if at == "after_settings_write" {
+			return errors.New("injected management write failure")
+		}
+		return nil
+	}
+	next := getWebSettings()
+	next.ListenAddr = "127.0.0.1"
+	if err := commitManagementSettings(nil, srv, next, nil, nil); err == nil {
+		t.Fatal("write failure reported success")
+	}
+	// 旧监听仍在服务，运行时配置未动
+	waitServe(t, p)
+	if got := getWebSettings().ListenAddr; got != "" {
+		t.Fatalf("ListenAddr = %q, want empty after rollback", got)
+	}
+	if got, want := serverAddr(srv), net.JoinHostPort("", strconv.Itoa(p)); got != want {
+		t.Fatalf("listener addr = %q, want %q after rollback", got, want)
+	}
+}
+
+// 未启动的 server 变更监听地址且写盘失败时，临时绑定的监听必须被释放；
+// 旧实现的空回滚会把端口永久占住。
+func TestSamePortAddrSwitchOnIdleServerReleasesListenerOnFailure(t *testing.T) {
+	preserveManagementGlobals(t)
+	dir := t.TempDir()
+	if _, err := loadWebSettings(dir, 0, false); err != nil {
+		t.Fatalf("loadWebSettings: %v", err)
+	}
+	srv := newWebServer(http.NotFoundHandler()) // 未 serve：srv.ln == nil
+
+	p := freePort(t)
+	cur := getWebSettings()
+	cur.Port, cur.ListenAddr = p, ""
+	webSettingsMu.Lock()
+	webSettingsCur = cur
+	webSettingsMu.Unlock()
+
+	srv.managementHook = func(at string) error {
+		if at == "after_settings_write" {
+			return errors.New("injected management write failure")
+		}
+		return nil
+	}
+	next := getWebSettings()
+	next.ListenAddr = "127.0.0.1"
+	if err := commitManagementSettings(nil, srv, next, nil, nil); err == nil {
+		t.Fatal("write failure reported success")
+	}
+	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(p))
+	if c, err := net.DialTimeout("tcp", addr, 300*time.Millisecond); err == nil {
+		c.Close()
+		t.Fatalf("临时监听未释放，%s 仍可连接", addr)
+	}
+	if got := getWebSettings().ListenAddr; got != "" {
+		t.Fatalf("ListenAddr = %q, want empty after rollback", got)
 	}
 }

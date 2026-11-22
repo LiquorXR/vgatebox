@@ -44,6 +44,9 @@ func resetSubToken() (string, error) {
 	}
 	next := getWebSettings()
 	next.SubToken = tok
+	// 这里只改 token，端口和监听地址沿用原值，因此不会进入
+	// commitListenAddrChange 的换监听分支；传临时 server 是安全的。
+	// 若将来在此顺带改监听地址，必须传真正在服务的 server。
 	if err := commitManagementSettings(nil, &webServer{}, next, nil, nil); err != nil {
 		return "", err
 	}

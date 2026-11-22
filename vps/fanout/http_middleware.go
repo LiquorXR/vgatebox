@@ -4,6 +4,7 @@ import (
 	"compress/gzip"
 	"log"
 	"net/http"
+	"os"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -170,11 +171,20 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		if requestIsHTTPS(r) {
+		if hstsEnabled() && requestIsHTTPS(r) {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000")
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// hstsEnabled reports whether the management server itself should emit HSTS.
+// TLS is normally terminated at the reverse proxy (e.g. NPM), which owns HSTS,
+// so the backend stays silent by default and only opts in with FANOUT_HSTS=1
+// for direct-TLS exposure without a proxy in front.
+func hstsEnabled() bool {
+	v := strings.TrimSpace(os.Getenv("FANOUT_HSTS"))
+	return v == "1" || strings.EqualFold(v, "true") || strings.EqualFold(v, "on")
 }
 
 // postOnly 把只允许 POST 的状态变更接口收口；其余方法统一 405 并带 Allow。

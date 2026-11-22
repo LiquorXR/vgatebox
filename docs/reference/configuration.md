@@ -27,6 +27,7 @@ vgatebox 的配置分三层：**命令行参数**、**环境变量**、**落盘�
 | `FANOUT_PUBLIC_URL` | 空 | 订阅/分享链接的外部 origin，如 `https://panel.example.com`；不要带路径 |
 | `FANOUT_PUBLIC_IP` | 自动探测 | 公网 IPv4，用于分享链接、SOCKS5 地址；也用于拒绝 namespace 回落到本机 IP |
 | `FANOUT_TRUSTED_PROXIES` | 空 | 可信反向代理 IP/CIDR，逗号分隔；本机/私有网段默认可信 |
+| `FANOUT_HSTS` | 空（不发） | 设为 `1` 时后端在 HTTPS 下发 HSTS；有反向代理时保持空，由代理层发 |
 | `FANOUT_VALIDATED_POOL_FILE` | `/var/lib/vgatebox/pool/node_pool.json` | 候选池文件 |
 | `FANOUT_POOL_CONFIG` | `/etc/vgatebox/pool.json` | 候选/画像设置 |
 | `FANOUT_INTELLIGENCE_ENV_FILE` | `/etc/vgatebox/intelligence.env` | 画像服务环境文件 |
@@ -132,7 +133,7 @@ FANOUT_SLOT_PORT_BASE=17928
 | 字段 | 默认 | 说明 |
 | --- | --- | --- |
 | `port` | `8899` | 管理端口；设置页可改 |
-| `listen_addr` | `0.0.0.0` | 空/`0.0.0.0` 所有网卡；`127.0.0.1` 只本机 |
+| `listen_addr` | `0.0.0.0` | 空/`0.0.0.0` 所有网卡；`127.0.0.1` 只本机；同端口换地址可在设置页直接改 |
 | `residential_only` | 首次安装写入 `false` | 是否只列志愿者节点；设置页可开启；`FANOUT_RESIDENTIAL_ONLY=0` 可强制关闭 |
 | `sub_token` | 自动生成 | 订阅口令；重置后旧地址失效 |
 

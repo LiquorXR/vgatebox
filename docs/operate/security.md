@@ -28,7 +28,7 @@ vgatebox 不能保护：已被 root 攻陷的主机、恶意 VPN Gate 节点对�
 ### 登录与会话
 
 - 登录成功后发 `fanout_session` Cookie，默认 12 小时；HttpOnly、SameSite=Lax。
-- 通过 HTTPS（或可信代理转发的 `X-Forwarded-Proto: https`）访问时，Cookie 带 `Secure`，响应带 HSTS。
+- 通过 HTTPS（或可信代理转发的 `X-Forwarded-Proto: https`）访问时，Cookie 带 `Secure`。HSTS 默认由反向代理层发，后端默认不发（裸公网直连时可用 `FANOUT_HSTS=1` 让后端发）。
 - 同一来源连续失败 8 次后锁定 2 分钟；成功登录清零；失败记录 10 分钟后重置。
 - 状态变更接口只接受 POST；浏览器标记为 `Sec-Fetch-Site: cross-site` 的写请求直接拒绝。
 - 登录请求体限制 8 KB；管理设置 32 KB；控制台 JSON 8 MB。
@@ -37,7 +37,7 @@ vgatebox 不能保护：已被 root 攻陷的主机、恶意 VPN Gate 节点对�
 
 - 管理页和登录页：严格 CSP（`script-src 'self'`）、`X-Frame-Options: DENY`、`nosniff`、`Referrer-Policy: same-origin`。
 - 管理 API 和订阅：`Cache-Control: no-store`。
-- HTTPS 请求：HSTS（`max-age=31536000`）。
+- 反向代理层开 HSTS；后端默认不发（`FANOUT_HSTS=1` 时后端也在 HTTPS 下发 `max-age=31536000`）。
 - 静态指纹资源：一年 `immutable`；稳定名称资源 `no-cache`。
 
 ### 反向代理
@@ -52,6 +52,7 @@ vgatebox 不能保护：已被 root 攻陷的主机、恶意 VPN Gate 节点对�
 
 - `FANOUT_PUBLIC_URL=https://panel.example.com`：只填外部 origin，不要带路径；用于生成订阅和分享链接。
 - 代理传给管理服务 `X-Forwarded-Proto: https`、`X-Forwarded-Host`、`X-Forwarded-Port`。
+- HSTS 由代理层开启（如 NPM 的 HSTS 选项）；后端默认不发，避免发两遍导致浏览器丢弃。
 - 代理地址必须是本机/私有网段，或在 `FANOUT_TRUSTED_PROXIES` 中列出（CIDR 或 IP，逗号分隔）。
 - 代理读超时至少 120 秒；入口重载可能较慢，超时太短会出现 502。
 - 代理额外增加路径前缀时，把该前缀配置为管理访问路径，而不是写进 `FANOUT_PUBLIC_URL`。
@@ -62,6 +63,7 @@ vgatebox 不能保护：已被 root 攻陷的主机、恶意 VPN Gate 节点对�
 ### 防火墙
 
 - 管理端口默认 `8899`；只对需要的来源开放，或只监听 `127.0.0.1` 并通过 SSH 转发/反向代理访问。
+- 设置页可把监听地址改成具体网卡（如 Docker 反代的 `172.17.0.1`）；保存前先确认能从该地址访问，否则面板会立即失联，只能到宿主机改 `state/settings.json` 后重启。
 - 接入端口按实际使用放行；不需要的入口关闭或删除。
 - 公网 SOCKS5 需要强凭据，最好限制来源 IP；不用时关闭。
 - 系统防火墙和服务商安全组都要检查。
