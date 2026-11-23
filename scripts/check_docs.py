@@ -168,6 +168,42 @@ def check_api(files: list[Path]) -> list[str]:
     return errors
 
 
+ENV_RE = re.compile(r"""os\.Getenv\(\"([A-Za-z0-9_]+)\"\)|envOr\(\"([A-Za-z0-9_]+)\"|os\.getenv\(\s*['\"]([A-Za-z0-9_]+)['\"]""")
+ENV_DOC_RE = re.compile(r"`([A-Z][A-Z0-9_]{2,})`")
+
+
+def check_env(files: list[Path]) -> list[str]:
+    """Every env var read in prod code must be documented in configuration.md.
+
+    One-directional on purpose: docs intentionally also list internal markers
+    (FANOUT_NETNS_CHILD), dev/test helpers (VGATEBOX_*, E2E_*), and Python-side
+    defaults that Go never reads.
+    """
+    config_doc = DOCS / "reference" / "configuration.md"
+    if not config_doc.exists():
+        return []
+    documented = set(ENV_DOC_RE.findall(config_doc.read_text(encoding="utf-8")))
+    code_vars: set[str] = set()
+    for base, pattern in ((ROOT / "vps" / "fanout", "*.go"),
+                          (ROOT / "src", "*.py")):
+        for path in base.rglob(pattern):
+            if path.name.endswith("_test.go") or path.name.startswith("test_"):
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for match in ENV_RE.finditer(text):
+                name = next(g for g in match.groups() if g)
+                # child_environment() allowlists process plumbing, not project config.
+                if name in ("PATH", "LANG", "LC_ALL", "SYSTEMROOT",
+                            "SSL_CERT_FILE", "SSL_CERT_DIR", "CURL_CA_BUNDLE"):
+                    continue
+                code_vars.add(name)
+    return [f"docs/reference/configuration.md: undocumented env var {name}"
+            for name in sorted(code_vars - documented)]
+
+
 def main() -> int:
     if not DOCS.exists():
         print("docs/ not found", file=sys.stderr)
@@ -178,6 +214,7 @@ def main() -> int:
     errors += check_reachable(files)
     errors += check_forbidden(files)
     errors += check_api(files)
+    errors += check_env(files)
     if errors:
         for error in errors:
             print("ERROR " + error, file=sys.stderr)

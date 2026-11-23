@@ -242,8 +242,9 @@ class Installer:
         self.l.work.chmod(0o700)
         # 沙箱单元在 ReadWritePaths 里挂 /etc/netns：ProtectSystem=strict 下
         # 启动挂载要求它事先存在，否则 226/NAMESPACE 起不来。
-        # /run/netns 由单元 RuntimeDirectory 自建；/etc/netns 持久共享，
-        # 只建不删（卸载不碰，里面可能有别家命名空间）。
+        # /run/netns 由 fanout 单元 RuntimeDirectory 自建；pool 是 oneshot，
+        # 不配 RuntimeDirectory，避免退出回收时删掉长驻服务共用的 /run/netns。
+        # /etc/netns 持久共享，只建不删（卸载不碰，里面可能有别家命名空间）。
         netns=self.l.path('etc/netns')
         if not netns.exists():
             netns.mkdir(parents=True,mode=0o755)

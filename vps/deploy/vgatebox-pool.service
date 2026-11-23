@@ -10,12 +10,14 @@ TimeoutStartSec=120
 UMask=0077
 # 与 fanout 主服务同套沙箱（写集合是其子集：读 /etc/vgatebox，
 # 写 pool 输出目录与 state/ 的 refresh-state.json）。
+# 注意：不要在这里加 RuntimeDirectory=netns。pool 只是 oneshot 候选构建器，
+# 不建 netns；oneshot 退出时 systemd 会回收 RuntimeDirectory，
+# 与 fanout 共用同一目录会把长驻服务正在用的 /run/netns 删掉，
+# 导致后续 ip netns add 报 Read-only file system。
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectHome=read-only
 ProtectSystem=strict
-RuntimeDirectory=netns
-RuntimeDirectoryMode=0755
 ReadWritePaths=/var/lib/vgatebox /etc/vgatebox /etc/netns /var/lib/vgatebox-deploy /var/backups/vgatebox
 RestrictSUIDSGID=yes
 LockPersonality=yes

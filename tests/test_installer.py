@@ -112,6 +112,74 @@ class ServiceSnapshotTests(unittest.TestCase):
                 self.assertEqual(runner.enabled(d.UNITS[1]), state in ('enabled', 'enabled-runtime'))
 
 
+class UnitSandboxTests(unittest.TestCase):
+    """Oneshot units must not share RuntimeDirectory with the long-running service.
+
+    Regression for the production outage where vgatebox-pool.service (oneshot)
+    and vgatebox-fanout.service both declared RuntimeDirectory=netns: every pool
+    run deleted /run/netns on exit, and subsequent `ip netns add` inside the
+    fanout sandbox failed with Read-only file system (ProtectSystem=strict).
+    """
+
+    @staticmethod
+    def runtime_dirs(text):
+        dirs = set()
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith('RuntimeDirectory='):
+                for name in stripped.split('=', 1)[1].split():
+                    if name:
+                        dirs.add(name)
+        return dirs
+
+    def test_pool_oneshot_does_not_share_runtime_directory_with_fanout(self):
+        deploy = Path(__file__).resolve().parents[1] / 'vps' / 'deploy'
+        fanout = (deploy / 'vgatebox-fanout.service').read_text(encoding='utf-8')
+        pool = (deploy / 'vgatebox-pool.service').read_text(encoding='utf-8')
+        self.assertIn('netns', self.runtime_dirs(fanout),
+                      'fanout needs RuntimeDirectory=netns for `ip netns add`')
+        self.assertEqual(self.runtime_dirs(pool), set(),
+                         'pool is oneshot and must not declare RuntimeDirectory '
+                         '(systemd recycles it on exit, deleting /run/netns '
+                         'out from under fanout)')
+        self.assertTrue(self.runtime_dirs(fanout).isdisjoint(self.runtime_dirs(pool)))
+
+    @staticmethod
+    def read_write_paths(text):
+        paths = set()
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith('ReadWritePaths='):
+                paths.update(stripped.split('=', 1)[1].split())
+        return paths
+
+    def test_pool_writeset_stays_within_fanout_writeset(self):
+        # pool.service comments promise its write set is a subset of fanout's.
+        # A new writable path in either unit without backup/uninstall handling
+        # would silently escape backup (/var/backups/vgatebox) and cleanup.
+        deploy = Path(__file__).resolve().parents[1] / 'vps' / 'deploy'
+        fanout = self.read_write_paths(
+            (deploy / 'vgatebox-fanout.service').read_text(encoding='utf-8'))
+        pool = self.read_write_paths(
+            (deploy / 'vgatebox-pool.service').read_text(encoding='utf-8'))
+        self.assertTrue(pool, 'no ReadWritePaths parsed from pool.service')
+        self.assertTrue(fanout, 'no ReadWritePaths parsed from fanout.service')
+        self.assertEqual(pool - fanout, set(),
+                         'pool.service writes outside fanout.service write set: '
+                         + ', '.join(sorted(pool - fanout)))
+
+    def test_pool_timer_triggers_every_30_minutes(self):
+        # Automation account (console default 60min, minimum 30min) and capacity
+        # docs assume this cadence; a silent timer change would shift refresh,
+        # detection and pool-age behavior without any test failing.
+        timer = (Path(__file__).resolve().parents[1] / 'vps' / 'deploy'
+                 / 'vgatebox-pool.timer').read_text(encoding='utf-8')
+        active = [l.strip() for l in timer.splitlines()
+                  if l.strip().startswith('OnUnitActiveSec=')]
+        self.assertEqual(active, ['OnUnitActiveSec=30min'],
+                         'pool timer cadence changed: ' + repr(active))
+
+
 class InstallerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

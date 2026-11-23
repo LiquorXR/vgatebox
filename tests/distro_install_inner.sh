@@ -92,6 +92,13 @@ settings=json.loads((s/'automation.json').read_text());settings['refresh_enabled
 (s/'automation.json').write_text(json.dumps(settings))
 PY
 systemctl start vgatebox-pool.service
+# Regression: pool is oneshot and must not share RuntimeDirectory with the
+# long-running fanout service. systemd recycles a oneshot's RuntimeDirectory on
+# exit; sharing `netns` deleted /run/netns out from under fanout and every later
+# `ip netns add` failed with Read-only file system. Fail here if it recurs.
+test -d /run/netns
+PID=$(systemctl show -p MainPID --value vgatebox-fanout.service)
+nsenter -t "$PID" -m ls -ld /run/netns
 cmp /tmp/vgb-ci-before-refresh /var/lib/vgatebox/fanout/state/refresh-state.json
 SSL_CERT_FILE=/etc/vgatebox/ci-source-ca.pem vgatebox refresh >/tmp/manual-source.log
 python3 - <<'PY'
