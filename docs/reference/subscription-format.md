@@ -1,6 +1,6 @@
 # 订阅格式
 
-`/sub` 支持三种输出：`base64`（默认）、`links`（明文）和 `clash`（Mihomo YAML）。三者使用同一份接入列表，只是编码和字段表达不同。
+`/sub` 支持三种输出：`base64`（默认，别名 `b64`/`v2ray`）、`links`（明文，别名 `plain`/`text`）和 `clash`（Mihomo YAML，别名 `mihomo`）。三者使用同一份接入列表，只是编码和字段表达不同。
 
 ## 通用行为
 

@@ -30,7 +30,7 @@ bash vps/install.sh [--package PATH] [--version vX.Y.Z] [--job-id ID] [--mode vp
 2. 读 `/etc/os-release`，只接受 Debian 12/13、Ubuntu 22.04/24.04、CentOS Stream 9/10。
 3. 安装依赖：
    - Debian/Ubuntu：`ca-certificates curl python3 openvpn iproute2 iptables sstp-client ppp util-linux procps`
-   - CentOS：`ca-certificates python3 iproute iptables ppp util-linux procps-ng`、EPEL、openvpn；缺少 `sstpc` 时从固定版本源码编译本机 RPM。
+   - CentOS：`ca-certificates python3 iproute iptables ppp util-linux procps-ng`、EPEL、openvpn；缺少 `sstpc` 时从固定版本（`sstp-client 1.0.20`）源码编译本机 RPM。
 4. 获取部署锁 `/run/lock/vgatebox-deploy.lock`。
 5. 恢复未完成事务（如果有）。
 6. 下载/读取完整包和 `checksums.txt`。

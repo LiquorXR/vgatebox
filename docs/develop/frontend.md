@@ -84,7 +84,7 @@ CI 会先安装 Node 22、跑 `npm ci --ignore-scripts` 和 `npm run build`，�
 | 页面/数据 | 频率 | 说明 |
 | --- | --- | --- |
 | `console/version` | 5 秒（运行中 2 秒） | 小响应；变化或 60 秒兜底才拉全量 `console` |
-| `exits` | 5 秒 | 出口和入站视图 |
+| `exits` | 稳态 30 秒（建链期 2 秒）+ `console/version` 驱动 | 出口和入站视图 |
 | `nodes` | 20 秒 | 只在页面挂载时请求 |
 | 订阅地址 | 页面加载一次 | 不在后台轮询 |
 | 接入 | 按 tab 启用 | 切到哪个 tab 请求哪个接口 |

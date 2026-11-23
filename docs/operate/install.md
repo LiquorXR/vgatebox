@@ -51,7 +51,7 @@ bash vps/install.sh --mode vps --package /path/vgatebox-linux-amd64.tar.gz
 ## 安装器做了什么
 
 1. 检查 root、Linux x86_64、systemd、`flock` 和系统依赖。
-2. 安装依赖：Debian/Ubuntu 使用 APT；CentOS 使用 DNF，并在缺少 `sstpc` 时从固定版本源码编译本机 RPM。
+2. 安装依赖：Debian/Ubuntu 使用 APT；CentOS 使用 DNF，并在缺少 `sstpc` 时从固定版本（`sstp-client 1.0.20`）源码编译本机 RPM。
 3. 获取部署锁，恢复未完成的事务（如果有）。
 4. 下载/读取完整包，校验并解包。
 5. 停止旧服务，备份现有受管文件。

@@ -38,7 +38,7 @@ SSTP 证据与 OpenVPN 证据隔离：SSTP 结果不会复用 OpenVPN 的连接�
 | 有效期 | 60 分钟 | 1–10080 分钟 |
 | 超时 | 90 秒 | 10–3600 秒 |
 
-要求系统有 `sstpc`、`pppd`、`unshare`、`mount`、`curl`、`ip`、`iptables`。Debian/Ubuntu 由安装器安装 `sstp-client`；CentOS 首次安装从固定版本源码编译本机 RPM。缺少依赖时页面会显示 `dependency_error`。
+要求系统有 `sstpc`、`pppd`、`unshare`、`mount`、`curl`、`ip`、`iptables`。Debian/Ubuntu 由安装器安装 `sstp-client`；CentOS 首次安装从固定版本（`sstp-client 1.0.20`）源码编译本机 RPM。缺少依赖时页面会显示 `dependency_error`。
 
 ## 导出格式
 

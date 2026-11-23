@@ -32,7 +32,7 @@ vgatebox 的配置分三层：**命令行参数**、**环境变量**、**落盘�
 | `FANOUT_POOL_CONFIG` | `/etc/vgatebox/pool.json` | 候选/画像设置 |
 | `FANOUT_INTELLIGENCE_ENV_FILE` | `/etc/vgatebox/intelligence.env` | 画像服务环境文件 |
 | `FANOUT_TOOLBOX_SCRIPT` | `/usr/local/lib/vgatebox/scripts/toolbox.py` | 工具箱脚本路径 |
-| `FANOUT_SLOT_PORT_BASE` | 空（20000–60000 随机） | 固定 Slot 端口基址；设置后使用基址–65535 |
+| `FANOUT_SLOT_PORT_BASE` | 空（`20000–59999` 随机；系统安装后默认为 `17928`） | 固定 Slot 端口基址；设置后使用基址–65535 |
 | `FANOUT_DNS_SERVERS` | `1.1.1.1:53,8.8.8.8:53` | 出口 namespace 内的 DNS；支持 `ip` 或 `ip:port` |
 | `FANOUT_DNS_TTL` | `60` | DNS 缓存秒数 |
 | `FANOUT_RESIDENTIAL_ONLY` | 未设置 | 设为 `0` 强制关闭“只列志愿者节点”的来源过滤；否则以设置页为准 |
@@ -178,7 +178,7 @@ FANOUT_SLOT_PORT_BASE=17928
 | 排序观察有效期 | 30 分钟 |
 | IP 类型缓存 | 24 小时 |
 | 检测并发 | 2 |
-| 内部 SOCKS5 端口 | `20000–60000` 随机；设置基址后基址–65535 |
+| 内部 SOCKS5 端口 | `20000–59999` 随机；设置基址后基址–65535 |
 | 自动入站端口 | 优先 `30000 + Slot`，冲突时随机 |
 | SSTP 有效期 | 60 分钟 |
 | SSTP 周期 | 0（关闭） |

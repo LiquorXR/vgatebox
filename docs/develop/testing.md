@@ -127,6 +127,7 @@ CI 的 `e2e.yml` 在临时 workdir 起服务，零隧道：无候选、目标最
 | `nightly-race.yml` | 每日/手动 | 全量 `go test -race`（30 分钟超时，job 45 分钟） |
 | `release-vps.yml` | 手动 | 从一次成功的 `vps.yml` 运行补发已测试的包 |
 | `update.yml` | 手动 | 仅构建共享候选池产物，不定时运行 |
+| `docs.yml` | push/PR | 文档断链、孤儿页、禁用词、API 路由漂移检查 |
 
 ### `vps.yml` 的细节
 

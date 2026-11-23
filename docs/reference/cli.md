@@ -17,7 +17,7 @@ vgatebox 有两个命令行入口：系统安装的 `vgatebox` 管理命令，�
 | `vgatebox refresh` | 手动刷新候选；不触发自动检测 |
 | `vgatebox restart` | 重启管理服务 |
 | `vgatebox access` | 显示管理地址和密码 |
-| `vgatebox install --mode vps --package <tar.gz>` | 离线完整包安装 |
+| `vgatebox install --package <tar.gz>` | 离线完整包安装 |
 | `vgatebox uninstall` | 卸载 |
 
 ### `update`

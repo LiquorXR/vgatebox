@@ -33,7 +33,7 @@ vgatebox update-status    # 查看最近一次更新任务
 `vgatebox update` 会调用安装器，等价于重新运行安装入口。离线包：
 
 ```sh
-vgatebox install --mode vps --package /path/vgatebox-linux-amd64.tar.gz
+vgatebox install --package /path/vgatebox-linux-amd64.tar.gz
 ```
 
 包旁必须有 `checksums.txt`。

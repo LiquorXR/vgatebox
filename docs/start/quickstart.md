@@ -26,7 +26,7 @@ curl -fsSL https://github.com/LiquorXR/vgatebox/releases/latest/download/install
 bash /tmp/vgatebox-install.sh --version vX.Y.Z
 ```
 
-CentOS 首次安装会从固定版本源码编译 SSTP 客户端，耗时和内存需求高于 Debian/Ubuntu。
+CentOS 首次安装会从固定版本（`sstp-client 1.0.20`）源码编译 SSTP 客户端，耗时和内存需求高于 Debian/Ubuntu。
 
 ## 2. 取得管理地址并登录
 

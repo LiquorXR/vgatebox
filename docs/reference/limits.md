@@ -16,7 +16,7 @@
 | 非 systemd 系统 | 不支持 |
 | 无 root / 无 TUN / 无 network namespace | 不支持 |
 
-CentOS 首次安装会从固定版本源码编译 SSTP 客户端，耗时和内存需求高于 Debian/Ubuntu。测试矩阵不覆盖独立 VPS 的内核、SELinux、服务商防火墙和网络策略；这些需要在真实环境验收。
+CentOS 首次安装会从固定版本（`sstp-client 1.0.20`）源码编译 SSTP 客户端，耗时和内存需求高于 Debian/Ubuntu。测试矩阵不覆盖独立 VPS 的内核、SELinux、服务商防火墙和网络策略；这些需要在真实环境验收。
 
 ## 客户端
 
@@ -88,7 +88,7 @@ CentOS 首次安装会从固定版本源码编译 SSTP 客户端，耗时和内�
 - `maximumSlots = 16384` 是实例地址空间上限，不是单机建议值。
 - 建议每 Slot 预留 64 个 fd、约 32 MiB 内存；启动日志的容量预检只提示，不修改 `-max`。
 - 实际容量受 OpenVPN 进程、netns/veth、内核内存、iptables、端口区间和上游质量影响。
-- 内部 SOCKS5 端口默认 `20000–60000` 随机；设置 `FANOUT_SLOT_PORT_BASE` 后为基址–65535。
+- 内部 SOCKS5 端口默认 `20000–59999` 随机；设置 `FANOUT_SLOT_PORT_BASE` 后为基址–65535。
 - 管理端口默认 `8899`；接入端口按入口决定，需要单独放行。
 - 检测与正式建连共享并发预算；默认检测并发 2，正式出口恢复优先。
 
